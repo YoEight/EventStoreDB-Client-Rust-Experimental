@@ -692,6 +692,7 @@ pub mod tcp {
 pub mod es6 {
     use super::fresh_stream_id;
     use eventstore::es6;
+    use eventstore::es6::connection_db::StaticEventStoreDBConnection;
     use futures::channel::oneshot;
     use futures::stream::{self, TryStreamExt};
     use std::collections::HashMap;
@@ -715,7 +716,7 @@ pub mod es6 {
     }
 
     async fn test_write_events(
-        connection: &es6::connection::Connection,
+        connection: &es6::connection::Connection<StaticEventStoreDBConnection>,
     ) -> Result<(), Box<dyn Error>> {
         let stream_id = fresh_stream_id("write_events");
         let events = generate_events("es6-write-events-test".to_string(), 3);
@@ -732,7 +733,7 @@ pub mod es6 {
 
     // We read all stream events by batch.
     async fn test_read_all_stream_events(
-        connection: &es6::connection::Connection,
+        connection: &es6::connection::Connection<StaticEventStoreDBConnection>,
     ) -> Result<(), Box<dyn Error>> {
         // Eventstore should always have "some" events in $all, since eventstore itself uses streams, ouroboros style.
         let mut stream = connection
@@ -749,7 +750,7 @@ pub mod es6 {
     // We read stream events by batch. We also test if we can properly read a
     // stream thoroughly.
     async fn test_read_stream_events(
-        connection: &es6::connection::Connection,
+        connection: &es6::connection::Connection<StaticEventStoreDBConnection>,
     ) -> Result<(), Box<dyn Error>> {
         let stream_id = fresh_stream_id("read_stream_events");
         let events = generate_events("es6-read-stream-events-test".to_string(), 10);
@@ -786,7 +787,7 @@ pub mod es6 {
     // We check to see the client can handle the correct GRPC proto response when
     // a stream does not exist
     async fn test_read_stream_events_non_existent(
-        connection: &es6::connection::Connection,
+        connection: &es6::connection::Connection<StaticEventStoreDBConnection>,
     ) -> Result<(), Box<dyn Error>> {
         let stream_id = fresh_stream_id("read_stream_events");
 
@@ -803,7 +804,7 @@ pub mod es6 {
 
     // We write an event into a stream then delete that stream.
     async fn test_delete_stream(
-        connection: &es6::connection::Connection,
+        connection: &es6::connection::Connection<StaticEventStoreDBConnection>,
     ) -> Result<(), Box<dyn Error>> {
         let stream_id = fresh_stream_id("delete");
         let events = generate_events("delete-test".to_string(), 1);
@@ -829,7 +830,7 @@ pub mod es6 {
     // To assess we received all the events we expected, we test our subscription
     // internal state value.
     async fn test_subscription(
-        connection: &es6::connection::Connection,
+        connection: &es6::connection::Connection<StaticEventStoreDBConnection>,
     ) -> Result<(), Box<dyn Error>> {
         let stream_id = fresh_stream_id("catchup");
         let events_before = generate_events("catchup-test-before".to_string(), 3);
@@ -880,7 +881,7 @@ pub mod es6 {
     }
 
     async fn test_create_persistent_subscription(
-        connection: &es6::connection::Connection,
+        connection: &es6::connection::Connection<StaticEventStoreDBConnection>,
     ) -> Result<(), Box<dyn Error>> {
         let stream_id = fresh_stream_id("create_persistent_sub");
 
@@ -894,7 +895,7 @@ pub mod es6 {
 
     // We test we can successfully update a persistent subscription.
     async fn test_update_persistent_subscription(
-        connection: &es6::connection::Connection,
+        connection: &es6::connection::Connection<StaticEventStoreDBConnection>,
     ) -> Result<(), Box<dyn Error>> {
         let stream_id = fresh_stream_id("update_persistent_sub");
 
@@ -918,7 +919,7 @@ pub mod es6 {
 
     // We test we can successfully delete a persistent subscription.
     async fn test_delete_persistent_subscription(
-        connection: &es6::connection::Connection,
+        connection: &es6::connection::Connection<StaticEventStoreDBConnection>,
     ) -> Result<(), Box<dyn Error>> {
         let stream_id = fresh_stream_id("delete_persistent_sub");
         connection
@@ -935,7 +936,7 @@ pub mod es6 {
     }
 
     async fn test_persistent_subscription(
-        connection: &es6::connection::Connection,
+        connection: &es6::connection::Connection<StaticEventStoreDBConnection>,
     ) -> Result<(), Box<dyn Error>> {
         let stream_id = fresh_stream_id("persistent_subscription");
         let events = generate_events("es6-persistent-subscription-test".to_string(), 5);
@@ -1000,7 +1001,7 @@ pub mod es6 {
             let host = env::var("EVENTSTORE_HOST").unwrap_or("localhost".to_string());
             let uri = format!("https://{}:2113/", host).parse()?;
 
-            let connection = eventstore::es6::connection::Connection::builder()
+            let connection = eventstore::es6::connection::ConnectionBuilder::new()
                 .with_default_user(eventstore::Credentials::new("admin", "changeit"))
                 .disable_server_certificate_validation()
                 .single_node_connection(uri)

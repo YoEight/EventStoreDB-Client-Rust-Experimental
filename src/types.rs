@@ -1418,16 +1418,18 @@ impl GossipSeed {
 /// Indicates which order of preferred nodes for connecting to.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum NodePreference {
-    /// When attempting connnection, prefers master node.
-    /// TODO - Not implemented yet.
-    Master,
+    /// When attempting connection, prefers leader nodes.
+    Leader,
 
-    /// When attempting connnection, prefers slave node.
-    /// TODO - Not implemented yet.
-    Slave,
+    /// When attempting connection, prefers follower nodes.
+    Follower,
 
-    /// When attempting connnection, has no node preference.
+    /// When attempting connection, has no node preference.
     Random,
+
+    #[cfg(feature = "es6")]
+    /// When attempting connection, prefers read-replica nodes.
+    ReadOnlyReplica,
 }
 
 impl std::fmt::Display for NodePreference {
@@ -1435,9 +1437,11 @@ impl std::fmt::Display for NodePreference {
         use self::NodePreference::*;
 
         match self {
-            Master => write!(f, "Master"),
-            Slave => write!(f, "Slave"),
+            Leader => write!(f, "Leader"),
+            Follower => write!(f, "Follower"),
             Random => write!(f, "Random"),
+            #[cfg(feature = "es6")]
+            ReadOnlyReplica => write!(f, "ReadOnlyReplica"),
         }
     }
 }

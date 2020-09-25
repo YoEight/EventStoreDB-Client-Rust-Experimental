@@ -30,6 +30,7 @@ pub mod es6 {
             "protos/es6/persistent.proto",
             "protos/es6/streams.proto",
             "protos/es6/shared.proto",
+            "protos/es6/gossip.proto"
         ];
 
         tonic_build::configure()

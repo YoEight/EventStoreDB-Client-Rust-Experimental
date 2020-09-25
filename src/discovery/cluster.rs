@@ -5,7 +5,9 @@ use futures::sink::SinkExt;
 use futures::stream::StreamExt;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
+use rand::RngCore;
 use rand::SeedableRng;
+use std::cmp::Ordering;
 use std::iter::FromIterator;
 use std::net::{AddrParseError, SocketAddr};
 use std::time::Duration;
@@ -262,6 +264,7 @@ struct Member {
     internal_secure_tcp: Option<SocketAddr>,
     internal_http: SocketAddr,
     state: VNodeState,
+    is_alive: bool,
 }
 
 fn addr_parse_error_to_io_error(error: AddrParseError) -> std::io::Error {
@@ -322,6 +325,7 @@ impl Member {
             internal_secure_tcp,
             internal_http,
             state: info.state,
+            is_alive: info.is_alive,
         };
 
         Ok(member)
@@ -409,19 +413,46 @@ fn determine_best_node(
         }
     }
 
-    let mut members: Vec<&Member> = members
+    let members = members
         .iter()
-        .filter(|member| allowed_states(member.state))
-        .collect();
+        .filter(|member| member.is_alive)
+        .filter(|member| allowed_states(member.state));
 
-    members.as_mut_slice().sort_by(|a, b| a.state.cmp(&b.state));
+    let member_opt = match preference {
+        NodePreference::Leader => members.min_by(|a, b| {
+            if a.state == VNodeState::Master {
+                return Ordering::Less;
+            }
 
-    //TODO - Implement other node preferences.
-    if let NodePreference::Random = preference {
-        members.shuffle(rng);
-    }
+            if b.state == VNodeState::Master {
+                return Ordering::Greater;
+            }
 
-    let member_opt = members.into_iter().next();
+            Ordering::Equal
+        }),
+
+        NodePreference::Follower => members.min_by(|a, b| {
+            if a.state == VNodeState::Master {
+                return Ordering::Less;
+            }
+
+            if b.state == VNodeState::Slave {
+                return Ordering::Greater;
+            }
+
+            Ordering::Equal
+        }),
+
+        NodePreference::Random => members.min_by(|_, _| {
+            if rng.next_u32() % 2 == 0 {
+                return Ordering::Greater;
+            }
+
+            Ordering::Less
+        }),
+
+        _ => unreachable!(),
+    };
 
     member_opt.map(|member| {
         info!(

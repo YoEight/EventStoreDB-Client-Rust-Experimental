@@ -1,23 +1,76 @@
-use std::time::Duration;
-
 use crate::es6::commands;
-use crate::es6::grpc::event_store::client::{persistent, streams};
-use crate::types::{self, Settings};
+use crate::{types, ClusterSettings};
 
+use crate::es6::connection_db::{
+    ClusterEventStoreDBConnection, ConnectionSettings, EventStoreDBConnection,
+    StaticEventStoreDBConnection,
+};
+use crate::es6::types::Endpoint;
 use http::uri::Uri;
-use tonic::transport::Channel;
 
-struct NoVerification;
+/// Helps constructing a connection to the server.
+#[derive(Clone, Default)]
+pub struct ConnectionBuilder {
+    setts: ConnectionSettings,
+}
 
-impl rustls::ServerCertVerifier for NoVerification {
-    fn verify_server_cert(
-        &self,
-        _roots: &rustls::RootCertStore,
-        _presented_certs: &[rustls::Certificate],
-        _dns_name: webpki::DNSNameRef,
-        _ocsp_response: &[u8],
-    ) -> Result<rustls::ServerCertVerified, rustls::TLSError> {
-        Ok(rustls::ServerCertVerified::assertion())
+impl ConnectionBuilder {
+    /// Return a connection builder.
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    /// 'Credentials' to use if other `Credentials` are not explicitly supplied
+    /// when issuing commands.
+    pub fn with_default_user(mut self, user: types::Credentials) -> Self {
+        self.setts.default_user_name = Some(user);
+        self
+    }
+
+    /// Disable the use of certificate validation.
+    ///
+    /// # Warning
+    ///
+    /// You should think very carefully before using this method. If
+    /// invalid certificates are trusted, *any* certificate for *any* site
+    /// will be trusted for use. This includes expired certificates. This
+    /// introduces significant vulnerabilities, and should only be used
+    /// as a last resort.
+    pub fn disable_server_certificate_validation(mut self) -> Self {
+        self.setts.disable_certs_validation = true;
+        self
+    }
+
+    /// Creates a connection to a single EventStore node. The connection will
+    /// start right away.
+    pub async fn single_node_connection(
+        self,
+        uri: Uri,
+    ) -> Result<Connection<StaticEventStoreDBConnection>, tonic::transport::Error> {
+        let endpoint = Endpoint {
+            host: uri.host().unwrap_or_default().to_string(),
+            port: uri.port_u16().unwrap_or_default() as u32,
+        };
+
+        let connection = StaticEventStoreDBConnection::create(self.setts.clone(), endpoint).await?;
+
+        Ok(Connection {
+            connection,
+            settings: self.setts,
+        })
+    }
+
+    /// Creates a connection to a cluster of EventStoreDB nodes.
+    pub fn cluster_nodes_connection(
+        self,
+        setts: ClusterSettings,
+    ) -> Connection<ClusterEventStoreDBConnection> {
+        let connection = ClusterEventStoreDBConnection::create(self.setts.clone(), setts);
+
+        Connection {
+            settings: self.setts,
+            connection,
+        }
     }
 }
 
@@ -34,166 +87,38 @@ impl rustls::ServerCertVerifier for NoVerification {
 /// performance out of the connection, it is generally recommended to use it
 /// in this way.
 #[derive(Clone)]
-pub struct Connection {
-    settings: Settings,
-    streams: streams::streams_client::StreamsClient<Channel>,
-    persistent: persistent::persistent_subscriptions_client::PersistentSubscriptionsClient<Channel>,
+pub struct Connection<C> {
+    connection: C,
+    settings: ConnectionSettings,
 }
 
-/// Helps constructing a connection to the server.
-pub struct ConnectionBuilder {
-    pub settings: Settings,
-    disable_certs_validation: bool,
-}
-
-impl ConnectionBuilder {
-    /// Maximum delay of inactivity before the client sends a heartbeat request.
-    pub fn heartbeat_delay(mut self, delay: Duration) -> Self {
-        self.settings.heartbeat_delay = delay;
-        self
-    }
-
-    /// Maximum delay the server has to issue a heartbeat response.
-    pub fn heartbeat_timeout(mut self, timeout: Duration) -> Self {
-        self.settings.heartbeat_timeout = timeout;
-        self
-    }
-
-    /// Delay in which an operation will be retried if no response arrived.
-    pub fn operation_timeout(mut self, timeout: Duration) -> Self {
-        self.settings.operation_timeout = timeout;
-        self
-    }
-
-    /// Retry strategy when an operation has timeout.
-    pub fn operation_retry(mut self, strategy: types::Retry) -> Self {
-        self.settings.operation_retry = strategy;
-        self
-    }
-
-    /// Retry strategy when failing to connect.
-    pub fn connection_retry(mut self, strategy: types::Retry) -> Self {
-        self.settings.connection_retry = strategy;
-        self
-    }
-
-    /// 'Credentials' to use if other `Credentials` are not explicitly supplied
-    /// when issuing commands.
-    pub fn with_default_user(mut self, user: types::Credentials) -> Self {
-        self.settings.default_user = Some(user);
-        self
-    }
-
-    /// Default connection name.
-    pub fn with_connection_name<S>(mut self, name: S) -> Self
-    where
-        S: AsRef<str>,
-    {
-        self.settings.connection_name = Some(name.as_ref().to_owned());
-        self
-    }
-
-    /// The period used to check pending command. Those checks include if the
-    /// the connection has timeout or if the command was issued with a
-    /// different connection.
-    pub fn operation_check_period(mut self, period: Duration) -> Self {
-        self.settings.operation_check_period = period;
-        self
-    }
-
-    /// Disable the use of certificate validation.
-    ///
-    /// # Warning
-    ///
-    /// You should think very carefully before using this method. If
-    /// invalid certificates are trusted, *any* certificate for *any* site
-    /// will be trusted for use. This includes expired certificates. This
-    /// introduces significant vulnerabilities, and should only be used
-    /// as a last resort.
-    pub fn disable_server_certificate_validation(mut self) -> Self {
-        self.disable_certs_validation = true;
-        self
-    }
-
-    /// Creates a connection to a single EventStore node. The connection will
-    /// start right away.
-    pub async fn single_node_connection(
-        self,
-        uri: Uri,
-    ) -> Result<Connection, Box<dyn std::error::Error>> {
-        Connection::initialize(self.settings, self.disable_certs_validation, uri).await
-    }
-}
-
-impl Connection {
-    /// Return a connection builder.
-    pub fn builder() -> ConnectionBuilder {
-        ConnectionBuilder {
-            settings: Default::default(),
-            disable_certs_validation: false,
-        }
-    }
-
-    async fn initialize(
-        settings: Settings,
-        disable_certs_validation: bool,
-        uri: http::uri::Uri,
-    ) -> Result<Connection, Box<dyn std::error::Error>> {
-        let mut channel = Channel::builder(uri);
-
-        if disable_certs_validation {
-            let mut rustls_config = rustls::ClientConfig::new();
-            let protocols = vec![(b"h2".to_vec())];
-
-            rustls_config.set_protocols(protocols.as_slice());
-
-            rustls_config
-                .dangerous()
-                .set_certificate_verifier(std::sync::Arc::new(NoVerification));
-
-            let client_config =
-                tonic::transport::ClientTlsConfig::new().rustls_client_config(rustls_config);
-
-            channel = channel.tls_config(client_config)?;
-        }
-
-        let channel = channel.connect().await?;
-
-        let conn = Connection {
-            settings,
-            streams: streams::streams_client::StreamsClient::new(channel.clone()),
-            persistent:
-                persistent::persistent_subscriptions_client::PersistentSubscriptionsClient::new(
-                    channel,
-                ),
-        };
-
-        Ok(conn)
-    }
-
+impl<C: EventStoreDBConnection> Connection<C> {
     /// Sends events to a given stream.
-    pub fn write_events(&self, stream: String) -> commands::WriteEvents {
+    pub fn write_events(&self, stream: String) -> commands::WriteEvents<C> {
         commands::WriteEvents::new(
-            self.streams.clone(),
+            self.connection.clone(),
             stream,
-            self.settings.default_user.clone(),
+            self.settings.default_user_name.clone(),
         )
     }
 
     /// Reads events from a given stream. The reading can be done forward and
     /// backward.
-    pub fn read_stream(&self, stream: String) -> commands::ReadStreamEvents {
+    pub fn read_stream(&self, stream: String) -> commands::ReadStreamEvents<C> {
         commands::ReadStreamEvents::new(
-            self.streams.clone(),
+            self.connection.clone(),
             stream,
-            self.settings.default_user.clone(),
+            self.settings.default_user_name.clone(),
         )
     }
 
     /// Reads events for the system stream `$all`. The reading can be done
     /// forward and backward.
-    pub fn read_all(&self) -> commands::ReadAllEvents {
-        commands::ReadAllEvents::new(self.streams.clone(), self.settings.default_user.clone())
+    pub fn read_all(&self) -> commands::ReadAllEvents<C> {
+        commands::ReadAllEvents::new(
+            self.connection.clone(),
+            self.settings.default_user_name.clone(),
+        )
     }
 
     /// Deletes a given stream. By default, the server performs a soft delete,
@@ -201,11 +126,11 @@ impl Connection {
     /// page.
     ///
     /// [Deleting stream and events]: https://eventstore.org/docs/server/deleting-streams-and-events/index.html
-    pub fn delete_stream(&self, stream: String) -> commands::DeleteStream {
+    pub fn delete_stream(&self, stream: String) -> commands::DeleteStream<C> {
         commands::DeleteStream::new(
-            self.streams.clone(),
+            self.connection.clone(),
             stream,
-            self.settings.default_user.clone(),
+            self.settings.default_user_name.clone(),
         )
     }
 
@@ -223,19 +148,22 @@ impl Connection {
     /// as the subscription is dropped or closed.
     ///
     /// [`subscribe_to_all_from`]: #method.subscribe_to_all_from
-    pub fn subscribe_to_stream_from(&self, stream: String) -> commands::RegularCatchupSubscribe {
+    pub fn subscribe_to_stream_from(&self, stream: String) -> commands::RegularCatchupSubscribe<C> {
         commands::RegularCatchupSubscribe::new(
-            self.streams.clone(),
+            self.connection.clone(),
             stream,
-            self.settings.default_user.clone(),
+            self.settings.default_user_name.clone(),
         )
     }
 
     /// Like [`subscribe_to_stream_from`] but specific to system `$all` stream.
     ///
     /// [`subscribe_to_stream_from`]: #method.subscribe_to_stream_from
-    pub fn subscribe_to_all_from(&self) -> commands::AllCatchupSubscribe {
-        commands::AllCatchupSubscribe::new(self.streams.clone(), self.settings.default_user.clone())
+    pub fn subscribe_to_all_from(&self) -> commands::AllCatchupSubscribe<C> {
+        commands::AllCatchupSubscribe::new(
+            self.connection.clone(),
+            self.settings.default_user_name.clone(),
+        )
     }
 
     /// Creates a persistent subscription group on a stream.
@@ -248,12 +176,12 @@ impl Connection {
         &self,
         stream_id: String,
         group_name: String,
-    ) -> commands::CreatePersistentSubscription {
+    ) -> commands::CreatePersistentSubscription<C> {
         commands::CreatePersistentSubscription::new(
-            self.persistent.clone(),
+            self.connection.clone(),
             stream_id,
             group_name,
-            self.settings.default_user.clone(),
+            self.settings.default_user_name.clone(),
         )
     }
 
@@ -262,12 +190,12 @@ impl Connection {
         &self,
         stream_id: String,
         group_name: String,
-    ) -> commands::UpdatePersistentSubscription {
+    ) -> commands::UpdatePersistentSubscription<C> {
         commands::UpdatePersistentSubscription::new(
-            self.persistent.clone(),
+            self.connection.clone(),
             stream_id,
             group_name,
-            self.settings.default_user.clone(),
+            self.settings.default_user_name.clone(),
         )
     }
 
@@ -276,12 +204,12 @@ impl Connection {
         &self,
         stream_id: String,
         group_name: String,
-    ) -> commands::DeletePersistentSubscription {
+    ) -> commands::DeletePersistentSubscription<C> {
         commands::DeletePersistentSubscription::new(
-            self.persistent.clone(),
+            self.connection.clone(),
             stream_id,
             group_name,
-            self.settings.default_user.clone(),
+            self.settings.default_user_name.clone(),
         )
     }
 
@@ -290,12 +218,12 @@ impl Connection {
         &self,
         stream_id: String,
         group_name: String,
-    ) -> commands::ConnectToPersistentSubscription {
+    ) -> commands::ConnectToPersistentSubscription<C> {
         commands::ConnectToPersistentSubscription::new(
-            self.persistent.clone(),
+            self.connection.clone(),
             stream_id,
             group_name,
-            self.settings.default_user.clone(),
+            self.settings.default_user_name.clone(),
         )
     }
 
