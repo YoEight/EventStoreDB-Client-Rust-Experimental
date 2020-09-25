@@ -955,23 +955,35 @@ pub mod es6 {
             .execute()
             .await?;
 
-        let mut count = 0usize;
-        let max = 5usize;
+        let max = 10usize;
 
-        while let Some(event) = read.try_next().await? {
-            write.ack_event(event).await?;
+        let handle = tokio::spawn(async move {
+            let mut count = 0usize;
+            while let Some(event) = read.try_next().await.unwrap() {
+                write.ack_event(event).await.unwrap();
 
-            count += 1;
+                count += 1;
 
-            if count == max {
-                break;
+                if count == max {
+                    break;
+                }
             }
-        }
+
+            count
+        });
+
+        let events = generate_events("es6-persistent-subscription-test".to_string(), 5);
+        let _ = connection
+            .write_events(stream_id.clone())
+            .send(stream::iter(events))
+            .await?;
+
+        let count = handle.await?;
 
         assert_eq!(
-            count, 5,
+            count, 10,
             "We are testing proper state after persistent subscription: got {} expected {}",
-            count, 5
+            count, 10
         );
 
         Ok(())
