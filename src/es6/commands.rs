@@ -17,7 +17,7 @@ use std::marker::Unpin;
 use streams::append_req::options::ExpectedStreamRevision;
 use streams::streams_client::StreamsClient;
 
-use tonic::transport::Channel;
+use crate::es6::connection_db::EventStoreDBConnection;
 use tonic::Request;
 
 fn convert_expected_version(version: ExpectedVersion) -> ExpectedStreamRevision {
@@ -399,21 +399,17 @@ impl FilterConf {
 }
 
 /// Command that sends events to a given stream.
-pub struct WriteEvents {
-    client: StreamsClient<Channel>,
+pub struct WriteEvents<C> {
+    connection: C,
     stream: String,
     version: ExpectedVersion,
     creds: Option<types::Credentials>,
 }
 
-impl WriteEvents {
-    pub(crate) fn new(
-        client: StreamsClient<Channel>,
-        stream: String,
-        creds: Option<types::Credentials>,
-    ) -> Self {
+impl<C: EventStoreDBConnection> WriteEvents<C> {
+    pub(crate) fn new(connection: C, stream: String, creds: Option<types::Credentials>) -> Self {
         WriteEvents {
-            client,
+            connection,
             stream,
             version: ExpectedVersion::Any,
             creds,
@@ -436,8 +432,8 @@ impl WriteEvents {
 
     /// Sends asynchronously the write command to the server.
     pub async fn send<S>(
-        mut self,
-        stream: S,
+        self,
+        events: S,
     ) -> Result<Result<WriteResult, WrongExpectedVersion>, tonic::Status>
     where
         S: Stream<Item = EventData> + Send + Sync + 'static,
@@ -445,76 +441,82 @@ impl WriteEvents {
         use streams::append_req::{self, Content};
         use streams::AppendReq;
 
-        let stream_identifier = Some(StreamIdentifier {
-            stream_name: self.stream.into_bytes(),
-        });
-        let header = Content::Options(append_req::Options {
-            stream_identifier,
-            expected_stream_revision: Some(convert_expected_version(self.version)),
-        });
-        let header = AppendReq {
-            content: Some(header),
-        };
-        let header = stream::once(async move { header });
-        let events = stream.map(convert_event_data);
-        let payload = header.chain(events);
+        let stream = self.stream;
+        let version = self.version;
+        let creds = self.creds;
 
-        let mut req = Request::new(payload);
+        self.connection.execute(move |channel| async move {
+            let stream_identifier = Some(StreamIdentifier {
+                stream_name: stream.into_bytes(),
+            });
+            let header = Content::Options(append_req::Options {
+                stream_identifier,
+                expected_stream_revision: Some(convert_expected_version(version)),
+            });
+            let header = AppendReq {
+                content: Some(header),
+            };
+            let header = stream::once(async move { header });
+            let events = events.map(convert_event_data);
+            let payload = header.chain(events);
+            let mut req = Request::new(payload);
 
-        configure_auth_req(&mut req, self.creds);
+            configure_auth_req(&mut req, creds);
 
-        let resp = self.client.append(req).await?.into_inner();
+            let mut client = StreamsClient::new(channel);
+            let resp = client.append(req).await?.into_inner();
 
-        match resp.result.unwrap() {
-            streams::append_resp::Result::Success(success) => {
-                let next_expected_version = match success.current_revision_option.unwrap() {
-                    streams::append_resp::success::CurrentRevisionOption::CurrentRevision(rev) => {
-                        rev
-                    }
-                    streams::append_resp::success::CurrentRevisionOption::NoStream(_) => 0,
-                };
+            match resp.result.unwrap() {
+                streams::append_resp::Result::Success(success) => {
+                    let next_expected_version = match success.current_revision_option.unwrap() {
+                        streams::append_resp::success::CurrentRevisionOption::CurrentRevision(rev) => {
+                            rev
+                        }
+                        streams::append_resp::success::CurrentRevisionOption::NoStream(_) => 0,
+                    };
 
-                let position = match success.position_option.unwrap() {
-                    streams::append_resp::success::PositionOption::Position(pos) => Position {
-                        commit: pos.commit_position,
-                        prepare: pos.prepare_position,
-                    },
+                    let position = match success.position_option.unwrap() {
+                        streams::append_resp::success::PositionOption::Position(pos) => Position {
+                            commit: pos.commit_position,
+                            prepare: pos.prepare_position,
+                        },
 
-                    streams::append_resp::success::PositionOption::NoPosition(_) => {
-                        Position::start()
-                    }
-                };
+                        streams::append_resp::success::PositionOption::NoPosition(_) => {
+                            Position::start()
+                        }
+                    };
 
-                let write_result = WriteResult {
-                    next_expected_version,
-                    position,
-                };
+                    let write_result = WriteResult {
+                        next_expected_version,
+                        position,
+                    };
 
-                Ok(Ok(write_result))
+                    Ok(Ok(write_result))
+                }
+
+                streams::append_resp::Result::WrongExpectedVersion(error) => {
+                    let current = match error.current_revision_option.unwrap() {
+                        streams::append_resp::wrong_expected_version::CurrentRevisionOption::CurrentRevision(rev) => crate::es6::types::CurrentRevision::Current(rev),
+                        streams::append_resp::wrong_expected_version::CurrentRevisionOption::NoStream(_) => crate::es6::types::CurrentRevision::NoStream,
+                    };
+
+                    let expected = match error.expected_revision_option.unwrap() {
+                        streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedRevision(rev) => ExpectedRevision::Expected(rev),
+                        streams::append_resp::wrong_expected_version::ExpectedRevisionOption::Any(_) => ExpectedRevision::Any,
+                        streams::append_resp::wrong_expected_version::ExpectedRevisionOption::StreamExists(_) => ExpectedRevision::StreamExists,
+                    };
+
+                    Ok(Err(WrongExpectedVersion { current, expected }))
+                }
             }
-
-            streams::append_resp::Result::WrongExpectedVersion(error) => {
-                let current = match error.current_revision_option.unwrap() {
-                    streams::append_resp::wrong_expected_version::CurrentRevisionOption::CurrentRevision(rev) => crate::es6::types::CurrentRevision::Current(rev),
-                    streams::append_resp::wrong_expected_version::CurrentRevisionOption::NoStream(_) => crate::es6::types::CurrentRevision::NoStream,
-                };
-
-                let expected = match error.expected_revision_option.unwrap() {
-                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedRevision(rev) => ExpectedRevision::Expected(rev),
-                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::Any(_) => ExpectedRevision::Any,
-                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::StreamExists(_) => ExpectedRevision::StreamExists,
-                };
-
-                Ok(Err(WrongExpectedVersion { current, expected }))
-            }
-        }
+        }).await
     }
 }
 
 /// A command that reads several events from a stream. It can read events
 /// forward or backward.
-pub struct ReadStreamEvents {
-    client: StreamsClient<Channel>,
+pub struct ReadStreamEvents<C> {
+    connection: C,
     stream: String,
     revision: Revision<u64>,
     resolve_link_tos: bool,
@@ -522,14 +524,10 @@ pub struct ReadStreamEvents {
     creds: Option<types::Credentials>,
 }
 
-impl ReadStreamEvents {
-    pub(crate) fn new(
-        client: StreamsClient<Channel>,
-        stream: String,
-        creds: Option<types::Credentials>,
-    ) -> Self {
+impl<C: EventStoreDBConnection> ReadStreamEvents<C> {
+    pub(crate) fn new(connection: C, stream: String, creds: Option<types::Credentials>) -> Self {
         ReadStreamEvents {
-            client,
+            connection,
             stream,
             revision: Revision::Start,
             resolve_link_tos: false,
@@ -609,7 +607,7 @@ impl ReadStreamEvents {
 
     /// Sends asynchronously the read command to the server.
     pub async fn execute(
-        mut self,
+        self,
         count: u64,
     ) -> Result<
         Box<dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin>,
@@ -659,17 +657,28 @@ impl ReadStreamEvents {
 
         configure_auth_req(&mut req, self.creds);
 
-        let stream = self.client.read(req).await?.into_inner();
-        let stream = stream.try_filter_map(|resp| {
-            let value = match resp.content.unwrap() {
-                streams::read_resp::Content::Event(event) => Some(convert_proto_read_event(event)),
-                _ => None,
-            };
+        self.connection
+            .execute(|channel| async {
+                let mut client = StreamsClient::new(channel);
+                let stream = client.read(req).await?.into_inner();
+                let stream = stream.try_filter_map(|resp| {
+                    let value = match resp.content.unwrap() {
+                        streams::read_resp::Content::Event(event) => {
+                            Some(convert_proto_read_event(event))
+                        }
+                        _ => None,
+                    };
 
-            futures::future::ok(value)
-        });
+                    futures::future::ok(value)
+                });
 
-        Ok(Box::new(stream))
+                let stream: Box<
+                    dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin,
+                > = Box::new(stream);
+
+                Ok(stream)
+            })
+            .await
     }
 
     /// Reads all the events of a stream.
@@ -684,21 +693,18 @@ impl ReadStreamEvents {
 }
 
 /// Like `ReadStreamEvents` but specialized to system stream '$all'.
-pub struct ReadAllEvents {
-    client: StreamsClient<Channel>,
+pub struct ReadAllEvents<C> {
+    connection: C,
     revision: Revision<Position>,
     resolve_link_tos: bool,
     direction: types::ReadDirection,
     creds: Option<types::Credentials>,
 }
 
-impl ReadAllEvents {
-    pub(crate) fn new(
-        client: StreamsClient<Channel>,
-        creds: Option<types::Credentials>,
-    ) -> ReadAllEvents {
+impl<C: EventStoreDBConnection> ReadAllEvents<C> {
+    pub(crate) fn new(connection: C, creds: Option<types::Credentials>) -> Self {
         ReadAllEvents {
-            client,
+            connection,
             revision: Revision::Start,
             resolve_link_tos: false,
             direction: types::ReadDirection::Forward,
@@ -776,7 +782,7 @@ impl ReadAllEvents {
 
     /// Sends asynchronously the read command to the server.
     pub async fn execute(
-        mut self,
+        self,
         count: u64,
     ) -> Result<
         Box<dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin>,
@@ -830,17 +836,28 @@ impl ReadAllEvents {
 
         configure_auth_req(&mut req, self.creds);
 
-        let stream = self.client.read(req).await?.into_inner();
-        let stream = stream.try_filter_map(|resp| {
-            let value = match resp.content.unwrap() {
-                streams::read_resp::Content::Event(event) => Some(convert_proto_read_event(event)),
-                _ => None,
-            };
+        self.connection
+            .execute(|channel| async {
+                let mut client = StreamsClient::new(channel);
+                let stream = client.read(req).await?.into_inner();
+                let stream = stream.try_filter_map(|resp| {
+                    let value = match resp.content.unwrap() {
+                        streams::read_resp::Content::Event(event) => {
+                            Some(convert_proto_read_event(event))
+                        }
+                        _ => None,
+                    };
 
-            futures::future::ok(value)
-        });
+                    futures::future::ok(value)
+                });
 
-        Ok(Box::new(stream))
+                let stream: Box<
+                    dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin,
+                > = Box::new(stream);
+
+                Ok(stream)
+            })
+            .await
     }
 
     /// Reads all the events of $all stream.
@@ -857,22 +874,18 @@ impl ReadAllEvents {
 /// Command that deletes a stream. More information on [Deleting stream and events].
 ///
 /// [Deleting stream and events]: https://eventstore.org/docs/server/deleting-streams-and-events/index.html
-pub struct DeleteStream {
-    client: StreamsClient<Channel>,
+pub struct DeleteStream<C> {
+    connection: C,
     stream: String,
     version: ExpectedVersion,
     creds: Option<types::Credentials>,
     hard_delete: bool,
 }
 
-impl DeleteStream {
-    pub(crate) fn new(
-        client: StreamsClient<Channel>,
-        stream: String,
-        creds: Option<types::Credentials>,
-    ) -> DeleteStream {
+impl<C: EventStoreDBConnection> DeleteStream<C> {
+    pub(crate) fn new(connection: C, stream: String, creds: Option<types::Credentials>) -> Self {
         DeleteStream {
-            client,
+            connection,
             stream,
             hard_delete: false,
             version: ExpectedVersion::Any,
@@ -920,7 +933,7 @@ impl DeleteStream {
     }
 
     /// Sends asynchronously the delete command to the server.
-    pub async fn execute(mut self) -> Result<Option<Position>, tonic::Status> {
+    pub async fn execute(self) -> Result<Option<Position>, tonic::Status> {
         if self.hard_delete {
             use streams::tombstone_req::options::ExpectedStreamRevision;
             use streams::tombstone_req::Options;
@@ -948,24 +961,29 @@ impl DeleteStream {
 
             configure_auth_req(&mut req, self.creds);
 
-            let result = self.client.tombstone(req).await?.into_inner();
+            self.connection
+                .execute(|channel| async {
+                    let mut client = StreamsClient::new(channel);
+                    let result = client.tombstone(req).await?.into_inner();
 
-            if let Some(opts) = result.position_option {
-                match opts {
-                    PositionOption::Position(pos) => {
-                        let pos = Position {
-                            commit: pos.commit_position,
-                            prepare: pos.prepare_position,
-                        };
+                    if let Some(opts) = result.position_option {
+                        match opts {
+                            PositionOption::Position(pos) => {
+                                let pos = Position {
+                                    commit: pos.commit_position,
+                                    prepare: pos.prepare_position,
+                                };
 
-                        Ok(Some(pos))
+                                Ok(Some(pos))
+                            }
+
+                            PositionOption::NoPosition(_) => Ok(None),
+                        }
+                    } else {
+                        Ok(None)
                     }
-
-                    PositionOption::NoPosition(_) => Ok(None),
-                }
-            } else {
-                Ok(None)
-            }
+                })
+                .await
         } else {
             use streams::delete_req::options::ExpectedStreamRevision;
             use streams::delete_req::Options;
@@ -993,24 +1011,29 @@ impl DeleteStream {
 
             configure_auth_req(&mut req, self.creds);
 
-            let result = self.client.delete(req).await?.into_inner();
+            self.connection
+                .execute(|channel| async {
+                    let mut client = StreamsClient::new(channel);
+                    let result = client.delete(req).await?.into_inner();
 
-            if let Some(opts) = result.position_option {
-                match opts {
-                    PositionOption::Position(pos) => {
-                        let pos = Position {
-                            commit: pos.commit_position,
-                            prepare: pos.prepare_position,
-                        };
+                    if let Some(opts) = result.position_option {
+                        match opts {
+                            PositionOption::Position(pos) => {
+                                let pos = Position {
+                                    commit: pos.commit_position,
+                                    prepare: pos.prepare_position,
+                                };
 
-                        Ok(Some(pos))
+                                Ok(Some(pos))
+                            }
+
+                            PositionOption::NoPosition(_) => Ok(None),
+                        }
+                    } else {
+                        Ok(None)
                     }
-
-                    PositionOption::NoPosition(_) => Ok(None),
-                }
-            } else {
-                Ok(None)
-            }
+                })
+                .await
         }
     }
 }
@@ -1035,22 +1058,22 @@ impl DeleteStream {
 /// subscription request.
 ///
 /// All this process happens without the user has to do anything.
-pub struct RegularCatchupSubscribe {
-    client: StreamsClient<Channel>,
+pub struct RegularCatchupSubscribe<C> {
+    connection: C,
     stream_id: String,
     resolve_link_tos: bool,
     revision: Option<u64>,
     creds_opt: Option<types::Credentials>,
 }
 
-impl RegularCatchupSubscribe {
+impl<C: EventStoreDBConnection> RegularCatchupSubscribe<C> {
     pub(crate) fn new(
-        client: StreamsClient<Channel>,
+        connection: C,
         stream_id: String,
         creds_opt: Option<types::Credentials>,
-    ) -> RegularCatchupSubscribe {
+    ) -> Self {
         RegularCatchupSubscribe {
-            client,
+            connection,
             stream_id,
             resolve_link_tos: false,
             revision: None,
@@ -1093,7 +1116,7 @@ impl RegularCatchupSubscribe {
     /// it will reach the head of stream, the command will emit a volatile
     /// subscription request.
     pub async fn execute(
-        mut self,
+        self,
     ) -> Result<
         Box<dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin>,
         tonic::Status,
@@ -1139,37 +1162,43 @@ impl RegularCatchupSubscribe {
 
         configure_auth_req(&mut req, self.creds_opt);
 
-        let stream = self.client.read(req).await?.into_inner();
-        let stream = stream.try_filter_map(|resp| {
-            match resp.content.unwrap() {
-                streams::read_resp::Content::Event(event) => {
-                    future::ok(Some(convert_proto_read_event(event)))
-                }
-                // TODO - We might end exposing when the subscription is confirmed by the server.
-                _ => future::ok(None),
-            }
-        });
+        self.connection
+            .execute(|channel| async {
+                let mut client = StreamsClient::new(channel);
+                let stream = client.read(req).await?.into_inner();
+                let stream = stream.try_filter_map(|resp| {
+                    match resp.content.unwrap() {
+                        streams::read_resp::Content::Event(event) => {
+                            future::ok(Some(convert_proto_read_event(event)))
+                        }
+                        // TODO - We might end exposing when the subscription is confirmed by the server.
+                        _ => future::ok(None),
+                    }
+                });
 
-        Ok(Box::new(stream))
+                let stream: Box<
+                    dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin,
+                > = Box::new(stream);
+
+                Ok(stream)
+            })
+            .await
     }
 }
 
 /// Like `RegularCatchupSubscribe` but specific to the system stream '$all'.
-pub struct AllCatchupSubscribe {
-    client: StreamsClient<Channel>,
+pub struct AllCatchupSubscribe<C> {
+    connection: C,
     resolve_link_tos: bool,
     revision: Option<Position>,
     creds_opt: Option<types::Credentials>,
     filter: Option<FilterConf>,
 }
 
-impl AllCatchupSubscribe {
-    pub(crate) fn new(
-        client: StreamsClient<Channel>,
-        creds_opt: Option<types::Credentials>,
-    ) -> AllCatchupSubscribe {
+impl<C: EventStoreDBConnection> AllCatchupSubscribe<C> {
+    pub(crate) fn new(connection: C, creds_opt: Option<types::Credentials>) -> Self {
         AllCatchupSubscribe {
-            client,
+            connection,
             resolve_link_tos: false,
             revision: None,
             filter: None,
@@ -1217,7 +1246,7 @@ impl AllCatchupSubscribe {
     /// it will reach the head of stream, the command will emit a volatile
     /// subscription request.
     pub async fn execute(
-        mut self,
+        self,
     ) -> Result<
         Box<dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin>,
         tonic::Status,
@@ -1272,39 +1301,48 @@ impl AllCatchupSubscribe {
 
         configure_auth_req(&mut req, self.creds_opt);
 
-        let stream = self.client.read(req).await?.into_inner();
-        let stream = stream.try_filter_map(|resp| {
-            match resp.content.unwrap() {
-                streams::read_resp::Content::Event(event) => {
-                    future::ok(Some(convert_proto_read_event(event)))
-                }
-                // TODO - We might end exposing when the subscription is confirmed by the server.
-                _ => future::ok(None),
-            }
-        });
+        self.connection
+            .execute(|channel| async {
+                let mut client = StreamsClient::new(channel);
+                let stream = client.read(req).await?.into_inner();
+                let stream = stream.try_filter_map(|resp| {
+                    match resp.content.unwrap() {
+                        streams::read_resp::Content::Event(event) => {
+                            future::ok(Some(convert_proto_read_event(event)))
+                        }
+                        // TODO - We might end exposing when the subscription is confirmed by the server.
+                        _ => future::ok(None),
+                    }
+                });
 
-        Ok(Box::new(stream))
+                let stream: Box<
+                    dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin,
+                > = Box::new(stream);
+
+                Ok(stream)
+            })
+            .await
     }
 }
 
 /// A command that creates a persistent subscription for a given group.
-pub struct CreatePersistentSubscription {
-    client: PersistentSubscriptionsClient<Channel>,
+pub struct CreatePersistentSubscription<C> {
+    connection: C,
     stream_id: String,
     group_name: String,
     sub_settings: PersistentSubscriptionSettings,
     creds: Option<types::Credentials>,
 }
 
-impl CreatePersistentSubscription {
+impl<C: EventStoreDBConnection> CreatePersistentSubscription<C> {
     pub(crate) fn new(
-        client: PersistentSubscriptionsClient<Channel>,
+        connection: C,
         stream_id: String,
         group_name: String,
         creds: Option<types::Credentials>,
-    ) -> CreatePersistentSubscription {
+    ) -> Self {
         CreatePersistentSubscription {
-            client,
+            connection,
             stream_id,
             group_name,
             creds,
@@ -1331,7 +1369,7 @@ impl CreatePersistentSubscription {
 
     /// Sends the persistent subscription creation command asynchronously to
     /// the server.
-    pub async fn execute(mut self) -> Result<(), tonic::Status> {
+    pub async fn execute(self) -> Result<(), tonic::Status> {
         use persistent::create_req::Options;
         use persistent::CreateReq;
 
@@ -1353,30 +1391,35 @@ impl CreatePersistentSubscription {
 
         configure_auth_req(&mut req, self.creds);
 
-        self.client.create(req).await?;
+        self.connection
+            .execute(|channel| async {
+                let mut client = PersistentSubscriptionsClient::new(channel);
+                client.create(req).await?;
 
-        Ok(())
+                Ok(())
+            })
+            .await
     }
 }
 
 /// Command that updates an already existing subscription's settings.
-pub struct UpdatePersistentSubscription {
-    client: PersistentSubscriptionsClient<Channel>,
+pub struct UpdatePersistentSubscription<C> {
+    connection: C,
     stream_id: String,
     group_name: String,
     sub_settings: PersistentSubscriptionSettings,
     creds: Option<types::Credentials>,
 }
 
-impl UpdatePersistentSubscription {
+impl<C: EventStoreDBConnection> UpdatePersistentSubscription<C> {
     pub(crate) fn new(
-        client: PersistentSubscriptionsClient<Channel>,
+        connection: C,
         stream_id: String,
         group_name: String,
         creds: Option<types::Credentials>,
-    ) -> UpdatePersistentSubscription {
+    ) -> Self {
         UpdatePersistentSubscription {
-            client,
+            connection,
             stream_id,
             group_name,
             creds,
@@ -1403,7 +1446,7 @@ impl UpdatePersistentSubscription {
 
     /// Sends the persistent subscription update command asynchronously to
     /// the server.
-    pub async fn execute(mut self) -> Result<(), tonic::Status> {
+    pub async fn execute(self) -> Result<(), tonic::Status> {
         use persistent::update_req::Options;
         use persistent::UpdateReq;
 
@@ -1425,29 +1468,34 @@ impl UpdatePersistentSubscription {
 
         configure_auth_req(&mut req, self.creds);
 
-        self.client.update(req).await?;
+        self.connection
+            .execute(|channel| async {
+                let mut client = PersistentSubscriptionsClient::new(channel);
+                client.update(req).await?;
 
-        Ok(())
+                Ok(())
+            })
+            .await
     }
 }
 
 /// Command that  deletes a persistent subscription.
-pub struct DeletePersistentSubscription {
-    client: PersistentSubscriptionsClient<Channel>,
+pub struct DeletePersistentSubscription<C> {
+    connection: C,
     stream_id: String,
     group_name: String,
     creds: Option<types::Credentials>,
 }
 
-impl DeletePersistentSubscription {
+impl<C: EventStoreDBConnection> DeletePersistentSubscription<C> {
     pub(crate) fn new(
-        client: PersistentSubscriptionsClient<Channel>,
+        connection: C,
         stream_id: String,
         group_name: String,
         creds: Option<types::Credentials>,
-    ) -> DeletePersistentSubscription {
+    ) -> Self {
         DeletePersistentSubscription {
-            client,
+            connection,
             stream_id,
             group_name,
             creds,
@@ -1464,7 +1512,7 @@ impl DeletePersistentSubscription {
 
     /// Sends the persistent subscription deletion command asynchronously to
     /// the server.
-    pub async fn execute(mut self) -> Result<(), tonic::Status> {
+    pub async fn execute(self) -> Result<(), tonic::Status> {
         use persistent::delete_req::Options;
 
         let stream_identifier = Some(StreamIdentifier {
@@ -1483,9 +1531,14 @@ impl DeletePersistentSubscription {
 
         configure_auth_req(&mut req, self.creds);
 
-        self.client.delete(req).await?;
+        self.connection
+            .execute(|channel| async {
+                let mut client = PersistentSubscriptionsClient::new(channel);
+                client.delete(req).await?;
 
-        Ok(())
+                Ok(())
+            })
+            .await
     }
 }
 
@@ -1493,23 +1546,23 @@ impl DeletePersistentSubscription {
 /// consumption of a stream. This allows for many different modes of operations
 /// compared to a regular subscription where the client hols the subscription
 /// state.
-pub struct ConnectToPersistentSubscription {
-    client: PersistentSubscriptionsClient<Channel>,
+pub struct ConnectToPersistentSubscription<C> {
+    connection: C,
     stream_id: String,
     group_name: String,
     batch_size: i32,
     creds: Option<types::Credentials>,
 }
 
-impl ConnectToPersistentSubscription {
+impl<C: EventStoreDBConnection> ConnectToPersistentSubscription<C> {
     pub(crate) fn new(
-        client: PersistentSubscriptionsClient<Channel>,
+        connection: C,
         stream_id: String,
         group_name: String,
         creds: Option<types::Credentials>,
-    ) -> ConnectToPersistentSubscription {
+    ) -> Self {
         ConnectToPersistentSubscription {
-            client,
+            connection,
             stream_id,
             group_name,
             batch_size: 10,
@@ -1532,7 +1585,7 @@ impl ConnectToPersistentSubscription {
 
     /// Sends the persistent subscription connection request to the server
     /// asynchronously even if the subscription is available right away.
-    pub async fn execute(mut self) -> Result<(SubscriptionRead, SubscriptionWrite), tonic::Status> {
+    pub async fn execute(self) -> Result<(SubscriptionRead, SubscriptionWrite), tonic::Status> {
         use futures::channel::mpsc;
         use futures::sink::SinkExt;
         use persistent::read_req::options::{self, UuidOption};
@@ -1565,35 +1618,43 @@ impl ConnectToPersistentSubscription {
         configure_auth_req(&mut req, self.creds.clone());
 
         let _ = sender.send(read_req).await;
-        let mut stream = self.client.read(req).await?.into_inner();
-        let mut sub_id_opt = None;
 
-        if let Some(evt) = stream.try_next().await? {
-            if let Some(content) = evt.content {
-                if let read_resp::Content::SubscriptionConfirmation(params) = content {
-                    sub_id_opt = Some(params.subscription_id);
+        self.connection
+            .execute(|channel| async {
+                let mut client = PersistentSubscriptionsClient::new(channel);
+                let mut stream = client.read(req).await?.into_inner();
+                let mut sub_id_opt = None;
+
+                if let Some(evt) = stream.try_next().await? {
+                    if let Some(content) = evt.content {
+                        if let read_resp::Content::SubscriptionConfirmation(params) = content {
+                            sub_id_opt = Some(params.subscription_id);
+                        }
+                    }
                 }
-            }
-        }
 
-        let stream = stream.try_filter_map(|resp| {
-            let ret = match resp
-                .content
-                .expect("Why response content wouldn't be defined?")
-            {
-                read_resp::Content::Event(evt) => Some(convert_persistent_proto_read_event(evt)),
-                _ => None,
-            };
+                let stream = stream.try_filter_map(|resp| {
+                    let ret = match resp
+                        .content
+                        .expect("Why response content wouldn't be defined?")
+                    {
+                        read_resp::Content::Event(evt) => {
+                            Some(convert_persistent_proto_read_event(evt))
+                        }
+                        _ => None,
+                    };
 
-            futures::future::ready(Ok(ret))
-        });
+                    futures::future::ready(Ok(ret))
+                });
 
-        let read = SubscriptionRead {
-            inner: Box::new(stream),
-        };
-        let write = SubscriptionWrite { sub_id_opt, sender };
+                let read = SubscriptionRead {
+                    inner: Box::new(stream),
+                };
+                let write = SubscriptionWrite { sub_id_opt, sender };
 
-        Ok((read, write))
+                Ok((read, write))
+            })
+            .await
     }
 }
 
