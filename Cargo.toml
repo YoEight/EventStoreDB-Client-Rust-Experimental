@@ -36,7 +36,7 @@ es6 = [
   "rustls",
   "webpki",
   "base64",
-  "async-trait"
+  "nom"
 ]
 tls = [
     "tokio-rustls",
@@ -69,7 +69,7 @@ webpki = { version = "0.21", optional = true }
 base64 = { version = "^0.11", optional = true }
 tokio-rustls = { version = "0.14", optional = true }
 trust-dns-resolver = "0.19"
-async-trait = { version = "0.1", optional = true }
+nom = { version = "5.1", optional = true }
 
 [build-dependencies]
 protoc-rust = "2.16"
@@ -81,6 +81,7 @@ name = "integration"
 [dev-dependencies]
 env_logger = "0.6"
 tokio-test = "0.2"
+toml = "0.5"
 
 [package.metadata.docs.rs]
 all-features = true

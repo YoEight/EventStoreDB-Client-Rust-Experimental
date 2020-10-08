@@ -23,6 +23,7 @@ impl Gossip {
     }
 
     pub async fn read(&self) -> Result<Vec<MemberInfo>, Status> {
+        debug!("Before reading gossip");
         let wire_members = self
             .inner
             .clone()
@@ -30,6 +31,7 @@ impl Gossip {
             .await?
             .into_inner()
             .members;
+        debug!("After receiving gossip");
 
         let mut members = Vec::with_capacity(wire_members.capacity());
         for wire_member in wire_members {
@@ -76,6 +78,7 @@ impl Gossip {
     }
 }
 
+#[derive(Debug)]
 pub struct MemberInfo {
     pub instance_id: Uuid,
     pub time_stamp: i64,
