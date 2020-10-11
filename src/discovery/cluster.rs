@@ -407,10 +407,10 @@ fn determine_best_node(
     members: &[Member],
 ) -> Option<NodeEndpoints> {
     fn allowed_states(state: VNodeState) -> bool {
-        match state {
-            VNodeState::Manager | VNodeState::ShuttingDown | VNodeState::Shutdown => false,
-            _ => true,
-        }
+        !matches!(
+            state,
+            VNodeState::Manager | VNodeState::ShuttingDown | VNodeState::Shutdown
+        )
     }
 
     let members = members

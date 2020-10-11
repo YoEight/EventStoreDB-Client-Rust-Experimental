@@ -17,7 +17,7 @@ use std::marker::Unpin;
 use streams::append_req::options::ExpectedStreamRevision;
 use streams::streams_client::StreamsClient;
 
-use crate::es6::connection_db::EventStoreDBConnection;
+use crate::es6::grpc_connection::GrpcConnection;
 use tonic::Request;
 
 fn convert_expected_version(version: ExpectedVersion) -> ExpectedStreamRevision {
@@ -399,15 +399,19 @@ impl FilterConf {
 }
 
 /// Command that sends events to a given stream.
-pub struct WriteEvents<C> {
-    connection: C,
+pub struct WriteEvents {
+    connection: GrpcConnection,
     stream: String,
     version: ExpectedVersion,
     creds: Option<types::Credentials>,
 }
 
-impl<C: EventStoreDBConnection> WriteEvents<C> {
-    pub(crate) fn new(connection: C, stream: String, creds: Option<types::Credentials>) -> Self {
+impl WriteEvents {
+    pub(crate) fn new(
+        connection: GrpcConnection,
+        stream: String,
+        creds: Option<types::Credentials>,
+    ) -> Self {
         WriteEvents {
             connection,
             stream,
@@ -515,8 +519,8 @@ impl<C: EventStoreDBConnection> WriteEvents<C> {
 
 /// A command that reads several events from a stream. It can read events
 /// forward or backward.
-pub struct ReadStreamEvents<C> {
-    connection: C,
+pub struct ReadStreamEvents {
+    connection: GrpcConnection,
     stream: String,
     revision: Revision<u64>,
     resolve_link_tos: bool,
@@ -524,8 +528,12 @@ pub struct ReadStreamEvents<C> {
     creds: Option<types::Credentials>,
 }
 
-impl<C: EventStoreDBConnection> ReadStreamEvents<C> {
-    pub(crate) fn new(connection: C, stream: String, creds: Option<types::Credentials>) -> Self {
+impl ReadStreamEvents {
+    pub(crate) fn new(
+        connection: GrpcConnection,
+        stream: String,
+        creds: Option<types::Credentials>,
+    ) -> Self {
         ReadStreamEvents {
             connection,
             stream,
@@ -693,16 +701,16 @@ impl<C: EventStoreDBConnection> ReadStreamEvents<C> {
 }
 
 /// Like `ReadStreamEvents` but specialized to system stream '$all'.
-pub struct ReadAllEvents<C> {
-    connection: C,
+pub struct ReadAllEvents {
+    connection: GrpcConnection,
     revision: Revision<Position>,
     resolve_link_tos: bool,
     direction: types::ReadDirection,
     creds: Option<types::Credentials>,
 }
 
-impl<C: EventStoreDBConnection> ReadAllEvents<C> {
-    pub(crate) fn new(connection: C, creds: Option<types::Credentials>) -> Self {
+impl ReadAllEvents {
+    pub(crate) fn new(connection: GrpcConnection, creds: Option<types::Credentials>) -> Self {
         ReadAllEvents {
             connection,
             revision: Revision::Start,
@@ -874,16 +882,20 @@ impl<C: EventStoreDBConnection> ReadAllEvents<C> {
 /// Command that deletes a stream. More information on [Deleting stream and events].
 ///
 /// [Deleting stream and events]: https://eventstore.org/docs/server/deleting-streams-and-events/index.html
-pub struct DeleteStream<C> {
-    connection: C,
+pub struct DeleteStream {
+    connection: GrpcConnection,
     stream: String,
     version: ExpectedVersion,
     creds: Option<types::Credentials>,
     hard_delete: bool,
 }
 
-impl<C: EventStoreDBConnection> DeleteStream<C> {
-    pub(crate) fn new(connection: C, stream: String, creds: Option<types::Credentials>) -> Self {
+impl DeleteStream {
+    pub(crate) fn new(
+        connection: GrpcConnection,
+        stream: String,
+        creds: Option<types::Credentials>,
+    ) -> Self {
         DeleteStream {
             connection,
             stream,
@@ -1058,17 +1070,17 @@ impl<C: EventStoreDBConnection> DeleteStream<C> {
 /// subscription request.
 ///
 /// All this process happens without the user has to do anything.
-pub struct RegularCatchupSubscribe<C> {
-    connection: C,
+pub struct RegularCatchupSubscribe {
+    connection: GrpcConnection,
     stream_id: String,
     resolve_link_tos: bool,
     revision: Option<u64>,
     creds_opt: Option<types::Credentials>,
 }
 
-impl<C: EventStoreDBConnection> RegularCatchupSubscribe<C> {
+impl RegularCatchupSubscribe {
     pub(crate) fn new(
-        connection: C,
+        connection: GrpcConnection,
         stream_id: String,
         creds_opt: Option<types::Credentials>,
     ) -> Self {
@@ -1187,16 +1199,16 @@ impl<C: EventStoreDBConnection> RegularCatchupSubscribe<C> {
 }
 
 /// Like `RegularCatchupSubscribe` but specific to the system stream '$all'.
-pub struct AllCatchupSubscribe<C> {
-    connection: C,
+pub struct AllCatchupSubscribe {
+    connection: GrpcConnection,
     resolve_link_tos: bool,
     revision: Option<Position>,
     creds_opt: Option<types::Credentials>,
     filter: Option<FilterConf>,
 }
 
-impl<C: EventStoreDBConnection> AllCatchupSubscribe<C> {
-    pub(crate) fn new(connection: C, creds_opt: Option<types::Credentials>) -> Self {
+impl AllCatchupSubscribe {
+    pub(crate) fn new(connection: GrpcConnection, creds_opt: Option<types::Credentials>) -> Self {
         AllCatchupSubscribe {
             connection,
             resolve_link_tos: false,
@@ -1326,17 +1338,17 @@ impl<C: EventStoreDBConnection> AllCatchupSubscribe<C> {
 }
 
 /// A command that creates a persistent subscription for a given group.
-pub struct CreatePersistentSubscription<C> {
-    connection: C,
+pub struct CreatePersistentSubscription {
+    connection: GrpcConnection,
     stream_id: String,
     group_name: String,
     sub_settings: PersistentSubscriptionSettings,
     creds: Option<types::Credentials>,
 }
 
-impl<C: EventStoreDBConnection> CreatePersistentSubscription<C> {
+impl CreatePersistentSubscription {
     pub(crate) fn new(
-        connection: C,
+        connection: GrpcConnection,
         stream_id: String,
         group_name: String,
         creds: Option<types::Credentials>,
@@ -1403,17 +1415,17 @@ impl<C: EventStoreDBConnection> CreatePersistentSubscription<C> {
 }
 
 /// Command that updates an already existing subscription's settings.
-pub struct UpdatePersistentSubscription<C> {
-    connection: C,
+pub struct UpdatePersistentSubscription {
+    connection: GrpcConnection,
     stream_id: String,
     group_name: String,
     sub_settings: PersistentSubscriptionSettings,
     creds: Option<types::Credentials>,
 }
 
-impl<C: EventStoreDBConnection> UpdatePersistentSubscription<C> {
+impl UpdatePersistentSubscription {
     pub(crate) fn new(
-        connection: C,
+        connection: GrpcConnection,
         stream_id: String,
         group_name: String,
         creds: Option<types::Credentials>,
@@ -1480,16 +1492,16 @@ impl<C: EventStoreDBConnection> UpdatePersistentSubscription<C> {
 }
 
 /// Command that  deletes a persistent subscription.
-pub struct DeletePersistentSubscription<C> {
-    connection: C,
+pub struct DeletePersistentSubscription {
+    connection: GrpcConnection,
     stream_id: String,
     group_name: String,
     creds: Option<types::Credentials>,
 }
 
-impl<C: EventStoreDBConnection> DeletePersistentSubscription<C> {
+impl DeletePersistentSubscription {
     pub(crate) fn new(
-        connection: C,
+        connection: GrpcConnection,
         stream_id: String,
         group_name: String,
         creds: Option<types::Credentials>,
@@ -1546,17 +1558,17 @@ impl<C: EventStoreDBConnection> DeletePersistentSubscription<C> {
 /// consumption of a stream. This allows for many different modes of operations
 /// compared to a regular subscription where the client hols the subscription
 /// state.
-pub struct ConnectToPersistentSubscription<C> {
-    connection: C,
+pub struct ConnectToPersistentSubscription {
+    connection: GrpcConnection,
     stream_id: String,
     group_name: String,
     batch_size: i32,
     creds: Option<types::Credentials>,
 }
 
-impl<C: EventStoreDBConnection> ConnectToPersistentSubscription<C> {
+impl ConnectToPersistentSubscription {
     pub(crate) fn new(
-        connection: C,
+        connection: GrpcConnection,
         stream_id: String,
         group_name: String,
         creds: Option<types::Credentials>,

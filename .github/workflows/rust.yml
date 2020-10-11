@@ -26,12 +26,12 @@ jobs:
       run: cargo check --all-features
       continue-on-error: ${{ matrix.rust == 'nightly' }}
   tests:
-    name: Tests on ES Stable
+    name: Tests on ES Version 5 (TCP)
     needs: build
     runs-on: ubuntu-18.04
     services:
       eventstore:
-        image: eventstore/eventstore:release-5.0.7
+        image: eventstore/eventstore:release-5.0.8
         env:
           EVENTSTORE_DEV: true
         ports:
@@ -43,20 +43,23 @@ jobs:
       run: RUST_BACKTRACE='1' RUST_LOG='eventstore=debug' cargo test
 
   tests-next:
-    name: Tests on 20.6.0 Stable
+    name: Tests on 20.6.1 (gRPC)
     needs: tests
     runs-on: ubuntu-18.04
     services:
       eventstore:
-        image: eventstore/eventstore:20.6.0-bionic
+        image: eventstore/eventstore:20.6.1-bionic
         env:
-          EVENTSTORE_DEV: true
+          EVENTSTORE_INSECURE: true
+          EVENTSTORE_MEMDB: true
         ports:
           - 2113:2113
     steps:
       - uses: actions/checkout@v1
       - name: Run Tests
-        run: RUST_BACKTRACE='1' RUST_LOG='integration=debug' cargo test --all-features es6::es6_20_6_test -- --exact --ignored
+        run: |
+          cargo test --package eventstore --lib es6::grpc_connection::test_connection_string --all-features -- --exact
+          RUST_BACKTRACE='1' RUST_LOG='integration=debug' cargo test --all-features es6::es6_20_6_test -- --exact --ignored
 
   linting:
     name: Linting

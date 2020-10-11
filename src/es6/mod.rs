@@ -2,7 +2,9 @@
 //! expect that interface to change. Enable `es6` feature flag to use it.
 pub mod commands;
 pub mod connection;
-pub mod connection_db;
 pub mod gossip;
 pub mod grpc;
+pub mod grpc_connection;
 pub mod types;
+pub use connection::EventStoreDBConnection;
+pub use grpc_connection::{ConnectionSettings, ConnectionSettingsParseError};

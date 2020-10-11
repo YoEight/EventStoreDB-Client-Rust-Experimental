@@ -9,7 +9,7 @@ use bytes::Bytes;
 use futures::channel::mpsc::Sender;
 use futures::sink::SinkExt;
 use protobuf::Chars;
-use serde::de::Deserialize;
+use serde::de::{Deserialize, Visitor};
 use serde::ser::Serialize;
 use uuid::Uuid;
 
@@ -18,6 +18,7 @@ use crate::internal::messages;
 use crate::internal::messaging::Msg;
 use crate::internal::package::Pkg;
 use futures::Stream;
+use serde::{Deserializer, Serializer};
 
 #[derive(Debug, Clone)]
 pub enum OperationError {
@@ -82,9 +83,18 @@ impl Retry {
 }
 
 /// Holds login and password information.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Credentials {
+    #[serde(
+        serialize_with = "serialize_creds_bytes",
+        deserialize_with = "deserialize_creds_bytes"
+    )]
     pub(crate) login: Bytes,
+
+    #[serde(
+        serialize_with = "serialize_creds_bytes",
+        deserialize_with = "deserialize_creds_bytes"
+    )]
     pub(crate) password: Bytes,
 }
 
@@ -103,6 +113,51 @@ impl Credentials {
     pub(crate) fn network_size(&self) -> usize {
         self.login.len() + self.password.len() + 2 // Including 2 length bytes.
     }
+}
+
+struct CredsVisitor;
+
+impl<'de> Visitor<'de> for CredsVisitor {
+    type Value = Bytes;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ASCII string")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(v.to_string().into())
+    }
+
+    fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(v.to_string().into())
+    }
+
+    fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(v.into())
+    }
+}
+
+fn serialize_creds_bytes<S>(value: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_bytes(value.as_ref())
+}
+
+fn deserialize_creds_bytes<'de, D>(deserializer: D) -> Result<Bytes, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_any(CredsVisitor)
 }
 
 /// Determines whether any link event encountered in the stream will be
@@ -738,10 +793,7 @@ pub enum Payload {
 
 impl Payload {
     pub fn is_json(&self) -> bool {
-        match *self {
-            Payload::Json(_) => true,
-            _ => false,
-        }
+        matches!(*self, Payload::Json(_))
     }
 
     pub fn into_inner(self) -> Bytes {
@@ -1311,10 +1363,7 @@ pub enum PersistActionResult {
 impl PersistActionResult {
     /// Checks if the persistent action succeeded.
     pub fn is_success(&self) -> bool {
-        match *self {
-            PersistActionResult::Success => true,
-            _ => false,
-        }
+        matches!(*self, PersistActionResult::Success)
     }
 
     /// Checks if the persistent action failed.
@@ -1416,7 +1465,7 @@ impl GossipSeed {
 }
 
 /// Indicates which order of preferred nodes for connecting to.
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum NodePreference {
     /// When attempting connection, prefers leader nodes.
     Leader,
@@ -1430,6 +1479,12 @@ pub enum NodePreference {
     #[cfg(feature = "es6")]
     /// When attempting connection, prefers read-replica nodes.
     ReadOnlyReplica,
+}
+
+impl Default for NodePreference {
+    fn default() -> Self {
+        NodePreference::Random
+    }
 }
 
 impl std::fmt::Display for NodePreference {
@@ -1465,6 +1520,7 @@ impl<A, B> Either<A, B> {
 pub(crate) struct DnsClusterSettings {
     pub(crate) resolver: trust_dns_resolver::TokioAsyncResolver,
     pub(crate) domain_name: trust_dns_resolver::Name,
+    pub(crate) gossip_port: u32,
 }
 
 pub type GossipSeeds = vec1::Vec1<GossipSeed>;
@@ -1503,6 +1559,7 @@ impl ClusterSettings {
         let conf = DnsClusterSettings {
             resolver,
             domain_name,
+            gossip_port: 2113,
         };
 
         ClusterSettings {

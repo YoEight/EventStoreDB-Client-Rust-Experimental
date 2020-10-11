@@ -347,7 +347,7 @@ impl std::fmt::Display for WrongExpectedVersion {
 
 impl std::error::Error for WrongExpectedVersion {}
 
-#[derive(Debug, Clone, Eq, Ord, PartialOrd, PartialEq)]
+#[derive(Debug, Clone, Eq, Ord, PartialOrd, PartialEq, Serialize, Deserialize)]
 pub struct Endpoint {
     pub host: String,
     pub port: u32,
