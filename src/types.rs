@@ -1,69 +1,15 @@
 //! Common types used across the library.
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::ops::Deref;
 use std::time::Duration;
 
 use bytes::Bytes;
-use futures::channel::mpsc::Sender;
-use futures::sink::SinkExt;
-use protobuf::Chars;
 use serde::de::{Deserialize, Visitor};
 use serde::ser::Serialize;
 use uuid::Uuid;
 
-use crate::internal::command::Cmd;
-use crate::internal::messages;
-use crate::internal::messaging::Msg;
-use crate::internal::package::Pkg;
 use futures::Stream;
 use serde::{Deserializer, Serializer};
-
-#[derive(Debug, Clone)]
-pub enum OperationError {
-    WrongExpectedVersion(String, ExpectedVersion),
-    StreamDeleted(String),
-    InvalidTransaction,
-    AccessDenied(String),
-    ProtobufDecodingError(String),
-    ServerError(Option<String>),
-    InvalidOperation(String),
-    StreamNotFound(String),
-    AuthenticationRequired,
-    Aborted,
-    WrongClientImpl(Option<Cmd>),
-    ConnectionHasDropped,
-    NotImplemented,
-    ConnectionClosed,
-}
-
-impl std::error::Error for OperationError {}
-
-impl std::fmt::Display for OperationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        use OperationError::*;
-
-        match self {
-            WrongExpectedVersion(stream, exp) => {
-                writeln!(f, "expected version {:?} for stream {}", exp, stream)
-            }
-            StreamDeleted(stream) => writeln!(f, "stream {} deleted", stream),
-            InvalidTransaction => writeln!(f, "invalid transaction"),
-            AccessDenied(info) => writeln!(f, "access denied: {}", info),
-            ProtobufDecodingError(error) => writeln!(f, "protobuf decoding error: {}", error),
-            ServerError(error) => writeln!(f, "server error: {:?}", error),
-            InvalidOperation(info) => writeln!(f, "invalid operation: {}", info),
-            StreamNotFound(stream) => writeln!(f, "stream {} not found", stream),
-            AuthenticationRequired => writeln!(f, "authentication required"),
-            Aborted => writeln!(f, "aborted"),
-            WrongClientImpl(info) => writeln!(f, "wrong client impl: {:?}", info),
-            ConnectionHasDropped => writeln!(f, "connection has dropped"),
-            NotImplemented => writeln!(f, "not implemented"),
-            ConnectionClosed => writeln!(f, "connection closed"),
-        }
-    }
-}
 
 /// Represents a reconnection strategy when a connection has dropped or is
 /// about to be created.
@@ -71,15 +17,6 @@ impl std::fmt::Display for OperationError {
 pub enum Retry {
     Undefinately,
     Only(usize),
-}
-
-impl Retry {
-    pub(crate) fn to_usize(self) -> usize {
-        match self {
-            Retry::Undefinately => usize::max_value(),
-            Retry::Only(x) => x,
-        }
-    }
 }
 
 /// Holds login and password information.
@@ -108,10 +45,6 @@ impl Credentials {
             login: login.into(),
             password: password.into(),
         }
-    }
-
-    pub(crate) fn network_size(&self) -> usize {
-        self.login.len() + self.password.len() + 2 // Including 2 length bytes.
     }
 }
 
@@ -176,95 +109,6 @@ impl LinkTos {
             LinkTos::NoResolution => false,
         }
     }
-
-    pub(crate) fn from_bool(raw: bool) -> LinkTos {
-        if raw {
-            LinkTos::ResolveLink
-        } else {
-            LinkTos::NoResolution
-        }
-    }
-}
-
-#[cfg(feature = "tls")]
-#[derive(Clone)]
-/// Settings to configure a secure connection for the TCP API.
-pub struct SecureSettings {
-    pub domain: webpki::DNSName,
-    pub rustls_config: rustls::ClientConfig,
-}
-
-#[cfg(feature = "tls")]
-impl SecureSettings {
-    /// Creates a default secure connection settings with a default `rustls::ClientConfig` configuration.
-    pub fn new(domain: webpki::DNSName) -> Self {
-        SecureSettings {
-            domain,
-            rustls_config: Default::default(),
-        }
-    }
-}
-
-/// Global connection settings.
-#[derive(Clone)]
-pub struct Settings {
-    /// Maximum delay of inactivity before the client sends a heartbeat request.
-    pub heartbeat_delay: Duration,
-
-    /// Maximum delay the server has to issue a heartbeat response.
-    pub heartbeat_timeout: Duration,
-
-    /// Delay in which an operation will be retried if no response arrived.
-    pub operation_timeout: Duration,
-
-    /// Retry strategy when an operation has timeout.
-    pub operation_retry: Retry,
-
-    /// Retry strategy when failing to connect.
-    pub connection_retry: Retry,
-
-    /// 'Credentials' to use if other `Credentials` are not explicitly supplied
-    /// when issuing commands.
-    pub default_user: Option<Credentials>,
-
-    /// Default connection name.
-    pub connection_name: Option<String>,
-
-    /// The period used to check pending command. Those checks include if the
-    /// the connection has timeout or if the command was issued with a
-    /// different connection.
-    pub operation_check_period: Duration,
-
-    /// Maximum delay to create a successful connection to a node.
-    pub connection_timeout: Duration,
-
-    /// Maximum delay to physically connect to a node. This property differs from
-    /// `connection_timeout` by referencing the delay to have a connected socket to a node, whereas
-    /// `connection_timeout` refers to the whole connection, validation included.
-    pub socket_connection_timeout: Duration,
-
-    #[cfg(feature = "tls")]
-    /// TLS configuration for secured connection.
-    pub tls_client_config: Option<SecureSettings>,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Settings {
-            heartbeat_delay: Duration::from_millis(750),
-            heartbeat_timeout: Duration::from_millis(1500),
-            operation_timeout: Duration::from_secs(7),
-            operation_retry: Retry::Only(3),
-            connection_retry: Retry::Only(3),
-            default_user: None,
-            connection_name: None,
-            operation_check_period: Duration::from_secs(1),
-            connection_timeout: Duration::from_secs(3),
-            socket_connection_timeout: Duration::from_secs(1),
-            #[cfg(feature = "tls")]
-            tls_client_config: None,
-        }
-    }
 }
 
 /// Constants used for expected version control.
@@ -290,27 +134,7 @@ pub enum ExpectedVersion {
 
     /// States that the last event written to the stream should have an event
     /// number matching your expected value.
-    Exact(i64),
-}
-
-impl ExpectedVersion {
-    pub(crate) fn to_i64(self) -> i64 {
-        match self {
-            ExpectedVersion::Any => -2,
-            ExpectedVersion::StreamExists => -4,
-            ExpectedVersion::NoStream => -1,
-            ExpectedVersion::Exact(n) => n,
-        }
-    }
-
-    pub(crate) fn from_i64(ver: i64) -> ExpectedVersion {
-        match ver {
-            -2 => ExpectedVersion::Any,
-            -4 => ExpectedVersion::StreamExists,
-            -1 => ExpectedVersion::NoStream,
-            _ => ExpectedVersion::Exact(ver),
-        }
-    }
+    Exact(u64),
 }
 
 /// A structure referring to a potential logical record position in the
@@ -318,26 +142,18 @@ impl ExpectedVersion {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Position {
     /// Commit position of the record.
-    pub commit: i64,
+    pub commit: u64,
 
     /// Prepare position of the record.
-    pub prepare: i64,
+    pub prepare: u64,
 }
 
 impl Position {
-    /// Points to the begin of the transaction file.
+    /// Points to the begin of the transaction file.
     pub fn start() -> Position {
         Position {
             commit: 0,
             prepare: 0,
-        }
-    }
-
-    /// Points to the end of the transaction file.
-    pub fn end() -> Position {
-        Position {
-            commit: -1,
-            prepare: -1,
         }
     }
 }
@@ -360,10 +176,17 @@ impl Ord for Position {
 #[derive(Debug)]
 pub struct WriteResult {
     /// Next expected version of the stream.
-    pub next_expected_version: i64,
+    pub next_expected_version: u64,
 
     /// `Position` of the write.
     pub position: Position,
+}
+
+#[derive(Debug)]
+pub enum Revision<A> {
+    Start,
+    End,
+    Exact(A),
 }
 
 /// Enumeration detailing the possible outcomes of reading a stream.
@@ -392,13 +215,13 @@ pub struct ReadEventResult {
 #[derive(Debug)]
 pub struct RecordedEvent {
     /// The event stream that events belongs to.
-    pub event_stream_id: String,
+    pub stream_id: String,
 
     /// Unique identifier representing this event.
-    pub event_id: Uuid,
+    pub id: Uuid,
 
     /// Number of this event in the stream.
-    pub event_number: i64,
+    pub revision: u64,
 
     /// Type of this event.
     pub event_type: String,
@@ -412,61 +235,11 @@ pub struct RecordedEvent {
     /// Indicates wheter the content is internally marked as JSON.
     pub is_json: bool,
 
-    /// Representing when this event was created in the database system.
-    /// TODO - Gives back an UTC time instead.
-    pub created: Option<i64>,
-
-    /// Representing when this event was created in the database system in
-    /// epoch time.
-    pub created_epoch: Option<i64>,
-}
-
-fn decode_bytes_error(err: uuid::Error) -> ::std::io::Error {
-    ::std::io::Error::new(::std::io::ErrorKind::Other, format!("BytesError {}", err))
+    /// An event position in the $all stream.
+    pub position: Position,
 }
 
 impl RecordedEvent {
-    pub(crate) fn new(mut event: messages::EventRecord) -> ::std::io::Result<RecordedEvent> {
-        let event_stream_id = event.take_event_stream_id().deref().to_owned();
-        let event_id = Uuid::from_slice(event.get_event_id()).map_err(decode_bytes_error)?;
-        let event_number = event.get_event_number();
-        let event_type = event.take_event_type().deref().to_owned();
-        let data = event.take_data();
-        let metadata = event.take_metadata();
-
-        let created = {
-            if event.has_created() {
-                Some(event.get_created())
-            } else {
-                None
-            }
-        };
-
-        let created_epoch = {
-            if event.has_created_epoch() {
-                Some(event.get_created_epoch())
-            } else {
-                None
-            }
-        };
-
-        let is_json = event.get_data_content_type() == 1;
-
-        let record = RecordedEvent {
-            event_stream_id,
-            event_id,
-            event_number,
-            event_type,
-            data,
-            metadata,
-            created,
-            created_epoch,
-            is_json,
-        };
-
-        Ok(record)
-    }
-
     /// Tries to decode this event payload as a JSON object.
     pub fn as_json<'a, T>(&'a self) -> serde_json::Result<T>
     where
@@ -486,78 +259,10 @@ pub struct ResolvedEvent {
     /// The link event if this `ResolvedEvent` is a link event.
     pub link: Option<RecordedEvent>,
 
-    /// Possible `Position` of that event in the server transaction file.
-    pub position: Option<Position>,
+    pub commit_position: Option<u64>,
 }
 
 impl ResolvedEvent {
-    pub(crate) fn new(mut msg: messages::ResolvedEvent) -> ::std::io::Result<ResolvedEvent> {
-        let event = {
-            if msg.has_event() {
-                let record = RecordedEvent::new(msg.take_event())?;
-                Ok(Some(record))
-            } else {
-                Ok::<Option<RecordedEvent>, ::std::io::Error>(None)
-            }
-        }?;
-
-        let link = {
-            if msg.has_link() {
-                let record = RecordedEvent::new(msg.take_link())?;
-                Ok(Some(record))
-            } else {
-                Ok::<Option<RecordedEvent>, ::std::io::Error>(None)
-            }
-        }?;
-
-        let position = Position {
-            commit: msg.get_commit_position(),
-            prepare: msg.get_prepare_position(),
-        };
-
-        let position = Some(position);
-
-        let resolved = ResolvedEvent {
-            event,
-            link,
-            position,
-        };
-
-        Ok(resolved)
-    }
-
-    pub(crate) fn new_from_indexed(
-        mut msg: messages::ResolvedIndexedEvent,
-    ) -> ::std::io::Result<ResolvedEvent> {
-        let event = {
-            if msg.has_event() {
-                let record = RecordedEvent::new(msg.take_event())?;
-                Ok(Some(record))
-            } else {
-                Ok::<Option<RecordedEvent>, ::std::io::Error>(None)
-            }
-        }?;
-
-        let link = {
-            if msg.has_link() {
-                let record = RecordedEvent::new(msg.take_link())?;
-                Ok(Some(record))
-            } else {
-                Ok::<Option<RecordedEvent>, ::std::io::Error>(None)
-            }
-        }?;
-
-        let position = None;
-
-        let resolved = ResolvedEvent {
-            event,
-            link,
-            position,
-        };
-
-        Ok(resolved)
-    }
-
     /// If it's a link event with its associated resolved event.
     pub fn is_resolved(&self) -> bool {
         self.event.is_some() && self.link.is_some()
@@ -565,7 +270,7 @@ impl ResolvedEvent {
 
     /// Returns the event that was read or which triggered the subscription.
     /// If this `ResolvedEvent` represents a link event, the link will be the
-    /// orginal event, otherwise it will be the event.
+    /// original event, otherwise it will be the event.
     ///
     pub fn get_original_event(&self) -> &RecordedEvent {
         self.link.as_ref().unwrap_or_else(|| {
@@ -579,7 +284,7 @@ impl ResolvedEvent {
     pub fn get_original_stream_id(&self) -> &str {
         let event = self.get_original_event();
 
-        event.event_stream_id.deref()
+        &event.stream_id
     }
 }
 
@@ -605,65 +310,12 @@ pub struct VersionedMetadata {
     pub metadata: StreamMetadata,
 }
 
-/// The id of a transaction.
-#[derive(PartialEq, Eq, Copy, Clone, Debug)]
-pub struct TransactionId(pub i64);
-
-impl TransactionId {
-    pub(crate) fn new(id: i64) -> TransactionId {
-        TransactionId(id)
-    }
-}
-
 /// Represents the direction of read operation (both from '$all' and a regular
 /// stream).
 #[derive(Copy, Clone, Debug)]
 pub enum ReadDirection {
     Forward,
     Backward,
-}
-
-/// Indicates either if we reach the end of a stream or a slice of events when
-/// reading a stream. `LocatedEvents` is polymorphic so it can be used by
-/// either '$all' stream (that requires `Position`) and regular stream that
-/// requires event sequence numer.
-#[derive(Debug)]
-pub enum LocatedEvents<A> {
-    /// Indicates the end of the stream has been reached.
-    EndOfStream,
-
-    /// Gives the read events and a possible starting position for the next
-    /// batch. if `next` is `None`, it means we have reached the end of the
-    /// stream.
-    Events {
-        events: Vec<ResolvedEvent>,
-        next: Option<A>,
-    },
-}
-
-impl<A> LocatedEvents<A> {
-    /// Indicates if we have reached the end of the stream we read.
-    pub fn is_end_of_stream(&self) -> bool {
-        match *self {
-            LocatedEvents::EndOfStream => true,
-            LocatedEvents::Events { ref next, .. } => next.is_some(),
-        }
-    }
-}
-
-/// Gathers common slice operations.
-pub trait Slice {
-    /// What kind of location this slice supports.
-    type Location: Copy;
-
-    /// Returns the starting point of that slice.
-    fn from(&self) -> Self::Location;
-
-    /// Returns the read direction used to fetch that slice.
-    fn direction(&self) -> ReadDirection;
-
-    /// Returns the events fetched by that slice.
-    fn events(self) -> LocatedEvents<Self::Location>;
 }
 
 /// Represents the errors that can arise when reading a stream.
@@ -681,109 +333,6 @@ pub enum ReadStreamError {
 pub enum ReadStreamStatus<A> {
     Success(A),
     Error(ReadStreamError),
-}
-
-/// Represents the slice returned when reading a regular stream.
-#[derive(Debug)]
-pub struct StreamSlice {
-    _from: i64,
-    _direction: ReadDirection,
-    _events: Vec<ResolvedEvent>,
-    _next_num_opt: Option<i64>,
-}
-
-impl StreamSlice {
-    pub(crate) fn new(
-        direction: ReadDirection,
-        from: i64,
-        events: Vec<ResolvedEvent>,
-        next_num_opt: Option<i64>,
-    ) -> StreamSlice {
-        StreamSlice {
-            _from: from,
-            _direction: direction,
-            _events: events,
-            _next_num_opt: next_num_opt,
-        }
-    }
-}
-
-impl Slice for StreamSlice {
-    type Location = i64;
-
-    fn from(&self) -> i64 {
-        self._from
-    }
-
-    fn direction(&self) -> ReadDirection {
-        self._direction
-    }
-
-    fn events(self) -> LocatedEvents<i64> {
-        if self._events.is_empty() {
-            LocatedEvents::EndOfStream
-        } else {
-            match self._next_num_opt {
-                None => LocatedEvents::Events {
-                    events: self._events,
-                    next: None,
-                },
-
-                Some(next_num) => LocatedEvents::Events {
-                    events: self._events,
-                    next: Some(next_num),
-                },
-            }
-        }
-    }
-}
-
-/// Represents a slice of the '$all' stream.
-#[derive(Debug)]
-pub struct AllSlice {
-    from: Position,
-    direction: ReadDirection,
-    events: Vec<ResolvedEvent>,
-    next: Position,
-}
-
-impl AllSlice {
-    pub(crate) fn new(
-        direction: ReadDirection,
-        from: Position,
-        events: Vec<ResolvedEvent>,
-        next: Position,
-    ) -> AllSlice {
-        AllSlice {
-            from,
-            direction,
-            events,
-            next,
-        }
-    }
-}
-
-impl Slice for AllSlice {
-    type Location = Position;
-
-    fn from(&self) -> Position {
-        self.from
-    }
-
-    fn direction(&self) -> ReadDirection {
-        self.direction
-    }
-
-    fn events(self) -> LocatedEvents<Position> {
-        if self.events.is_empty() {
-            LocatedEvents::EndOfStream
-        } else {
-            LocatedEvents::Events {
-                events: self.events,
-                next: Some(self.next),
-            }
-        }
-    }
 }
 
 pub enum Payload {
@@ -806,49 +355,43 @@ impl Payload {
 
 /// Holds data of event about to be sent to the server.
 pub struct EventData {
-    event_type: Chars,
-    payload: Payload,
-    id_opt: Option<Uuid>,
-    metadata_payload_opt: Option<Payload>,
-    enabled_guid: bool,
+    pub(crate) event_type: String,
+    pub(crate) payload: Payload,
+    pub(crate) id_opt: Option<Uuid>,
+    pub(crate) custom_metadata: Option<Payload>,
 }
 
 impl EventData {
-    /// Creates an event with a JSON payload.
-    pub fn json<P, S>(event_type: S, payload: P) -> serde_json::Result<EventData>
+    /// Creates an event with a JSON payload.
+    pub fn json<P>(event_type: String, payload: P) -> serde_json::Result<EventData>
     where
         P: Serialize,
-        S: AsRef<str>,
     {
-        let data = serde_json::to_vec(&payload)?;
-        let bytes = Bytes::from(data);
+        let payload = serde_json::to_vec(&payload)?;
+        let payload = Bytes::from(payload);
+        let payload = Payload::Json(payload);
 
         Ok(EventData {
-            event_type: event_type.as_ref().into(),
-            payload: Payload::Json(bytes),
+            event_type,
+            payload,
             id_opt: None,
-            metadata_payload_opt: None,
-            enabled_guid: false,
+            custom_metadata: None,
         })
     }
 
     /// Creates an event with a raw binary payload.
-    pub fn binary<S>(event_type: S, payload: Bytes) -> EventData
-    where
-        S: AsRef<str>,
-    {
+    pub fn binary<S>(event_type: String, payload: Bytes) -> Self {
         EventData {
-            event_type: event_type.as_ref().into(),
+            event_type,
             payload: Payload::Binary(payload),
             id_opt: None,
-            metadata_payload_opt: None,
-            enabled_guid: false,
+            custom_metadata: None,
         }
     }
 
     /// Set an id to this event. By default, the id will be generated by the
     /// server.
-    pub fn id(self, value: Uuid) -> EventData {
+    pub fn id(self, value: Uuid) -> Self {
         EventData {
             id_opt: Some(value),
             ..self
@@ -864,7 +407,7 @@ impl EventData {
         let json_bin = Some(Payload::Json(bytes));
 
         EventData {
-            metadata_payload_opt: json_bin,
+            custom_metadata: json_bin,
             ..self
         }
     }
@@ -874,59 +417,9 @@ impl EventData {
         let content_bin = Some(Payload::Binary(payload));
 
         EventData {
-            metadata_payload_opt: content_bin,
+            custom_metadata: content_bin,
             ..self
         }
-    }
-
-    /// Converts UUID into GUID. Useful if your database is primarily used by applications
-    /// supporting GUID instead of UUID, like in .NET ecosystem.
-    pub fn convert_uuid_to_guid(self) -> EventData {
-        EventData {
-            enabled_guid: true,
-            ..self
-        }
-    }
-
-    pub(crate) fn build(self) -> messages::NewEvent {
-        let mut new_event = messages::NewEvent::new();
-        let id = self.id_opt.unwrap_or_else(Uuid::new_v4);
-
-        if self.enabled_guid {
-            new_event.set_event_id(guid::from_uuid(id));
-        } else {
-            new_event.set_event_id(id.as_bytes().to_vec().into());
-        }
-
-        match self.payload {
-            Payload::Json(bin) => {
-                new_event.set_data_content_type(1);
-                new_event.set_data(bin);
-            }
-
-            Payload::Binary(bin) => {
-                new_event.set_data_content_type(0);
-                new_event.set_data(bin);
-            }
-        }
-
-        match self.metadata_payload_opt {
-            Some(Payload::Json(bin)) => {
-                new_event.set_metadata_content_type(1);
-                new_event.set_metadata(bin);
-            }
-
-            Some(Payload::Binary(bin)) => {
-                new_event.set_metadata_content_type(0);
-                new_event.set_metadata(bin);
-            }
-
-            None => new_event.set_metadata_content_type(0),
-        }
-
-        new_event.set_event_type(self.event_type);
-
-        new_event
     }
 }
 
@@ -1092,84 +585,6 @@ impl PersistentSubRead {
     }
 }
 
-/// Write part of a persistent subscription. Used to either acknowledge or report error on a persistent
-/// subscription.
-pub struct PersistentSubWrite {
-    pub(crate) sub_id: protobuf::Chars,
-    pub(crate) sender: Sender<Msg>,
-}
-
-impl PersistentSubWrite {
-    /// Acknowledges a batch of event ids have been processed successfully.
-    async fn ack<I>(&mut self, ids: I)
-    where
-        I: Iterator<Item = Uuid>,
-    {
-        let mut msg = messages::PersistentSubscriptionAckEvents::new();
-
-        msg.set_processed_event_ids(ids.map(|id| id.as_bytes().to_vec().into()).collect());
-        msg.set_subscription_id(self.sub_id.clone());
-
-        let pkg = Pkg::from_message(Cmd::PersistentSubscriptionAckEvents, None, &msg)
-            .expect("We expect serializing ack message will succeed");
-
-        let _ = self.sender.send(Msg::Send(pkg)).await;
-    }
-
-    /// Acknowledges a batch of event ids has failed during process.
-    async fn nak<I, S>(&mut self, ids: I, action: NakAction, reason: S)
-    where
-        I: Iterator<Item = Uuid>,
-        S: AsRef<str>,
-    {
-        let mut msg = messages::PersistentSubscriptionNakEvents::new();
-
-        msg.set_processed_event_ids(ids.map(|id| id.as_bytes().to_vec().into()).collect());
-        msg.set_subscription_id(self.sub_id.clone());
-        msg.set_message(reason.as_ref().into());
-        msg.set_action(action.build_internal_nak_action());
-
-        let pkg = Pkg::from_message(Cmd::PersistentSubscriptionNakEvents, None, &msg)
-            .expect("We expect serializing nak message will succeed");
-
-        let _ = self.sender.send(Msg::Send(pkg)).await;
-    }
-
-    /// Acknowledges a batch of `ResolvedEvent`s has been processed successfully.
-    pub async fn ack_events<I>(&mut self, events: I)
-    where
-        I: Iterator<Item = PersistentSubEvent>,
-    {
-        self.ack(events.map(|event| event.inner.get_original_event().event_id))
-            .await
-    }
-
-    /// Acknowledges a batch of `ResolvedEvent`'s has failed during process.
-    pub async fn nak_events<I, S>(&mut self, events: I, action: NakAction, reason: S)
-    where
-        I: Iterator<Item = PersistentSubEvent>,
-        S: AsRef<str>,
-    {
-        let ids = events.map(|event| event.inner.get_original_event().event_id);
-
-        self.nak(ids, action, reason).await
-    }
-
-    /// Acknowledges a `ResolvedEvent` has been processed successfully.
-    pub async fn ack_event(&mut self, event: PersistentSubEvent) {
-        self.ack_events(vec![event].into_iter()).await
-    }
-
-    /// Acknowledges a `ResolvedEvent` has failed during process.
-    pub async fn nak_event<S>(&mut self, event: PersistentSubEvent, action: NakAction, reason: S)
-    where
-        S: AsRef<str>,
-    {
-        self.nak_events(vec![event].into_iter(), action, reason)
-            .await
-    }
-}
-
 /// Events related to a subscription.
 pub enum SubEvent {
     /// Indicates the subscription has been confirmed by the server.
@@ -1183,26 +598,6 @@ pub enum SubEvent {
 
     /// Indicates the subscription has dropped.
     Dropped,
-}
-
-/// Helper function that filters out every subscription event that isn't an event notification.
-pub(crate) fn keep_subscription_events_only<S>(
-    stream: S,
-) -> impl Stream<Item = ResolvedEvent> + Send + Unpin
-where
-    S: Stream<Item = SubEvent> + Send + Unpin,
-{
-    use futures::stream::StreamExt;
-
-    stream.filter_map(|resp| {
-        let ret = match resp {
-            SubEvent::Confirmed { .. } => None,
-            SubEvent::Dropped => None,
-            SubEvent::EventAppeared { event, .. } => Some(*event),
-        };
-
-        futures::future::ready(ret)
-    })
 }
 
 #[derive(Debug)]
@@ -1228,18 +623,6 @@ pub enum NakAction {
 
     /// Stop the subscription.
     Stop,
-}
-
-impl NakAction {
-    fn build_internal_nak_action(self) -> messages::PersistentSubscriptionNakEvents_NakAction {
-        match self {
-            NakAction::Unknown => messages::PersistentSubscriptionNakEvents_NakAction::Unknown,
-            NakAction::Retry => messages::PersistentSubscriptionNakEvents_NakAction::Retry,
-            NakAction::Skip => messages::PersistentSubscriptionNakEvents_NakAction::Skip,
-            NakAction::Park => messages::PersistentSubscriptionNakEvents_NakAction::Park,
-            NakAction::Stop => messages::PersistentSubscriptionNakEvents_NakAction::Stop,
-        }
-    }
 }
 
 /// System supported consumer strategies for use with persistent subscriptions.
@@ -1268,25 +651,15 @@ pub enum SystemConsumerStrategy {
     Pinned,
 }
 
-impl SystemConsumerStrategy {
-    pub(crate) fn as_str(&self) -> &str {
-        match *self {
-            SystemConsumerStrategy::DispatchToSingle => "DispatchToSingle",
-            SystemConsumerStrategy::RoundRobin => "RoundRobin",
-            SystemConsumerStrategy::Pinned => "Pinned",
-        }
-    }
-}
-
 /// Gathers every persistent subscription property.
 #[derive(Debug, Clone, Copy)]
 pub struct PersistentSubscriptionSettings {
     /// Whether or not the persistent subscription shoud resolve 'linkTo'
     /// events to their linked events.
-    pub resolve_link_tos: bool,
+    pub resolve_links: bool,
 
     /// Where the subscription should start from (event number).
-    pub start_from: i64,
+    pub revision: u64,
 
     /// Whether or not in depth latency statistics should be tracked on this
     /// subscription.
@@ -1294,33 +667,33 @@ pub struct PersistentSubscriptionSettings {
 
     /// The amount of time after which a message should be considered to be
     /// timeout and retried.
-    pub msg_timeout: Duration,
+    pub message_timeout: Duration,
 
     /// The maximum number of retries (due to timeout) before a message get
     /// considered to be parked.
-    pub max_retry_count: u16,
+    pub max_retry_count: i32,
 
     /// The size of the buffer listenning to live messages as they happen.
-    pub live_buf_size: u16,
+    pub live_buffer_size: i32,
 
     /// The number of events read at a time when paging in history.
-    pub read_batch_size: u16,
+    pub read_batch_size: i32,
 
     /// The number of events to cache when paging through history.
-    pub history_buf_size: u16,
+    pub history_buffer_size: i32,
 
     /// The amount of time to try checkpoint after.
     pub checkpoint_after: Duration,
 
     /// The minimum number of messages to checkpoint.
-    pub min_checkpoint_count: u16,
+    pub min_checkpoint_count: i32,
 
     /// The maximum number of messages to checkpoint. If this number is reached
     /// , a checkpoint will be forced.
-    pub max_checkpoint_count: u16,
+    pub max_checkpoint_count: i32,
 
     /// The maximum number of subscribers allowed.
-    pub max_subs_count: u16,
+    pub max_subscriber_count: i32,
 
     /// The strategy to use for distributing events to client consumers.
     pub named_consumer_strategy: SystemConsumerStrategy,
@@ -1329,18 +702,18 @@ pub struct PersistentSubscriptionSettings {
 impl PersistentSubscriptionSettings {
     pub fn default() -> PersistentSubscriptionSettings {
         PersistentSubscriptionSettings {
-            resolve_link_tos: false,
-            start_from: -1, // Means the stream doesn't exist yet.
+            resolve_links: false,
+            revision: 0,
             extra_stats: false,
-            msg_timeout: Duration::from_secs(30),
+            message_timeout: Duration::from_secs(30),
             max_retry_count: 10,
-            live_buf_size: 500,
+            live_buffer_size: 500,
             read_batch_size: 20,
-            history_buf_size: 500,
+            history_buffer_size: 500,
             checkpoint_after: Duration::from_secs(2),
             min_checkpoint_count: 10,
-            max_checkpoint_count: 1000,
-            max_subs_count: 0, // Means their is no limit.
+            max_checkpoint_count: 1_000,
+            max_subscriber_count: 0, // Means their is no limit.
             named_consumer_strategy: SystemConsumerStrategy::RoundRobin,
         }
     }
@@ -1391,79 +764,6 @@ pub enum PersistActionError {
     AccessDenied,
 }
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub struct Endpoint {
-    pub addr: SocketAddr,
-}
-
-impl std::fmt::Display for Endpoint {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.addr)
-    }
-}
-
-impl Endpoint {
-    pub(crate) fn from_addr(addr: SocketAddr) -> Endpoint {
-        Endpoint { addr }
-    }
-}
-
-/// Represents a source of cluster gossip.
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub struct GossipSeed {
-    /// The endpoint for the external HTTP endpoint of the gossip seed. The
-    /// HTTP endpoint is used rather than the TCP endpoint because it is
-    /// required for the client to exchange gossip with the server.
-    /// standard port which should be used here in 2113.
-    pub(crate) endpoint: Endpoint,
-}
-
-impl std::fmt::Display for GossipSeed {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "endpoint: {}", self.endpoint.addr)
-    }
-}
-
-impl GossipSeed {
-    /// Creates a gossip seed.
-    pub fn new<A>(addrs: A) -> std::io::Result<GossipSeed>
-    where
-        A: ToSocketAddrs,
-    {
-        let mut iter = addrs.to_socket_addrs()?;
-
-        if let Some(addr) = iter.next() {
-            let endpoint = Endpoint { addr };
-
-            Ok(GossipSeed::from_endpoint(endpoint))
-        } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Failed to resolve socket address.",
-            ))
-        }
-    }
-
-    pub(crate) fn from_endpoint(endpoint: Endpoint) -> GossipSeed {
-        GossipSeed { endpoint }
-    }
-
-    pub(crate) fn from_socket_addr(addr: SocketAddr) -> GossipSeed {
-        GossipSeed::from_endpoint(Endpoint::from_addr(addr))
-    }
-
-    pub(crate) fn url(self) -> std::io::Result<reqwest::Url> {
-        let url_str = format!("http://{}/gossip?format=json", self.endpoint.addr);
-
-        reqwest::Url::parse(&url_str).map_err(|error| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!("Wrong url [{}]: {}", url_str, error),
-            )
-        })
-    }
-}
-
 /// Indicates which order of preferred nodes for connecting to.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum NodePreference {
@@ -1476,7 +776,6 @@ pub enum NodePreference {
     /// When attempting connection, has no node preference.
     Random,
 
-    #[cfg(feature = "es6")]
     /// When attempting connection, prefers read-replica nodes.
     ReadOnlyReplica,
 }
@@ -1495,7 +794,6 @@ impl std::fmt::Display for NodePreference {
             Leader => write!(f, "Leader"),
             Follower => write!(f, "Follower"),
             Random => write!(f, "Random"),
-            #[cfg(feature = "es6")]
             ReadOnlyReplica => write!(f, "ReadOnlyReplica"),
         }
     }
@@ -1523,131 +821,50 @@ pub(crate) struct DnsClusterSettings {
     pub(crate) gossip_port: u32,
 }
 
-pub type GossipSeeds = vec1::Vec1<GossipSeed>;
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+/// Actual revision of a stream.
+pub enum CurrentRevision {
+    /// The last event's number.
+    Current(u64),
 
-#[derive(Debug)]
-/// Contains settings related to a cluster of fixed nodes.
-pub struct ClusterSettings {
-    pub(crate) kind: Either<GossipSeeds, DnsClusterSettings>,
-    pub(crate) preference: NodePreference,
-    pub(crate) gossip_timeout: Duration,
-    pub(crate) max_discover_attempts: usize,
-    pub(crate) gossip_port: u16,
+    /// The stream doesn't exist.
+    NoStream,
 }
 
-impl ClusterSettings {
-    /// Creates a `ClusterSettings` from a non-empty list of gossip
-    /// seeds.  The connection will start right away. Those `GossipSeed` should be the external HTTP
-    /// endpoint of a node. The standard external HTTP endpoint is running on `2113`.
-    pub fn from_seeds(seeds: vec1::Vec1<GossipSeed>) -> Self {
-        ClusterSettings {
-            kind: Either::Left(seeds),
-            preference: NodePreference::Random,
-            gossip_timeout: Duration::from_secs(1),
-            max_discover_attempts: 10,
-            gossip_port: 2113,
-        }
-    }
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+/// Expected revision before a write occurs.
+pub enum ExpectedRevision {
+    /// States that the last event written to the stream should have an event number matching your
+    /// expected value.
+    Expected(u64),
 
-    /// Creates a `ClusterSettings` where nodes composing the cluster will be fetched through DNS
-    /// lookups. Will use 2113 as a default gossip port (default external HTTP port).
-    /// Ideal if you cluster composition changes over time.
-    pub fn from_dns(
-        resolver: trust_dns_resolver::TokioAsyncResolver,
-        domain_name: trust_dns_resolver::Name,
-    ) -> Self {
-        let conf = DnsClusterSettings {
-            resolver,
-            domain_name,
-            gossip_port: 2113,
-        };
+    /// You expected that write should not conflict with anything and should always succeed.
+    Any,
 
-        ClusterSettings {
-            kind: Either::Right(conf),
-            preference: NodePreference::Random,
-            gossip_timeout: Duration::from_secs(1),
-            max_discover_attempts: 10,
-            gossip_port: 2113,
-        }
-    }
+    /// You expected the stream should exist.
+    StreamExists,
+}
 
-    /// Maximum duration a node should take when requested a gossip request.
-    pub fn set_gossip_timeout(self, gossip_timeout: Duration) -> Self {
-        ClusterSettings {
-            gossip_timeout,
-            ..self
-        }
-    }
+#[derive(Clone, Debug, Copy, Eq, PartialEq)]
+pub struct WrongExpectedVersion {
+    pub current: CurrentRevision,
+    pub expected: ExpectedRevision,
+}
 
-    /// Maximum number of retries during a discovery process. Discovery process
-    /// is when the client tries to figure out the best node to connect to.
-    pub fn set_max_discover_attempts(self, max_attempt: usize) -> Self {
-        ClusterSettings {
-            max_discover_attempts: max_attempt,
-            ..self
-        }
-    }
-
-    /// Sets the well-known port on which the cluster gossip is taking place. Only used when using
-    /// the DNS configuration.
-    pub fn set_gossip_port(self, gossip_port: u16) -> Self {
-        ClusterSettings {
-            gossip_port,
-            ..self
-        }
+impl std::fmt::Display for WrongExpectedVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "WrongExpectedVersion: expected: {:?}, got: {:?}",
+            self.expected, self.current
+        )
     }
 }
 
-mod guid {
-    use bytes::Bytes;
-    use uuid::Uuid;
+impl std::error::Error for WrongExpectedVersion {}
 
-    pub(crate) fn from_uuid(uuid: Uuid) -> Bytes {
-        let b = uuid.as_bytes();
-
-        Bytes::from(vec![
-            b[3], b[2], b[1], b[0], b[5], b[4], b[7], b[6], b[8], b[9], b[10], b[11], b[12], b[13],
-            b[14], b[15],
-        ])
-    }
-
-    /// We don't use directly because it breaks application that doesn't use GUID by default. If you
-    /// are using Rust, it's very likely you don't use GUID. If your application requires to deal
-    /// with GUID, we suggest to deal it in your application directly.
-    fn _to_uuid(b: &[u8]) -> Result<Uuid, uuid::Error> {
-        Uuid::from_slice(&[
-            b[3], b[2], b[1], b[0], b[5], b[4], b[7], b[6], b[8], b[9], b[10], b[11], b[12], b[13],
-            b[14], b[15],
-        ])
-    }
-
-    #[cfg(test)]
-    mod test {
-        use bytes::Bytes;
-        use uuid::Uuid;
-
-        #[test]
-        fn test_from_uuid() {
-            let uuid = Uuid::from_bytes([
-                60, 213, 58, 216, 84, 211, 79, 74, 177, 22, 31, 9, 149, 122, 243, 48,
-            ]);
-            let expected_guid = Bytes::from_static(&[
-                216, 58, 213, 60, 211, 84, 74, 79, 177, 22, 31, 9, 149, 122, 243, 48,
-            ]);
-
-            assert_eq!(super::from_uuid(uuid), expected_guid);
-        }
-
-        #[test]
-        fn test_to_uuid() {
-            let guid = &[
-                216, 58, 213, 60, 211, 84, 74, 79, 177, 22, 31, 9, 149, 122, 243, 48,
-            ];
-            let expected_uuid = Uuid::from_bytes([
-                60, 213, 58, 216, 84, 211, 79, 74, 177, 22, 31, 9, 149, 122, 243, 48,
-            ]);
-
-            assert_eq!(super::_to_uuid(guid), Ok(expected_uuid));
-        }
-    }
+#[derive(Debug, Clone, Eq, Ord, PartialOrd, PartialEq, Serialize, Deserialize)]
+pub struct Endpoint {
+    pub host: String,
+    pub port: u32,
 }

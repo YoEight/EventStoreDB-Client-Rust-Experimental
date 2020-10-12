@@ -1,6 +1,6 @@
-use crate::es6::grpc::event_store::client::gossip as wire;
-use crate::es6::grpc::event_store::client::shared::{self, Empty};
-use crate::es6::types::Endpoint;
+use crate::event_store::client::gossip as wire;
+use crate::event_store::client::shared::{self, Empty};
+use crate::types::Endpoint;
 use tonic::transport::Channel;
 use tonic::{Request, Status};
 use uuid::Uuid;
@@ -23,7 +23,6 @@ impl Gossip {
     }
 
     pub async fn read(&self) -> Result<Vec<MemberInfo>, Status> {
-        debug!("Before reading gossip");
         let wire_members = self
             .inner
             .clone()
@@ -31,7 +30,6 @@ impl Gossip {
             .await?
             .into_inner()
             .members;
-        debug!("After receiving gossip");
 
         let mut members = Vec::with_capacity(wire_members.capacity());
         for wire_member in wire_members {

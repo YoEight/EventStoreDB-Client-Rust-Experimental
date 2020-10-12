@@ -4,12 +4,11 @@ use std::collections::HashMap;
 use futures::{stream, TryStreamExt};
 use futures::{Stream, StreamExt};
 
-use crate::es6::grpc::event_store::client::{persistent, shared, streams};
-use crate::es6::types::{
+use crate::event_store::client::{persistent, shared, streams};
+use crate::types::{
     EventData, ExpectedRevision, ExpectedVersion, PersistentSubscriptionSettings, Position,
-    RecordedEvent, ResolvedEvent, Revision, WriteResult, WrongExpectedVersion,
+    ReadDirection, RecordedEvent, ResolvedEvent, Revision, WriteResult, WrongExpectedVersion,
 };
-use crate::types;
 
 use persistent::persistent_subscriptions_client::PersistentSubscriptionsClient;
 use shared::{Empty, StreamIdentifier, Uuid};
@@ -17,7 +16,8 @@ use std::marker::Unpin;
 use streams::append_req::options::ExpectedStreamRevision;
 use streams::streams_client::StreamsClient;
 
-use crate::es6::grpc_connection::GrpcConnection;
+use crate::grpc_connection::GrpcConnection;
+use crate::{Credentials, CurrentRevision, LinkTos, NakAction, SystemConsumerStrategy};
 use tonic::Request;
 
 fn convert_expected_version(version: ExpectedVersion) -> ExpectedStreamRevision {
@@ -213,9 +213,9 @@ fn convert_settings_create(
     settings: PersistentSubscriptionSettings,
 ) -> persistent::create_req::Settings {
     let named_consumer_strategy = match settings.named_consumer_strategy {
-        types::SystemConsumerStrategy::DispatchToSingle => 0,
-        types::SystemConsumerStrategy::RoundRobin => 1,
-        types::SystemConsumerStrategy::Pinned => 2,
+        SystemConsumerStrategy::DispatchToSingle => 0,
+        SystemConsumerStrategy::RoundRobin => 1,
+        SystemConsumerStrategy::Pinned => 2,
     };
 
     persistent::create_req::Settings {
@@ -247,9 +247,9 @@ fn convert_settings_update(
     settings: PersistentSubscriptionSettings,
 ) -> persistent::update_req::Settings {
     let named_consumer_strategy = match settings.named_consumer_strategy {
-        types::SystemConsumerStrategy::DispatchToSingle => 0,
-        types::SystemConsumerStrategy::RoundRobin => 1,
-        types::SystemConsumerStrategy::Pinned => 2,
+        SystemConsumerStrategy::DispatchToSingle => 0,
+        SystemConsumerStrategy::RoundRobin => 1,
+        SystemConsumerStrategy::Pinned => 2,
     };
 
     persistent::update_req::Settings {
@@ -311,7 +311,7 @@ fn convert_persistent_proto_read_event(event: persistent::read_resp::ReadEvent) 
     }
 }
 
-fn configure_auth_req<A>(req: &mut Request<A>, creds_opt: Option<types::Credentials>) {
+fn configure_auth_req<A>(req: &mut Request<A>, creds_opt: Option<Credentials>) {
     use tonic::metadata::MetadataValue;
 
     if let Some(creds) = creds_opt {
@@ -403,14 +403,14 @@ pub struct WriteEvents {
     connection: GrpcConnection,
     stream: String,
     version: ExpectedVersion,
-    creds: Option<types::Credentials>,
+    creds: Option<Credentials>,
 }
 
 impl WriteEvents {
     pub(crate) fn new(
         connection: GrpcConnection,
         stream: String,
-        creds: Option<types::Credentials>,
+        creds: Option<Credentials>,
     ) -> Self {
         WriteEvents {
             connection,
@@ -421,13 +421,13 @@ impl WriteEvents {
     }
 
     /// Asks the server to check that the stream receiving the event is at
-    /// the given expected version. Default: `types::ExpectedVersion::Any`.
+    /// the given expected version. Default: `Credentials::Any`.
     pub fn expected_version(self, version: ExpectedVersion) -> Self {
         WriteEvents { version, ..self }
     }
 
     /// Performs the command with the given credentials.
-    pub fn credentials(self, creds: types::Credentials) -> Self {
+    pub fn credentials(self, creds: Credentials) -> Self {
         WriteEvents {
             creds: Some(creds),
             ..self
@@ -500,8 +500,8 @@ impl WriteEvents {
 
                 streams::append_resp::Result::WrongExpectedVersion(error) => {
                     let current = match error.current_revision_option.unwrap() {
-                        streams::append_resp::wrong_expected_version::CurrentRevisionOption::CurrentRevision(rev) => crate::es6::types::CurrentRevision::Current(rev),
-                        streams::append_resp::wrong_expected_version::CurrentRevisionOption::NoStream(_) => crate::es6::types::CurrentRevision::NoStream,
+                        streams::append_resp::wrong_expected_version::CurrentRevisionOption::CurrentRevision(rev) => CurrentRevision::Current(rev),
+                        streams::append_resp::wrong_expected_version::CurrentRevisionOption::NoStream(_) => CurrentRevision::NoStream,
                     };
 
                     let expected = match error.expected_revision_option.unwrap() {
@@ -524,22 +524,22 @@ pub struct ReadStreamEvents {
     stream: String,
     revision: Revision<u64>,
     resolve_link_tos: bool,
-    direction: types::ReadDirection,
-    creds: Option<types::Credentials>,
+    direction: ReadDirection,
+    creds: Option<Credentials>,
 }
 
 impl ReadStreamEvents {
     pub(crate) fn new(
         connection: GrpcConnection,
         stream: String,
-        creds: Option<types::Credentials>,
+        creds: Option<Credentials>,
     ) -> Self {
         ReadStreamEvents {
             connection,
             stream,
             revision: Revision::Start,
             resolve_link_tos: false,
-            direction: types::ReadDirection::Forward,
+            direction: ReadDirection::Forward,
             creds,
         }
     }
@@ -547,20 +547,20 @@ impl ReadStreamEvents {
     /// Asks the command to read forward (toward the end of the stream).
     /// That's the default behavior.
     pub fn forward(self) -> Self {
-        self.set_direction(types::ReadDirection::Forward)
+        self.set_direction(ReadDirection::Forward)
     }
 
     /// Asks the command to read backward (toward the begining of the stream).
     pub fn backward(self) -> Self {
-        self.set_direction(types::ReadDirection::Backward)
+        self.set_direction(ReadDirection::Backward)
     }
 
-    fn set_direction(self, direction: types::ReadDirection) -> Self {
+    fn set_direction(self, direction: ReadDirection) -> Self {
         ReadStreamEvents { direction, ..self }
     }
 
     /// Performs the command with the given credentials.
-    pub fn credentials(self, value: types::Credentials) -> Self {
+    pub fn credentials(self, value: Credentials) -> Self {
         ReadStreamEvents {
             creds: Some(value),
             ..self
@@ -568,7 +568,7 @@ impl ReadStreamEvents {
     }
 
     /// Performs the command with the given credentials.
-    pub fn set_credentials(self, creds: Option<types::Credentials>) -> Self {
+    pub fn set_credentials(self, creds: Option<Credentials>) -> Self {
         ReadStreamEvents { creds, ..self }
     }
 
@@ -586,7 +586,7 @@ impl ReadStreamEvents {
     pub fn start_from_beginning(self) -> Self {
         ReadStreamEvents {
             revision: Revision::Start,
-            direction: types::ReadDirection::Forward,
+            direction: ReadDirection::Forward,
             ..self
         }
     }
@@ -596,7 +596,7 @@ impl ReadStreamEvents {
     pub fn start_from_end_of_stream(self) -> Self {
         ReadStreamEvents {
             revision: Revision::End,
-            direction: types::ReadDirection::Backward,
+            direction: ReadDirection::Backward,
             ..self
         }
     }
@@ -604,7 +604,7 @@ impl ReadStreamEvents {
     /// When using projections, you can have links placed into another stream.
     /// If you set `true`, the server will resolve those links and will return
     /// the event that the link points to. Default: [NoResolution](../types/enum.LinkTos.html).
-    pub fn resolve_link_tos(self, tos: types::LinkTos) -> Self {
+    pub fn resolve_link_tos(self, tos: LinkTos) -> Self {
         let resolve_link_tos = tos.raw_resolve_lnk_tos();
 
         ReadStreamEvents {
@@ -626,8 +626,8 @@ impl ReadStreamEvents {
         use streams::read_req::Options;
 
         let read_direction = match self.direction {
-            types::ReadDirection::Forward => 0,
-            types::ReadDirection::Backward => 1,
+            ReadDirection::Forward => 0,
+            ReadDirection::Backward => 1,
         };
 
         let revision_option = match self.revision {
@@ -705,17 +705,17 @@ pub struct ReadAllEvents {
     connection: GrpcConnection,
     revision: Revision<Position>,
     resolve_link_tos: bool,
-    direction: types::ReadDirection,
-    creds: Option<types::Credentials>,
+    direction: ReadDirection,
+    creds: Option<Credentials>,
 }
 
 impl ReadAllEvents {
-    pub(crate) fn new(connection: GrpcConnection, creds: Option<types::Credentials>) -> Self {
+    pub(crate) fn new(connection: GrpcConnection, creds: Option<Credentials>) -> Self {
         ReadAllEvents {
             connection,
             revision: Revision::Start,
             resolve_link_tos: false,
-            direction: types::ReadDirection::Forward,
+            direction: ReadDirection::Forward,
             creds,
         }
     }
@@ -723,20 +723,20 @@ impl ReadAllEvents {
     /// Asks the command to read forward (toward the end of the stream).
     /// That's the default behavior.
     pub fn forward(self) -> Self {
-        self.set_direction(types::ReadDirection::Forward)
+        self.set_direction(ReadDirection::Forward)
     }
 
     /// Asks the command to read backward (toward the begining of the stream).
     pub fn backward(self) -> Self {
-        self.set_direction(types::ReadDirection::Backward)
+        self.set_direction(ReadDirection::Backward)
     }
 
-    fn set_direction(self, direction: types::ReadDirection) -> Self {
+    fn set_direction(self, direction: ReadDirection) -> Self {
         ReadAllEvents { direction, ..self }
     }
 
     /// Performs the command with the given credentials.
-    pub fn credentials(self, value: types::Credentials) -> Self {
+    pub fn credentials(self, value: Credentials) -> Self {
         ReadAllEvents {
             creds: Some(value),
             ..self
@@ -754,7 +754,7 @@ impl ReadAllEvents {
     /// direction to `Forward`.
     pub fn start_from_beginning(self) -> Self {
         let revision = Revision::Start;
-        let direction = types::ReadDirection::Forward;
+        let direction = ReadDirection::Forward;
 
         ReadAllEvents {
             revision,
@@ -767,7 +767,7 @@ impl ReadAllEvents {
     /// direction to `Backward`.
     pub fn start_from_end_of_stream(self) -> Self {
         let revision = Revision::End;
-        let direction = types::ReadDirection::Backward;
+        let direction = ReadDirection::Backward;
 
         ReadAllEvents {
             revision,
@@ -779,7 +779,7 @@ impl ReadAllEvents {
     /// When using projections, you can have links placed into another stream.
     /// If you set `true`, the server will resolve those links and will return
     /// the event that the link points to. Default: [NoResolution](../types/enum.LinkTos.html).
-    pub fn resolve_link_tos(self, tos: types::LinkTos) -> Self {
+    pub fn resolve_link_tos(self, tos: LinkTos) -> Self {
         let resolve_link_tos = tos.raw_resolve_lnk_tos();
 
         ReadAllEvents {
@@ -801,8 +801,8 @@ impl ReadAllEvents {
         use streams::read_req::Options;
 
         let read_direction = match self.direction {
-            types::ReadDirection::Forward => 0,
-            types::ReadDirection::Backward => 1,
+            ReadDirection::Forward => 0,
+            ReadDirection::Backward => 1,
         };
 
         let all_option = match self.revision {
@@ -886,7 +886,7 @@ pub struct DeleteStream {
     connection: GrpcConnection,
     stream: String,
     version: ExpectedVersion,
-    creds: Option<types::Credentials>,
+    creds: Option<Credentials>,
     hard_delete: bool,
 }
 
@@ -894,7 +894,7 @@ impl DeleteStream {
     pub(crate) fn new(
         connection: GrpcConnection,
         stream: String,
-        creds: Option<types::Credentials>,
+        creds: Option<Credentials>,
     ) -> Self {
         DeleteStream {
             connection,
@@ -906,13 +906,13 @@ impl DeleteStream {
     }
 
     /// Asks the server to check that the stream receiving the event is at
-    /// the given expected version. Default: `types::ExpectedVersion::Any`.
+    /// the given expected version. Default: `ExpectedVersion::Any`.
     pub fn expected_version(self, version: ExpectedVersion) -> Self {
         DeleteStream { version, ..self }
     }
 
     /// Performs the command with the given credentials.
-    pub fn credentials(self, value: types::Credentials) -> Self {
+    pub fn credentials(self, value: Credentials) -> Self {
         DeleteStream {
             creds: Some(value),
             ..self
@@ -1075,14 +1075,14 @@ pub struct RegularCatchupSubscribe {
     stream_id: String,
     resolve_link_tos: bool,
     revision: Option<u64>,
-    creds_opt: Option<types::Credentials>,
+    creds_opt: Option<Credentials>,
 }
 
 impl RegularCatchupSubscribe {
     pub(crate) fn new(
         connection: GrpcConnection,
         stream_id: String,
-        creds_opt: Option<types::Credentials>,
+        creds_opt: Option<Credentials>,
     ) -> Self {
         RegularCatchupSubscribe {
             connection,
@@ -1096,7 +1096,7 @@ impl RegularCatchupSubscribe {
     /// When using projections, you can have links placed into another stream.
     /// If you set `true`, the server will resolve those links and will return
     /// the event that the link points to. Default: [NoResolution](../types/enum.LinkTos.html).
-    pub fn resolve_link_tos(self, tos: types::LinkTos) -> Self {
+    pub fn resolve_link_tos(self, tos: LinkTos) -> Self {
         let resolve_link_tos = tos.raw_resolve_lnk_tos();
 
         RegularCatchupSubscribe {
@@ -1117,7 +1117,7 @@ impl RegularCatchupSubscribe {
     }
 
     /// Performs the command with the given credentials.
-    pub fn credentials(self, creds: types::Credentials) -> Self {
+    pub fn credentials(self, creds: Credentials) -> Self {
         RegularCatchupSubscribe {
             creds_opt: Some(creds),
             ..self
@@ -1203,12 +1203,12 @@ pub struct AllCatchupSubscribe {
     connection: GrpcConnection,
     resolve_link_tos: bool,
     revision: Option<Position>,
-    creds_opt: Option<types::Credentials>,
+    creds_opt: Option<Credentials>,
     filter: Option<FilterConf>,
 }
 
 impl AllCatchupSubscribe {
-    pub(crate) fn new(connection: GrpcConnection, creds_opt: Option<types::Credentials>) -> Self {
+    pub(crate) fn new(connection: GrpcConnection, creds_opt: Option<Credentials>) -> Self {
         AllCatchupSubscribe {
             connection,
             resolve_link_tos: false,
@@ -1221,7 +1221,7 @@ impl AllCatchupSubscribe {
     /// When using projections, you can have links placed into another stream.
     /// If you set `true`, the server will resolve those links and will return
     /// the event that the link points to. Default: [NoResolution](../types/enum.LinkTos.html).
-    pub fn resolve_link_tos(self, tos: types::LinkTos) -> Self {
+    pub fn resolve_link_tos(self, tos: LinkTos) -> Self {
         let resolve_link_tos = tos.raw_resolve_lnk_tos();
 
         AllCatchupSubscribe {
@@ -1239,7 +1239,7 @@ impl AllCatchupSubscribe {
     }
 
     /// Performs the command with the given credentials.
-    pub fn credentials(self, creds: types::Credentials) -> Self {
+    pub fn credentials(self, creds: Credentials) -> Self {
         AllCatchupSubscribe {
             creds_opt: Some(creds),
             ..self
@@ -1343,7 +1343,7 @@ pub struct CreatePersistentSubscription {
     stream_id: String,
     group_name: String,
     sub_settings: PersistentSubscriptionSettings,
-    creds: Option<types::Credentials>,
+    creds: Option<Credentials>,
 }
 
 impl CreatePersistentSubscription {
@@ -1351,7 +1351,7 @@ impl CreatePersistentSubscription {
         connection: GrpcConnection,
         stream_id: String,
         group_name: String,
-        creds: Option<types::Credentials>,
+        creds: Option<Credentials>,
     ) -> Self {
         CreatePersistentSubscription {
             connection,
@@ -1363,7 +1363,7 @@ impl CreatePersistentSubscription {
     }
 
     /// Performs the command with the given credentials.
-    pub fn credentials(self, creds: types::Credentials) -> Self {
+    pub fn credentials(self, creds: Credentials) -> Self {
         CreatePersistentSubscription {
             creds: Some(creds),
             ..self
@@ -1420,7 +1420,7 @@ pub struct UpdatePersistentSubscription {
     stream_id: String,
     group_name: String,
     sub_settings: PersistentSubscriptionSettings,
-    creds: Option<types::Credentials>,
+    creds: Option<Credentials>,
 }
 
 impl UpdatePersistentSubscription {
@@ -1428,7 +1428,7 @@ impl UpdatePersistentSubscription {
         connection: GrpcConnection,
         stream_id: String,
         group_name: String,
-        creds: Option<types::Credentials>,
+        creds: Option<Credentials>,
     ) -> Self {
         UpdatePersistentSubscription {
             connection,
@@ -1440,7 +1440,7 @@ impl UpdatePersistentSubscription {
     }
 
     /// Performs the command with the given credentials.
-    pub fn credentials(self, creds: types::Credentials) -> Self {
+    pub fn credentials(self, creds: Credentials) -> Self {
         UpdatePersistentSubscription {
             creds: Some(creds),
             ..self
@@ -1496,7 +1496,7 @@ pub struct DeletePersistentSubscription {
     connection: GrpcConnection,
     stream_id: String,
     group_name: String,
-    creds: Option<types::Credentials>,
+    creds: Option<Credentials>,
 }
 
 impl DeletePersistentSubscription {
@@ -1504,7 +1504,7 @@ impl DeletePersistentSubscription {
         connection: GrpcConnection,
         stream_id: String,
         group_name: String,
-        creds: Option<types::Credentials>,
+        creds: Option<Credentials>,
     ) -> Self {
         DeletePersistentSubscription {
             connection,
@@ -1515,7 +1515,7 @@ impl DeletePersistentSubscription {
     }
 
     /// Performs the command with the given credentials.
-    pub fn credentials(self, creds: types::Credentials) -> Self {
+    pub fn credentials(self, creds: Credentials) -> Self {
         DeletePersistentSubscription {
             creds: Some(creds),
             ..self
@@ -1563,7 +1563,7 @@ pub struct ConnectToPersistentSubscription {
     stream_id: String,
     group_name: String,
     batch_size: i32,
-    creds: Option<types::Credentials>,
+    creds: Option<Credentials>,
 }
 
 impl ConnectToPersistentSubscription {
@@ -1571,7 +1571,7 @@ impl ConnectToPersistentSubscription {
         connection: GrpcConnection,
         stream_id: String,
         group_name: String,
-        creds: Option<types::Credentials>,
+        creds: Option<Credentials>,
     ) -> Self {
         ConnectToPersistentSubscription {
             connection,
@@ -1583,7 +1583,7 @@ impl ConnectToPersistentSubscription {
     }
 
     /// Performs the command with the given credentials.
-    pub fn credentials(self, creds: types::Credentials) -> Self {
+    pub fn credentials(self, creds: Credentials) -> Self {
         ConnectToPersistentSubscription {
             creds: Some(creds),
             ..self
@@ -1727,7 +1727,7 @@ impl SubscriptionWrite {
     pub async fn nack<I>(
         &mut self,
         event_ids: I,
-        action: types::NakAction,
+        action: NakAction,
         reason: String,
     ) -> Result<(), tonic::Status>
     where
@@ -1740,11 +1740,11 @@ impl SubscriptionWrite {
         let ids = event_ids.map(to_proto_uuid).collect();
 
         let action = match action {
-            types::NakAction::Unknown => 0,
-            types::NakAction::Park => 1,
-            types::NakAction::Retry => 2,
-            types::NakAction::Skip => 3,
-            types::NakAction::Stop => 4,
+            NakAction::Unknown => 0,
+            NakAction::Park => 1,
+            NakAction::Retry => 2,
+            NakAction::Skip => 3,
+            NakAction::Stop => 4,
         };
 
         let nack = Nack {
