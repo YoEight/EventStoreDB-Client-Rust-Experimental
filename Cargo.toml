@@ -1,6 +1,6 @@
 [package]
 name = "eventstore"
-version = "0.8.2"
+version = "0.9.0"
 authors = ["Yorick Laupa <yo.eight@gmail.com>"]
 edition = "2018"
 
@@ -10,7 +10,7 @@ edition = "2018"
 # build = "codegen.rs"
 
 license = "MIT"
-description = "EventStore TCP client"
+description = "EventStoreDB gRPC client"
 repository = "https://github.com/YoEight/eventstore-rs"
 readme = "README.md"
 keywords = ["database", "eventsourcing", "event", "eventstore", "ges"]
@@ -24,33 +24,12 @@ exclude = [
 
 categories = ["database", "api-bindings"]
 
-[features]
-default = []
-es6 = [
-  "byteorder",
-  "http",
-  "tonic",
-  "prost",
-  "prost-derive",
-  "prost-types",
-  "rustls",
-  "webpki",
-  "base64",
-  "nom"
-]
-tls = [
-    "tokio-rustls",
-    "rustls",
-    "webpki"
-]
-
 [dependencies]
 tokio = { version = "0.2", features = ["net", "stream", "time"] }
 tokio-byteorder = "0.2"
 futures = "0.3"
 uuid = { version  = "0.8", features = [ "v4", "serde" ] }
 bytes = "0.5"
-protobuf = { version = "2.10", features = ["with-bytes"] }
 serde = "1.0"
 serde_json = "1.0"
 serde_derive = "1.0"
@@ -58,18 +37,17 @@ log = "0.4"
 reqwest = { version = "0.10", features = ["json"] }
 vec1 = "1.4"
 rand = { version = "0.7", features = ["getrandom", "small_rng"] }
-byteorder = { version = "1.2", optional = true }
-http = { version = "0.2", optional = true }
-tonic = { version = "0.3", features = ["tls", "tls-roots"], optional = true }
-prost = { version = "0.6", optional = true }
-prost-derive = { version = "0.6", optional = true }
-prost-types = { version = "0.6", optional = true }
-rustls = { version = "0.18", features = ["dangerous_configuration"], optional = true }
-webpki = { version = "0.21", optional = true }
-base64 = { version = "^0.11", optional = true }
-tokio-rustls = { version = "0.14", optional = true }
+byteorder = "1.2"
+http = "0.2"
+tonic = { version = "0.3", features = ["tls", "tls-roots"] }
+prost = "0.6"
+prost-derive = "0.6"
+prost-types = "0.6"
+rustls = { version = "0.18", features = ["dangerous_configuration"] }
+webpki = "0.21"
+base64 = "^0.11"
 trust-dns-resolver = "0.19"
-nom = { version = "5.1", optional = true }
+nom = "5.1"
 
 [build-dependencies]
 protoc-rust = "2.16"

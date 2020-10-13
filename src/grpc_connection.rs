@@ -1,5 +1,5 @@
-use crate::es6::gossip::{Gossip, MemberInfo, VNodeState};
-use crate::es6::types::Endpoint;
+use crate::gossip::{Gossip, MemberInfo, VNodeState};
+use crate::types::Endpoint;
 use crate::{Credentials, DnsClusterSettings, Either, NodePreference};
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;

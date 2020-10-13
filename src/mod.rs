@@ -3,8 +3,8 @@
 pub mod commands;
 pub mod connection;
 pub mod gossip;
-pub mod grpc;
 pub mod grpc_connection;
 pub mod types;
 pub use connection::EventStoreDBConnection;
 pub use grpc_connection::{ConnectionSettings, ConnectionSettingsParseError};
+pub mod event_store;
