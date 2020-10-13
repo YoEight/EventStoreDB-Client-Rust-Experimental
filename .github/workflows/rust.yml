@@ -29,18 +29,13 @@ jobs:
     name: Tests on 20.6.1 (gRPC)
     needs: build
     runs-on: ubuntu-18.04
-    services:
-      eventstore:
-        image: eventstore/eventstore:20.6.1-bionic
-        env:
-          EVENTSTORE_INSECURE: true
-          EVENTSTORE_MEMDB: true
-        ports:
-          - 2113:2113
+
     steps:
     - uses: actions/checkout@v1
     - name: Run Tests
-      run: RUST_BACKTRACE='1' RUST_LOG='eventstore=debug' cargo test
+      run: |
+        docker-compose up -d
+        RUST_BACKTRACE='1' RUST_LOG='integration=debug,eventstore=debug' cargo test
 
   linting:
     name: Linting
