@@ -305,13 +305,9 @@ async fn test_persistent_subscription(
 #[test]
 fn es6_20_6_test() {
     block_on(async {
-        use std::env;
-
-        let _ = env_logger::try_init();
-
-        let host = env::var("EVENTSTORE_HOST").unwrap_or("localhost".to_string());
-
-        let settings = format!("esdb://{}:2113?tls=false", host).parse::<ConnectionSettings>()?;
+        let _ = pretty_env_logger::try_init();
+        let settings = "esdb://admin:changeit@localhost:2111,localhost:2112,localhost:2113?tlsVerifyCert=false&nodePreference=leader"
+            .parse::<ConnectionSettings>()?;
 
         let connection = EventStoreDBConnection::create(settings).await?;
 

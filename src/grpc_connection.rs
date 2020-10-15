@@ -429,10 +429,9 @@ async fn cluster_mode_connection(
     };
 
     tokio::spawn(async move {
-        let node_selection_delay_on_error_in_ms = 500;
         let mut channel: Option<Channel> = None;
         let mut channel_id = Uuid::new_v4();
-        let failed_endpoint: Option<Endpoint> = None;
+        let mut failed_endpoint: Option<Endpoint> = None;
         let mut previous_candidates: Option<Vec<Member>> = None;
         let mut work_queue = Vec::new();
         let mut rng = SmallRng::from_entropy();
@@ -441,6 +440,7 @@ async fn cluster_mode_connection(
             work_queue.push(item);
 
             while let Some(msg) = work_queue.pop() {
+                debug!("Current msg: {:?}, rest: [{:?}]", msg, work_queue);
                 match msg {
                     Msg::GetChannel(resp) => {
                         if let Some(channel) = channel.as_ref() {
@@ -478,28 +478,26 @@ async fn cluster_mode_connection(
                         if let Some(node) = node {
                             match create_channel(&conn_setts, &node).await {
                                 Ok(new_channel) => {
+                                    failed_endpoint = Some(node);
                                     channel_id = Uuid::new_v4();
                                     channel = Some(new_channel);
+
+                                    continue;
                                 }
 
                                 Err(err) => {
                                     error!(
-                                        "Error when creating a gRPC channel to {:?}: {}",
+                                        "Error when creating a gRPC channel for selected node {:?}: {}",
                                         node, err
                                     );
-
-                                    tokio::time::delay_for(conn_setts.discovery_interval).await;
-                                    work_queue.push(Msg::CreateChannel(id, seed_opt));
                                 }
                             }
                         } else {
-                            error!("Unable to select a node. Retrying");
-                            tokio::time::delay_for(Duration::from_millis(
-                                node_selection_delay_on_error_in_ms,
-                            ))
-                            .await;
-                            work_queue.push(Msg::CreateChannel(id, seed_opt));
+                            warn!("Unable to select a node. Retrying...");
                         }
+
+                        tokio::time::delay_for(conn_setts.discovery_interval).await;
+                        work_queue.push(Msg::CreateChannel(id, seed_opt));
                     }
                 }
             }
@@ -768,7 +766,7 @@ async fn node_selection(
     for candidate in candidates {
         match create_channel(conn_setts, &candidate).await {
             Ok(channel) => {
-                let gossip_client = Gossip::create(channel);
+                let gossip_client = Gossip::create(channel.clone());
 
                 debug!("Calling gossip endpoint on: {:?}", candidate);
                 match gossip_client.read().await {
