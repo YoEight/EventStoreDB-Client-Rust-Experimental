@@ -48,8 +48,7 @@ trust-dns-resolver = "0.19"
 nom = "5.1"
 
 [build-dependencies]
-protoc-rust = "2.16"
-tonic-build = "0.2"
+tonic-build = { version = "0.3", features = ["prost"] }
 
 [[test]]
 name = "integration"
