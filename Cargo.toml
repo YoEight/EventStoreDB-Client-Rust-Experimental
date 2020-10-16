@@ -46,6 +46,7 @@ webpki = "0.21"
 base64 = "^0.11"
 trust-dns-resolver = "0.19"
 nom = "5.1"
+thiserror = "1.0"
 
 [build-dependencies]
 tonic-build = { version = "0.3", features = ["prost"] }

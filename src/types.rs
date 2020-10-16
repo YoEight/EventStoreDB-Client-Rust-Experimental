@@ -10,6 +10,8 @@ use uuid::Uuid;
 
 use futures::Stream;
 use serde::{Deserializer, Serializer};
+use thiserror::Error;
+use tonic::Status;
 
 /// Represents a reconnection strategy when a connection has dropped or is
 /// about to be created.
@@ -57,21 +59,21 @@ impl<'de> Visitor<'de> for CredsVisitor {
         write!(f, "ASCII string")
     }
 
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
     where
         E: serde::de::Error,
     {
         Ok(v.to_string().into())
     }
 
-    fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
+    fn visit_borrowed_str<E>(self, v: &'de str) -> std::result::Result<Self::Value, E>
     where
         E: serde::de::Error,
     {
         Ok(v.to_string().into())
     }
 
-    fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+    fn visit_string<E>(self, v: String) -> std::result::Result<Self::Value, E>
     where
         E: serde::de::Error,
     {
@@ -79,14 +81,14 @@ impl<'de> Visitor<'de> for CredsVisitor {
     }
 }
 
-fn serialize_creds_bytes<S>(value: &Bytes, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_creds_bytes<S>(value: &Bytes, serializer: S) -> std::result::Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
     serializer.serialize_bytes(value.as_ref())
 }
 
-fn deserialize_creds_bytes<'de, D>(deserializer: D) -> Result<Bytes, D::Error>
+fn deserialize_creds_bytes<'de, D>(deserializer: D) -> std::result::Result<Bytes, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -398,7 +400,7 @@ impl EventData {
         }
     }
 
-    /// Assignes a JSON metadata to this event.
+    /// Assigns a JSON metadata to this event.
     pub fn metadata_as_json<P>(self, payload: P) -> EventData
     where
         P: Serialize,
@@ -412,7 +414,7 @@ impl EventData {
         }
     }
 
-    /// Assignes a raw binary metadata to this event.
+    /// Assigns a raw binary metadata to this event.
     pub fn metadata_as_binary(self, payload: Bytes) -> EventData {
         let content_bin = Some(Payload::Binary(payload));
 
@@ -868,3 +870,50 @@ pub struct Endpoint {
     pub host: String,
     pub port: u32,
 }
+
+#[derive(Error, Debug)]
+/// EventStoreDB command error.
+pub enum Error {
+    #[error("Server-side error.")]
+    ServerError,
+    #[error("You tried to execute a command that requires a leader node on a follower node. New leader: ")]
+    NotLeaderException(Endpoint),
+    #[error("Connection is closed.")]
+    ConnectionClosed,
+    #[error("Unmapped gRPC error: {0}.")]
+    Grpc(Status),
+}
+
+impl Error {
+    pub fn from_grpc(status: Status) -> Self {
+        match status.code() {
+            tonic::Code::Unavailable => Error::ServerError,
+            _ => {
+                let metadata = status.metadata();
+                if let Some(tpe) = metadata.get("exception").and_then(|e| e.to_str().ok()) {
+                    if let "not-leader" = tpe {
+                        let endpoint = metadata
+                            .get("leader-endpoint-host")
+                            .zip(metadata.get("leader-endpoint-port"))
+                            .and_then(|(host, port)| {
+                                let host = host.to_str().ok()?;
+                                let port = port.to_str().ok()?;
+                                let host = host.to_string();
+                                let port = port.parse().ok()?;
+
+                                Some(Endpoint { host, port })
+                            });
+
+                        if let Some(leader) = endpoint {
+                            return Error::NotLeaderException(leader);
+                        }
+                    }
+                }
+
+                Error::Grpc(status)
+            }
+        }
+    }
+}
+
+pub type Result<A> = std::result::Result<A, Error>;
