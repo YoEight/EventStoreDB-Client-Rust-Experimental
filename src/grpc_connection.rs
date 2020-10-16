@@ -650,7 +650,7 @@ impl GrpcConnection {
         Ok(GrpcConnection { sender })
     }
 
-    pub async fn execute<F, Fut, A>(&self, action: F) -> Result<A, Status>
+    pub async fn execute<F, Fut, A>(&self, action: F) -> crate::Result<A>
     where
         F: FnOnce(Channel) -> Fut + Send,
         Fut: Future<Output = Result<A, Status>> + Send,
@@ -658,59 +658,51 @@ impl GrpcConnection {
     {
         let (sender, consumer) = futures::channel::oneshot::channel();
 
-        if self
-            .sender
-            .clone()
-            .send(Msg::GetChannel(sender))
-            .await
-            .is_err()
-        {
-            return Err(Status::aborted("Connection is closed"));
-        }
+        let _ = self.sender.clone().send(Msg::GetChannel(sender)).await;
 
-        // FIXME - Introduce a better error when the main connection has been closed.
-        let handle = consumer.await.unwrap()?;
+        let handle = match consumer.await {
+            Ok(handle) => handle.map_err(crate::Error::from_grpc),
+            Err(_) => Err(crate::Error::ConnectionClosed),
+        }?;
 
         match action(handle.channel).await {
             Err(status) => {
-                if status.code() == tonic::Code::Unavailable {
-                    let _ = self
-                        .sender
-                        .clone()
-                        .send(Msg::CreateChannel(handle.id, None))
-                        .await;
-                }
+                let err = crate::Error::from_grpc(status);
 
-                let leader_endpoint = status
-                    .metadata()
-                    .get("leader-endpoint-host")
-                    .zip(status.metadata().get("leader-endpoint-port"))
-                    .and_then(|(host, port)| {
-                        let host = host.to_str().ok()?;
-                        let port = port.to_str().ok()?;
-                        let host = host.to_string();
-                        let port = port.parse().ok()?;
+                match &err {
+                    crate::Error::ServerError => {
+                        error!(
+                            "Current selected EventStoreDB node gone unavailable. Starting node selection process"
+                        );
 
-                        Some(Endpoint { host, port })
-                    });
-
-                if let Some(leader) = leader_endpoint {
-                    if self
-                        .sender
-                        .clone()
-                        .send(Msg::CreateChannel(handle.id, Some(leader)))
-                        .await
-                        .is_err()
-                    {
-                        return Err(Status::aborted("Connection closed"));
+                        let _ = self
+                            .sender
+                            .clone()
+                            .send(Msg::CreateChannel(handle.id, None))
+                            .await;
                     }
 
-                    // FIXME - Return a very specific NotLeaderException.
-                    // FIXME - Consider returning a meaningful exception compare to tonic::Status.
-                    // FIXME - Consider an option so we can replay the command on behalf of the user.
+                    crate::Error::NotLeaderException(leader) => {
+                        let _ = self
+                            .sender
+                            .clone()
+                            .send(Msg::CreateChannel(handle.id, Some(leader.clone())))
+                            .await;
+
+                        warn!(
+                            "NotLeaderException found. Start reconnection process on: {:?}",
+                            leader
+                        );
+                    }
+
+                    crate::Error::Grpc(status) => {
+                        debug!("Map: {:?}", status.metadata());
+                    }
+
+                    _ => unreachable!(),
                 }
 
-                Err(status)
+                Err(err)
             }
 
             Ok(a) => Ok(a),

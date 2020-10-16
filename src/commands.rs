@@ -438,7 +438,7 @@ impl WriteEvents {
     pub async fn send<S>(
         self,
         events: S,
-    ) -> Result<Result<WriteResult, WrongExpectedVersion>, tonic::Status>
+    ) -> crate::Result<Result<WriteResult, WrongExpectedVersion>>
     where
         S: Stream<Item = EventData> + Send + Sync + 'static,
     {
@@ -617,10 +617,7 @@ impl ReadStreamEvents {
     pub async fn execute(
         self,
         count: u64,
-    ) -> Result<
-        Box<dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin>,
-        tonic::Status,
-    > {
+    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
         use streams::read_req::options::stream_options::RevisionOption;
         use streams::read_req::options::{self, StreamOption, StreamOptions};
         use streams::read_req::Options;
@@ -669,20 +666,21 @@ impl ReadStreamEvents {
             .execute(|channel| async {
                 let mut client = StreamsClient::new(channel);
                 let stream = client.read(req).await?.into_inner();
-                let stream = stream.try_filter_map(|resp| {
-                    let value = match resp.content.unwrap() {
-                        streams::read_resp::Content::Event(event) => {
-                            Some(convert_proto_read_event(event))
-                        }
-                        _ => None,
-                    };
+                let stream = stream
+                    .try_filter_map(|resp| {
+                        let value = match resp.content.unwrap() {
+                            streams::read_resp::Content::Event(event) => {
+                                Some(convert_proto_read_event(event))
+                            }
+                            _ => None,
+                        };
 
-                    futures::future::ok(value)
-                });
+                        futures::future::ok(value)
+                    })
+                    .map_err(crate::Error::from_grpc);
 
-                let stream: Box<
-                    dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin,
-                > = Box::new(stream);
+                let stream: Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin> =
+                    Box::new(stream);
 
                 Ok(stream)
             })
@@ -692,10 +690,7 @@ impl ReadStreamEvents {
     /// Reads all the events of a stream.
     pub async fn read_through(
         self,
-    ) -> Result<
-        Box<dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin>,
-        tonic::Status,
-    > {
+    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
         self.execute(u64::MAX).await
     }
 }
@@ -792,10 +787,7 @@ impl ReadAllEvents {
     pub async fn execute(
         self,
         count: u64,
-    ) -> Result<
-        Box<dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin>,
-        tonic::Status,
-    > {
+    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
         use streams::read_req::options::all_options::AllOption;
         use streams::read_req::options::{self, AllOptions, StreamOption};
         use streams::read_req::Options;
@@ -848,20 +840,21 @@ impl ReadAllEvents {
             .execute(|channel| async {
                 let mut client = StreamsClient::new(channel);
                 let stream = client.read(req).await?.into_inner();
-                let stream = stream.try_filter_map(|resp| {
-                    let value = match resp.content.unwrap() {
-                        streams::read_resp::Content::Event(event) => {
-                            Some(convert_proto_read_event(event))
-                        }
-                        _ => None,
-                    };
+                let stream = stream
+                    .try_filter_map(|resp| {
+                        let value = match resp.content.unwrap() {
+                            streams::read_resp::Content::Event(event) => {
+                                Some(convert_proto_read_event(event))
+                            }
+                            _ => None,
+                        };
 
-                    futures::future::ok(value)
-                });
+                        futures::future::ok(value)
+                    })
+                    .map_err(crate::Error::from_grpc);
 
-                let stream: Box<
-                    dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin,
-                > = Box::new(stream);
+                let stream: Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin> =
+                    Box::new(stream);
 
                 Ok(stream)
             })
@@ -871,10 +864,7 @@ impl ReadAllEvents {
     /// Reads all the events of $all stream.
     pub async fn read_through(
         self,
-    ) -> Result<
-        Box<dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin>,
-        tonic::Status,
-    > {
+    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
         self.execute(u64::MAX).await
     }
 }
@@ -945,7 +935,7 @@ impl DeleteStream {
     }
 
     /// Sends asynchronously the delete command to the server.
-    pub async fn execute(self) -> Result<Option<Position>, tonic::Status> {
+    pub async fn execute(self) -> crate::Result<Option<Position>> {
         if self.hard_delete {
             use streams::tombstone_req::options::ExpectedStreamRevision;
             use streams::tombstone_req::Options;
@@ -1107,7 +1097,7 @@ impl RegularCatchupSubscribe {
 
     /// For example, if a starting point of 50 is specified when a stream has
     /// 100 events in it, the subscriber can expect to see events 51 through
-    /// 100, and then any events subsequenttly written events until such time
+    /// 100, and then any events subsequently written events until such time
     /// as the subscription is dropped or closed.
     ///
     /// By default, it will start from the event number 0.
@@ -1124,15 +1114,10 @@ impl RegularCatchupSubscribe {
         }
     }
 
-    /// Preforms the catching up phase of the subscription asynchronously. When
-    /// it will reach the head of stream, the command will emit a volatile
-    /// subscription request.
+    /// Runs the subscription command.
     pub async fn execute(
         self,
-    ) -> Result<
-        Box<dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin>,
-        tonic::Status,
-    > {
+    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
         use futures::future;
         use streams::read_req::options::stream_options::RevisionOption;
         use streams::read_req::options::{self, StreamOption, StreamOptions, SubscriptionOptions};
@@ -1178,19 +1163,20 @@ impl RegularCatchupSubscribe {
             .execute(|channel| async {
                 let mut client = StreamsClient::new(channel);
                 let stream = client.read(req).await?.into_inner();
-                let stream = stream.try_filter_map(|resp| {
-                    match resp.content.unwrap() {
-                        streams::read_resp::Content::Event(event) => {
-                            future::ok(Some(convert_proto_read_event(event)))
+                let stream = stream
+                    .try_filter_map(|resp| {
+                        match resp.content.unwrap() {
+                            streams::read_resp::Content::Event(event) => {
+                                future::ok(Some(convert_proto_read_event(event)))
+                            }
+                            // TODO - We might end exposing when the subscription is confirmed by the server.
+                            _ => future::ok(None),
                         }
-                        // TODO - We might end exposing when the subscription is confirmed by the server.
-                        _ => future::ok(None),
-                    }
-                });
+                    })
+                    .map_err(crate::Error::from_grpc);
 
-                let stream: Box<
-                    dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin,
-                > = Box::new(stream);
+                let stream: Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin> =
+                    Box::new(stream);
 
                 Ok(stream)
             })
@@ -1259,10 +1245,7 @@ impl AllCatchupSubscribe {
     /// subscription request.
     pub async fn execute(
         self,
-    ) -> Result<
-        Box<dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin>,
-        tonic::Status,
-    > {
+    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
         use futures::future;
         use streams::read_req::options::all_options::AllOption;
         use streams::read_req::options::{self, AllOptions, StreamOption, SubscriptionOptions};
@@ -1317,19 +1300,20 @@ impl AllCatchupSubscribe {
             .execute(|channel| async {
                 let mut client = StreamsClient::new(channel);
                 let stream = client.read(req).await?.into_inner();
-                let stream = stream.try_filter_map(|resp| {
-                    match resp.content.unwrap() {
-                        streams::read_resp::Content::Event(event) => {
-                            future::ok(Some(convert_proto_read_event(event)))
+                let stream = stream
+                    .try_filter_map(|resp| {
+                        match resp.content.unwrap() {
+                            streams::read_resp::Content::Event(event) => {
+                                future::ok(Some(convert_proto_read_event(event)))
+                            }
+                            // TODO - We might end exposing when the subscription is confirmed by the server.
+                            _ => future::ok(None),
                         }
-                        // TODO - We might end exposing when the subscription is confirmed by the server.
-                        _ => future::ok(None),
-                    }
-                });
+                    })
+                    .map_err(crate::Error::from_grpc);
 
-                let stream: Box<
-                    dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin,
-                > = Box::new(stream);
+                let stream: Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin> =
+                    Box::new(stream);
 
                 Ok(stream)
             })
@@ -1381,7 +1365,7 @@ impl CreatePersistentSubscription {
 
     /// Sends the persistent subscription creation command asynchronously to
     /// the server.
-    pub async fn execute(self) -> Result<(), tonic::Status> {
+    pub async fn execute(self) -> crate::Result<()> {
         use persistent::create_req::Options;
         use persistent::CreateReq;
 
@@ -1458,7 +1442,7 @@ impl UpdatePersistentSubscription {
 
     /// Sends the persistent subscription update command asynchronously to
     /// the server.
-    pub async fn execute(self) -> Result<(), tonic::Status> {
+    pub async fn execute(self) -> crate::Result<()> {
         use persistent::update_req::Options;
         use persistent::UpdateReq;
 
@@ -1524,7 +1508,7 @@ impl DeletePersistentSubscription {
 
     /// Sends the persistent subscription deletion command asynchronously to
     /// the server.
-    pub async fn execute(self) -> Result<(), tonic::Status> {
+    pub async fn execute(self) -> crate::Result<()> {
         use persistent::delete_req::Options;
 
         let stream_identifier = Some(StreamIdentifier {
@@ -1597,7 +1581,7 @@ impl ConnectToPersistentSubscription {
 
     /// Sends the persistent subscription connection request to the server
     /// asynchronously even if the subscription is available right away.
-    pub async fn execute(self) -> Result<(SubscriptionRead, SubscriptionWrite), tonic::Status> {
+    pub async fn execute(self) -> crate::Result<(SubscriptionRead, SubscriptionWrite)> {
         use futures::channel::mpsc;
         use futures::sink::SinkExt;
         use persistent::read_req::options::{self, UuidOption};
@@ -1645,19 +1629,21 @@ impl ConnectToPersistentSubscription {
                     }
                 }
 
-                let stream = stream.try_filter_map(|resp| {
-                    let ret = match resp
-                        .content
-                        .expect("Why response content wouldn't be defined?")
-                    {
-                        read_resp::Content::Event(evt) => {
-                            Some(convert_persistent_proto_read_event(evt))
-                        }
-                        _ => None,
-                    };
+                let stream = stream
+                    .try_filter_map(|resp| {
+                        let ret = match resp
+                            .content
+                            .expect("Why response content wouldn't be defined?")
+                        {
+                            read_resp::Content::Event(evt) => {
+                                Some(convert_persistent_proto_read_event(evt))
+                            }
+                            _ => None,
+                        };
 
-                    futures::future::ready(Ok(ret))
-                });
+                        futures::future::ready(Ok(ret))
+                    })
+                    .map_err(crate::Error::from_grpc);
 
                 let read = SubscriptionRead {
                     inner: Box::new(stream),
@@ -1671,11 +1657,11 @@ impl ConnectToPersistentSubscription {
 }
 
 pub struct SubscriptionRead {
-    inner: Box<dyn Stream<Item = Result<ResolvedEvent, tonic::Status>> + Send + Unpin>,
+    inner: Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>,
 }
 
 impl SubscriptionRead {
-    pub async fn try_next(&mut self) -> Result<Option<ResolvedEvent>, tonic::Status> {
+    pub async fn try_next(&mut self) -> crate::Result<Option<ResolvedEvent>> {
         self.inner.try_next().await
     }
 }

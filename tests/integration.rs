@@ -173,7 +173,7 @@ async fn test_subscription(connection: &EventStoreDBConnection) -> Result<(), Bo
         }
 
         tx.send(count).unwrap();
-        Ok(()) as Result<(), tonic::Status>
+        Ok(()) as eventstore::Result<()>
     });
 
     let _ = connection
