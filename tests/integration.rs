@@ -37,10 +37,7 @@ async fn test_write_events(connection: &EventStoreDBConnection) -> Result<(), Bo
     let stream_id = fresh_stream_id("write_events");
     let events = generate_events("es6-write-events-test".to_string(), 3);
 
-    let result = connection
-        .write_events(stream_id)
-        .send(stream::iter(events))
-        .await?;
+    let result = connection.write_events(stream_id).send_iter(events).await?;
 
     debug!("Write response: {:?}", result);
 

@@ -30,20 +30,26 @@ impl EventStoreDBConnection {
         })
     }
     /// Sends events to a given stream.
-    pub fn write_events(&self, stream: String) -> commands::WriteEvents {
+    pub fn write_events<S>(&self, stream: S) -> commands::WriteEvents
+    where
+        S: AsRef<str>,
+    {
         commands::WriteEvents::new(
             self.connection.clone(),
-            stream,
+            stream.as_ref().to_string(),
             self.settings.default_user_name.clone(),
         )
     }
 
     /// Reads events from a given stream. The reading can be done forward and
     /// backward.
-    pub fn read_stream(&self, stream: String) -> commands::ReadStreamEvents {
+    pub fn read_stream<S>(&self, stream: S) -> commands::ReadStreamEvents
+    where
+        S: AsRef<str>,
+    {
         commands::ReadStreamEvents::new(
             self.connection.clone(),
-            stream,
+            stream.as_ref().to_string(),
             self.settings.default_user_name.clone(),
         )
     }
@@ -62,10 +68,13 @@ impl EventStoreDBConnection {
     /// page.
     ///
     /// [Deleting stream and events]: https://eventstore.org/docs/server/deleting-streams-and-events/index.html
-    pub fn delete_stream(&self, stream: String) -> commands::DeleteStream {
+    pub fn delete_stream<S>(&self, stream: S) -> commands::DeleteStream
+    where
+        S: AsRef<str>,
+    {
         commands::DeleteStream::new(
             self.connection.clone(),
-            stream,
+            stream.as_ref().to_string(),
             self.settings.default_user_name.clone(),
         )
     }
@@ -84,10 +93,13 @@ impl EventStoreDBConnection {
     /// as the subscription is dropped or closed.
     ///
     /// [`subscribe_to_all_from`]: #method.subscribe_to_all_from
-    pub fn subscribe_to_stream_from(&self, stream: String) -> commands::RegularCatchupSubscribe {
+    pub fn subscribe_to_stream_from<S>(&self, stream: S) -> commands::RegularCatchupSubscribe
+    where
+        S: AsRef<str>,
+    {
         commands::RegularCatchupSubscribe::new(
             self.connection.clone(),
-            stream,
+            stream.as_ref().to_string(),
             self.settings.default_user_name.clone(),
         )
     }
@@ -108,67 +120,70 @@ impl EventStoreDBConnection {
     /// server remembers the state of the subscription. This allows for many
     /// different modes of operations compared to a regular or catchup
     /// subscription where the client holds the subscription state.
-    pub fn create_persistent_subscription(
+    pub fn create_persistent_subscription<S>(
         &self,
-        stream_id: String,
-        group_name: String,
-    ) -> commands::CreatePersistentSubscription {
+        stream_id: S,
+        group_name: S,
+    ) -> commands::CreatePersistentSubscription
+    where
+        S: AsRef<str>,
+    {
         commands::CreatePersistentSubscription::new(
             self.connection.clone(),
-            stream_id,
-            group_name,
+            stream_id.as_ref().to_string(),
+            group_name.as_ref().to_string(),
             self.settings.default_user_name.clone(),
         )
     }
 
     /// Updates a persistent subscription group on a stream.
-    pub fn update_persistent_subscription(
+    pub fn update_persistent_subscription<S>(
         &self,
-        stream_id: String,
-        group_name: String,
-    ) -> commands::UpdatePersistentSubscription {
+        stream_id: S,
+        group_name: S,
+    ) -> commands::UpdatePersistentSubscription
+    where
+        S: ToString,
+    {
         commands::UpdatePersistentSubscription::new(
             self.connection.clone(),
-            stream_id,
-            group_name,
+            stream_id.to_string(),
+            group_name.to_string(),
             self.settings.default_user_name.clone(),
         )
     }
 
     /// Deletes a persistent subscription group on a stream.
-    pub fn delete_persistent_subscription(
+    pub fn delete_persistent_subscription<S>(
         &self,
-        stream_id: String,
-        group_name: String,
-    ) -> commands::DeletePersistentSubscription {
+        stream_id: S,
+        group_name: S,
+    ) -> commands::DeletePersistentSubscription
+    where
+        S: AsRef<str>,
+    {
         commands::DeletePersistentSubscription::new(
             self.connection.clone(),
-            stream_id,
-            group_name,
+            stream_id.as_ref().to_string(),
+            group_name.as_ref().to_string(),
             self.settings.default_user_name.clone(),
         )
     }
 
     /// Connects to a persistent subscription group on a stream.
-    pub fn connect_persistent_subscription(
+    pub fn connect_persistent_subscription<S>(
         &self,
-        stream_id: String,
-        group_name: String,
-    ) -> commands::ConnectToPersistentSubscription {
+        stream_id: S,
+        group_name: S,
+    ) -> commands::ConnectToPersistentSubscription
+    where
+        S: AsRef<str>,
+    {
         commands::ConnectToPersistentSubscription::new(
             self.connection.clone(),
-            stream_id,
-            group_name,
+            stream_id.as_ref().to_string(),
+            group_name.as_ref().to_string(),
             self.settings.default_user_name.clone(),
         )
     }
-
-    /// Closes the connection to the server.
-    ///
-    /// When closing a connection, a `Connection` might have ongoing operations
-    /// running. `shutdown` makes sure the `Connection` has handled
-    /// everything properly when returning.
-    ///
-    /// `shutdown` blocks the current thread.
-    pub fn shutdown(self) {}
 }
