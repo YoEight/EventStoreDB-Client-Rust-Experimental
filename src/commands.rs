@@ -435,6 +435,26 @@ impl WriteEvents {
     }
 
     /// Sends asynchronously the write command to the server.
+    pub async fn send_event(
+        self,
+        event: EventData,
+    ) -> crate::Result<Result<WriteResult, WrongExpectedVersion>> {
+        self.send_iter(vec![event]).await
+    }
+
+    /// Sends asynchronously the write command to the server.
+    pub async fn send_iter<I>(
+        self,
+        events: I,
+    ) -> crate::Result<Result<WriteResult, WrongExpectedVersion>>
+    where
+        I: IntoIterator<Item = EventData> + Send + Sync,
+        <I as IntoIterator>::IntoIter: Send + Sync + 'static,
+    {
+        self.send(futures::stream::iter(events)).await
+    }
+
+    /// Sends asynchronously the write command to the server.
     pub async fn send<S>(
         self,
         events: S,

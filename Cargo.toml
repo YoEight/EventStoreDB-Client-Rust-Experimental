@@ -10,14 +10,12 @@ edition = "2018"
 # build = "codegen.rs"
 
 license = "MIT"
-description = "EventStoreDB gRPC client"
-repository = "https://github.com/YoEight/eventstore-rs"
+description = "Official EventStoreDB gRPC client"
+repository = "https://github.com/EventStore/EventStoreDB-Client-Rust"
 readme = "README.md"
-keywords = ["database", "eventsourcing", "event", "eventstore", "ges"]
+keywords = ["database", "eventsourcing", "event", "eventstore", "ges", "eventstoredb", "grpc"]
 exclude = [
   ".gitignore",
-  ".gitlab-ci.yml",
-  ".travis.yml",
   ".github",
   "rustfmt.toml"
 ]
