@@ -13,7 +13,7 @@ license = "MIT"
 description = "Official EventStoreDB gRPC client"
 repository = "https://github.com/EventStore/EventStoreDB-Client-Rust"
 readme = "README.md"
-keywords = ["database", "eventsourcing", "event", "eventstore", "ges", "eventstoredb", "grpc"]
+keywords = ["database", "eventsourcing", "eventstore", "eventstoredb", "grpc"]
 exclude = [
   ".gitignore",
   ".github",
