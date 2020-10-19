@@ -1,3 +1,8 @@
+0.9.1
+=====
+* Add more documentation.
+* More flexible `EventData::json` and `EventData::binary`.
+
 0.9
 =====
 * gRPC is now the only supported interface.
@@ -40,7 +45,7 @@
 0.7.2
 =====
 * Idiomatic streaming interface for subscriptions and batch reads (tcp API).
-* Fix UUID/GUID serialization.
+* Fix UUID/GUID serialization.
 
 0.7.1
 =====

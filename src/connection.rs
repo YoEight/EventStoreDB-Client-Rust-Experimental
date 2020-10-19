@@ -143,12 +143,12 @@ impl EventStoreDBConnection {
         group_name: S,
     ) -> commands::UpdatePersistentSubscription
     where
-        S: ToString,
+        S: AsRef<str>,
     {
         commands::UpdatePersistentSubscription::new(
             self.connection.clone(),
-            stream_id.to_string(),
-            group_name.to_string(),
+            stream_id.as_ref().to_string(),
+            group_name.as_ref().to_string(),
             self.settings.default_user_name.clone(),
         )
     }
