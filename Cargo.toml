@@ -1,6 +1,6 @@
 [package]
 name = "eventstore"
-version = "0.9.0"
+version = "0.9.1"
 authors = ["Yorick Laupa <yo.eight@gmail.com>"]
 edition = "2018"
 
@@ -41,7 +41,7 @@ prost-derive = "0.6"
 prost-types = "0.6"
 rustls = { version = "0.18", features = ["dangerous_configuration"] }
 webpki = "0.21"
-base64 = "^0.11"
+base64 = "^0.12"
 trust-dns-resolver = "0.19"
 nom = "5.1"
 thiserror = "1.0"
@@ -56,6 +56,7 @@ name = "integration"
 pretty_env_logger = "0.4"
 tokio-test = "0.2"
 toml = "0.5"
+tokio = { version = "0.2", features = ["macros"] }
 
 [package.metadata.docs.rs]
 all-features = true

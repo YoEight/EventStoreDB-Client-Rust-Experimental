@@ -139,6 +139,60 @@ fn default_throw_on_append_failure() -> bool {
 }
 
 /// Gathers all the settings related to a gRPC connection with an EventStoreDB database.
+/// `ConnectionSettings` can only be created when parsing a connection string.
+///
+/// ```
+/// # use eventstore::ConnectionSettings;
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let setts = "esdb://localhost:1234?tls=false".parse::<ConnectionSettings>()?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// You can declare a single-node or a cluster connection while only using a connection string.
+/// For example, you can define a cluster connection based on a fixed set of gossip seeds:
+///
+/// ```
+/// # use eventstore::ConnectionSettings;
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let setts = "esdb://localhost:1111,localhost:2222,localhost:3333".parse::<ConnectionSettings>()?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// Same example except we are using DNS discovery this time. The client will perform SRV queries
+/// to resolve all the node associated to that domain:
+/// ```
+/// # use eventstore::ConnectionSettings;
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let setts = "esdb+discover://mydomain:1234".parse::<ConnectionSettings>()?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// `ConnectionSettings` supports a wide range of settings. If a setting is not mentioned in the
+/// connection string, that setting default value is used.
+///
+/// * `maxDiscoverAttempts`: default `3`. Maximum number of DNS discovery attempts before the
+///    connection gives up.
+///    __*TODO - Current behavior keeps retrying endlessly.*__
+///
+/// * `discoveryInterval`: default `500ms`. Waiting period between discovery attempts.
+///
+/// * `gossipTimeout`: default `3s`: Waiting period before a gossip request timeout.
+///    __*TODO - Current behavior doesn't timeout at all.*__
+///
+/// * `tls`: default `true`. Use a secure connection.
+///
+/// * `tlsVerifyCert`: default `true`. When using a secure connection, perform a certification
+///    verification.
+///
+/// * `nodePreference`: default `random`. When in a cluster connection, indicates what type of node
+///    a connection should pick. Keep in mind that's best effort. Supported values are:
+///    * `leader`
+///    * `random`
+///    * `follower`
+///    * `readOnlyReplica`
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConnectionSettings {
     #[serde(default)]

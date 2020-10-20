@@ -21,8 +21,9 @@ Server setup instructions can be found here [EventStoreDB Docs], follow the dock
 
 ```rust
 use eventstore::EventStoreDBConnection;
+use futures::stream::TryStreamExt;
+use serde::{Serialize, Deserialize};
 
-/// From serde package.
 #[derive(Serialize, Deserialize, Debug)]
 struct Foo {
     is_rust_a_nice_language: bool,

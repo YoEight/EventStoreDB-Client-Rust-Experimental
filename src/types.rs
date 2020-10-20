@@ -96,7 +96,7 @@ where
 }
 
 /// Determines whether any link event encountered in the stream will be
-/// resolved. See the discussion on [Resolved Events](https://eventstore.org/docs/dotnet-api/reading-events/index.html#resolvedevent)
+/// resolved. See the discussion on [Resolved Events](https://eventstore.com/docs/dotnet-api/reading-events/index.html#resolvedevent)
 /// for more information on this.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LinkTos {
@@ -140,7 +140,7 @@ pub enum ExpectedVersion {
 }
 
 /// A structure referring to a potential logical record position in the
-/// GetEventStore transaction file.
+/// EventStoreDB transaction file.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Position {
     /// Commit position of the record.
@@ -365,16 +365,17 @@ pub struct EventData {
 
 impl EventData {
     /// Creates an event with a JSON payload.
-    pub fn json<P>(event_type: String, payload: P) -> serde_json::Result<EventData>
+    pub fn json<S, P>(event_type: S, payload: P) -> serde_json::Result<EventData>
     where
         P: Serialize,
+        S: AsRef<str>,
     {
         let payload = serde_json::to_vec(&payload)?;
         let payload = Bytes::from(payload);
         let payload = Payload::Json(payload);
 
         Ok(EventData {
-            event_type,
+            event_type: event_type.as_ref().to_string(),
             payload,
             id_opt: None,
             custom_metadata: None,
@@ -382,9 +383,12 @@ impl EventData {
     }
 
     /// Creates an event with a raw binary payload.
-    pub fn binary<S>(event_type: String, payload: Bytes) -> Self {
+    pub fn binary<S>(event_type: S, payload: Bytes) -> Self
+    where
+        S: AsRef<str>,
+    {
         EventData {
-            event_type,
+            event_type: event_type.as_ref().to_string(),
             payload: Payload::Binary(payload),
             id_opt: None,
             custom_metadata: None,
