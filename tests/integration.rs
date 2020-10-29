@@ -10,7 +10,6 @@ use futures::channel::oneshot;
 use futures::stream::{self, TryStreamExt};
 use std::collections::HashMap;
 use std::error::Error;
-use tokio_test::block_on;
 
 fn fresh_stream_id(prefix: &str) -> String {
     let uuid = uuid::Uuid::new_v4();
@@ -299,47 +298,44 @@ async fn test_persistent_subscription(
     Ok(())
 }
 
-#[test]
-fn es6_20_6_test() {
-    block_on(async {
-        let _ = pretty_env_logger::try_init();
-        let settings = "esdb://admin:changeit@localhost:2111,localhost:2112,localhost:2113?tlsVerifyCert=false&nodePreference=leader"
-            .parse::<ConnectionSettings>()?;
+#[tokio::test]
+async fn es6_20_6_test() -> Result<(), Box<dyn std::error::Error>> {
+    let _ = pretty_env_logger::try_init();
+    let settings = "esdb://admin:changeit@localhost:2111,localhost:2112,localhost:2113?tlsVerifyCert=false&nodePreference=leader"
+        .parse::<ConnectionSettings>()?;
 
-        let connection = EventStoreDBConnection::create(settings).await?;
+    let connection = EventStoreDBConnection::create(settings).await?;
 
-        debug!("Before test_write_events…");
-        test_write_events(&connection).await?;
-        debug!("Complete");
-        debug!("Before test_all_read_stream_events…");
-        test_read_all_stream_events(&connection).await?;
-        debug!("Complete");
-        debug!("Before test_read_stream_events…");
-        test_read_stream_events(&connection).await?;
-        debug!("Complete");
-        debug!("Before test_read_stream_events_non_existent");
-        test_read_stream_events_non_existent(&connection).await?;
-        debug!("Complete");
-        debug!("Before test_delete_stream…");
-        test_delete_stream(&connection).await?;
-        debug!("Complete");
-        debug!("Before test_subscription…");
-        test_subscription(&connection).await?;
-        debug!("Complete");
-        debug!("Before test_create_persistent_subscription…");
-        test_create_persistent_subscription(&connection).await?;
-        debug!("Complete");
-        debug!("Before test_update_persistent_subscription…");
-        test_update_persistent_subscription(&connection).await?;
-        debug!("Complete");
-        debug!("Before test_delete_persistent_subscription…");
-        test_delete_persistent_subscription(&connection).await?;
-        debug!("Complete");
-        debug!("Before test_persistent_subscription…");
-        test_persistent_subscription(&connection).await?;
-        debug!("Complete");
+    debug!("Before test_write_events…");
+    test_write_events(&connection).await?;
+    debug!("Complete");
+    debug!("Before test_all_read_stream_events…");
+    test_read_all_stream_events(&connection).await?;
+    debug!("Complete");
+    debug!("Before test_read_stream_events…");
+    test_read_stream_events(&connection).await?;
+    debug!("Complete");
+    debug!("Before test_read_stream_events_non_existent");
+    test_read_stream_events_non_existent(&connection).await?;
+    debug!("Complete");
+    debug!("Before test_delete_stream…");
+    test_delete_stream(&connection).await?;
+    debug!("Complete");
+    debug!("Before test_subscription…");
+    test_subscription(&connection).await?;
+    debug!("Complete");
+    debug!("Before test_create_persistent_subscription…");
+    test_create_persistent_subscription(&connection).await?;
+    debug!("Complete");
+    debug!("Before test_update_persistent_subscription…");
+    test_update_persistent_subscription(&connection).await?;
+    debug!("Complete");
+    debug!("Before test_delete_persistent_subscription…");
+    test_delete_persistent_subscription(&connection).await?;
+    debug!("Complete");
+    debug!("Before test_persistent_subscription…");
+    test_persistent_subscription(&connection).await?;
+    debug!("Complete");
 
-        Ok(()) as Result<(), Box<dyn std::error::Error>>
-    })
-    .unwrap();
+    Ok(())
 }
