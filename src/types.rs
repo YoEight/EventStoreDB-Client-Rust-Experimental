@@ -825,6 +825,21 @@ pub(crate) struct DnsClusterSettings {
     pub(crate) resolver: trust_dns_resolver::TokioAsyncResolver,
     pub(crate) domain_name: trust_dns_resolver::Name,
     pub(crate) gossip_port: u32,
+    pub(crate) lookup: LookupType,
+}
+
+#[derive(PartialEq, Eq, Serialize, Deserialize, Debug, Clone, Copy)]
+pub(crate) enum LookupType {
+    #[serde(rename = "a")]
+    LookupA,
+    #[serde(rename = "srv")]
+    LookupSRV,
+}
+
+impl Default for LookupType {
+    fn default() -> Self {
+        LookupType::LookupA
+    }
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]

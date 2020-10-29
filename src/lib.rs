@@ -76,5 +76,5 @@ mod grpc_connection;
 mod types;
 
 pub use connection::EventStoreDBConnection;
-pub use grpc_connection::ConnectionSettings;
+pub use grpc_connection::{ConnectionSettings, ConnectionSettingsParseError};
 pub use types::*;
