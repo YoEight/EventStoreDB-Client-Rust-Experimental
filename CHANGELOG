@@ -2,6 +2,8 @@
 =====
 * Add DNS record type selection in connection string. DNS A queries are done by default now. Use to be SRV.
 * Export `ConnectionSettingsParseError` type.
+* `read_stream` returns `ReadResult::StreamNotFound` explicitly.
+* Add `Position::end()`
 
 0.9.1
 =====

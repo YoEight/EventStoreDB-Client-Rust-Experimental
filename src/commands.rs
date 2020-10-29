@@ -17,7 +17,7 @@ use streams::append_req::options::ExpectedStreamRevision;
 use streams::streams_client::StreamsClient;
 
 use crate::grpc_connection::GrpcConnection;
-use crate::{Credentials, CurrentRevision, LinkTos, NakAction, SystemConsumerStrategy};
+use crate::{Credentials, CurrentRevision, LinkTos, NakAction, ReadResult, SystemConsumerStrategy};
 use tonic::Request;
 
 fn convert_expected_version(version: ExpectedVersion) -> ExpectedStreamRevision {
@@ -637,7 +637,9 @@ impl ReadStreamEvents {
     pub async fn execute(
         self,
         count: u64,
-    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
+    ) -> crate::Result<
+        ReadResult<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>>,
+    > {
         use streams::read_req::options::stream_options::RevisionOption;
         use streams::read_req::options::{self, StreamOption, StreamOptions};
         use streams::read_req::Options;
@@ -685,24 +687,52 @@ impl ReadStreamEvents {
         self.connection
             .execute(|channel| async {
                 let mut client = StreamsClient::new(channel);
-                let stream = client.read(req).await?.into_inner();
-                let stream = stream
-                    .try_filter_map(|resp| {
-                        let value = match resp.content.unwrap() {
-                            streams::read_resp::Content::Event(event) => {
-                                Some(convert_proto_read_event(event))
-                            }
-                            _ => None,
-                        };
+                let mut stream = client.read(req).await?.into_inner();
 
-                        futures::future::ok(value)
-                    })
-                    .map_err(crate::Error::from_grpc);
+                if let Some(resp) = stream.try_next().await? {
+                    match resp.content.as_ref().unwrap() {
+                        streams::read_resp::Content::StreamNotFound(params) => {
+                            let stream_name = std::string::String::from_utf8(
+                                params
+                                    .stream_identifier
+                                    .as_ref()
+                                    .unwrap()
+                                    .stream_name
+                                    .clone(),
+                            )
+                            .expect("Don't worry this string is valid!");
 
-                let stream: Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin> =
-                    Box::new(stream);
+                            return Ok(ReadResult::StreamNotFound(stream_name));
+                        }
 
-                Ok(stream)
+                        _ => {
+                            let stream = stream::once(futures::future::ok::<
+                                streams::ReadResp,
+                                tonic::Status,
+                            >(resp))
+                            .chain(stream)
+                            .try_filter_map(|resp| {
+                                let value = match resp.content.unwrap() {
+                                    streams::read_resp::Content::Event(event) => {
+                                        Some(convert_proto_read_event(event))
+                                    }
+                                    _ => None,
+                                };
+
+                                futures::future::ok(value)
+                            })
+                            .map_err(crate::Error::from_grpc);
+
+                            let stream: Box<
+                                dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin,
+                            > = Box::new(stream);
+
+                            return Ok(ReadResult::Ok(stream));
+                        }
+                    }
+                }
+
+                Ok(ReadResult::Ok(Box::new(stream::empty())))
             })
             .await
     }
@@ -710,7 +740,9 @@ impl ReadStreamEvents {
     /// Reads all the events of a stream.
     pub async fn read_through(
         self,
-    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
+    ) -> crate::Result<
+        ReadResult<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>>,
+    > {
         self.execute(u64::MAX).await
     }
 }

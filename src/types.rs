@@ -944,3 +944,58 @@ impl Error {
 }
 
 pub type Result<A> = std::result::Result<A, Error>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ReadResult<A> {
+    Ok(A),
+    StreamNotFound(String),
+}
+
+impl<A> ReadResult<A> {
+    /// Maps an `ReadResult<A>` to `ReadResult<B>` by applying a function to a contained value.
+    pub fn map<B, F>(self, f: F) -> ReadResult<B>
+    where
+        F: FnOnce(A) -> B,
+    {
+        match self {
+            ReadResult::Ok(a) => ReadResult::Ok(f(a)),
+            ReadResult::StreamNotFound(s) => ReadResult::StreamNotFound(s),
+        }
+    }
+
+    /// Converts from `ReadResult<A>` to [`Option<A>`].
+    ///
+    /// Converts `self` into an [`Option<A>`], consuming `self`,
+    /// and discarding the success value, if any.
+    ///
+    /// [`Option<A>`]: Option
+    pub fn ok(self) -> Option<A> {
+        match self {
+            ReadResult::Ok(a) => Some(a),
+            ReadResult::StreamNotFound(_) => None,
+        }
+    }
+
+    /// Returns `true` if the result is [`ReadOk`].
+    pub const fn is_ok(&self) -> bool {
+        matches!(*self, ReadResult::Ok(_))
+    }
+
+    /// Returns `true` if the result is [`ReadStreamNotFound`].
+    pub const fn is_not_found(&self) -> bool {
+        !self.is_ok()
+    }
+
+    /// Returns the contained [`Ok`] value, consuming the `self` value.
+    #[inline]
+    #[track_caller]
+    pub fn unwrap(self) -> A {
+        match self {
+            ReadResult::Ok(a) => a,
+            ReadResult::StreamNotFound(s) => panic!(
+                "called `ReadResult::unwrap()` on an `StreamNotFound({})` value",
+                &s
+            ),
+        }
+    }
+}
