@@ -152,10 +152,18 @@ pub struct Position {
 
 impl Position {
     /// Points to the begin of the transaction file.
-    pub fn start() -> Position {
+    pub fn start() -> Self {
         Position {
             commit: 0,
             prepare: 0,
+        }
+    }
+
+    /// Points to the end of the transaction file.
+    pub fn end() -> Self {
+        Position {
+            commit: u64::MAX,
+            prepare: u64::MAX,
         }
     }
 }
