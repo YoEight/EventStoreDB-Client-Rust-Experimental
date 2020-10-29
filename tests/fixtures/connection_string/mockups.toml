@@ -225,3 +225,22 @@ password = "pass"
 [[mockups.expected.hosts]]
 host = "host"
 port = 2_113
+
+[[mockups]]
+string = "esdb+discover://user:pass@host?nodePreference=follower&tlsVerifyCert=false&dnsLookUpType=srv"
+[mockups.expected]
+dns_discover = true
+max_discover_attempts = 3
+discovery_interval = 500
+gossip_timeout = 3_000
+preference = "Follower"
+secure = true
+tls_verify_cert = false
+throw_on_append_failure = true
+dns_lookup_type = "srv"
+[mockups.expected.default_user_name]
+login = "user"
+password = "pass"
+[[mockups.expected.hosts]]
+host = "host"
+port = 2_113
