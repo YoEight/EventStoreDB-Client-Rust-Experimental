@@ -75,19 +75,21 @@ async fn test_read_stream_events(
     let mut pos = 0usize;
     let mut idx = 0i64;
 
-    let mut stream = connection
+    let result = connection
         .read_stream(stream_id)
         .start_from_beginning()
         .execute(10)
         .await?;
 
-    while let Some(event) = stream.try_next().await? {
-        let event = event.get_original_event();
-        let obj: HashMap<String, i64> = event.as_json().unwrap();
-        let value = obj.get("event_index").unwrap();
+    if let eventstore::ReadResult::Ok(mut stream) = result {
+        while let Some(event) = stream.try_next().await? {
+            let event = event.get_original_event();
+            let obj: HashMap<String, i64> = event.as_json().unwrap();
+            let value = obj.get("event_index").unwrap();
 
-        idx = *value;
-        pos += 1;
+            idx = *value;
+            pos += 1;
+        }
     }
 
     assert_eq!(pos, 10);
@@ -103,15 +105,18 @@ async fn test_read_stream_events_non_existent(
 ) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("read_stream_events");
 
-    let mut stream = connection
-        .read_stream(stream_id)
+    let result = connection
+        .read_stream(stream_id.as_str())
         .start_from_beginning()
         .execute(1)
         .await?;
 
-    assert!(stream.try_next().await?.is_none());
+    if let eventstore::ReadResult::StreamNotFound(stream) = result {
+        assert_eq!(stream, stream_id);
+        return Ok(());
+    }
 
-    Ok(())
+    panic!("We expected to have a stream not found result");
 }
 
 // We write an event into a stream then delete that stream.

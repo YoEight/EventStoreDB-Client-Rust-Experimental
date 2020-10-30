@@ -13,7 +13,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use eventstore::{ EventStoreDBConnection, EventData };
+//! use eventstore::{ EventStoreDBConnection, EventData, ReadResult };
 //! use futures::stream::TryStreamExt;
 //! use serde::{Serialize, Deserialize};
 //!
@@ -42,18 +42,20 @@
 //!         .send_event(evt)
 //!         .await?;
 //!
-//!     let mut stream = connection
+//!     let result = connection
 //!         .read_stream("language-stream")
 //!         .start_from_beginning()
 //!         .read_through()
 //!         .await?;
 //!
-//!     while let Some(event) = stream.try_next().await? {
-//!         let event = event.get_original_event()
-//!             .as_json::<Foo>()?;
+//!     if let ReadResult::Ok(mut stream) = result {
+//!         while let Some(event) = stream.try_next().await? {
+//!             let event = event.get_original_event()
+//!                     .as_json::<Foo>()?;
 //!
-//!         // Do something productive with the result.
-//!         println!("{:?}", event);
+//!             // Do something productive with the result.
+//!             println!("{:?}", event);
+//!         }
 //!     }
 //!
 //!     Ok(())
