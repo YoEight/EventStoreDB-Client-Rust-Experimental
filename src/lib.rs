@@ -77,6 +77,14 @@ mod gossip;
 mod grpc_connection;
 mod types;
 
+pub use commands::FilterConf;
 pub use connection::EventStoreDBConnection;
 pub use grpc_connection::{ConnectionSettings, ConnectionSettingsParseError};
 pub use types::*;
+
+pub mod prelude {
+    pub use crate::commands::FilterConf;
+    pub use crate::connection::EventStoreDBConnection;
+    pub use crate::grpc_connection::{ConnectionSettings, ConnectionSettingsParseError};
+    pub use crate::types::*;
+}
