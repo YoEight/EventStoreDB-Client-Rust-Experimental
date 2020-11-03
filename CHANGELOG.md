@@ -1,3 +1,8 @@
+0.9.3
+=====
+* Add prelude module.
+* Re-export `FilterConf`.
+
 0.9.2
 =====
 * Add DNS record type selection in connection string. DNS A queries are done by default now. Use to be SRV.
