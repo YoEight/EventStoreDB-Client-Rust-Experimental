@@ -240,7 +240,10 @@ pub struct RecordedEvent {
     pub data: Bytes,
 
     /// Representing the metadata associated with this event.
-    pub metadata: Bytes,
+    pub metadata: HashMap<String, String>,
+
+    /// Representing the user-defined metadata associated with this event.
+    pub custom_metadata: Bytes,
 
     /// Indicates wheter the content is internally marked as JSON.
     pub is_json: bool,
