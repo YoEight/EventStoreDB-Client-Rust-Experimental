@@ -16,7 +16,7 @@ use std::marker::Unpin;
 use streams::append_req::options::ExpectedStreamRevision;
 use streams::streams_client::StreamsClient;
 
-use crate::grpc_connection::GrpcConnection;
+use crate::grpc::GrpcClient;
 use crate::{Credentials, CurrentRevision, LinkTos, NakAction, ReadResult, SystemConsumerStrategy};
 use tonic::Request;
 
@@ -400,18 +400,14 @@ impl FilterConf {
 
 /// Command that sends events to a given stream.
 pub struct WriteEvents {
-    connection: GrpcConnection,
+    connection: GrpcClient,
     stream: String,
     version: ExpectedVersion,
     creds: Option<Credentials>,
 }
 
 impl WriteEvents {
-    pub(crate) fn new(
-        connection: GrpcConnection,
-        stream: String,
-        creds: Option<Credentials>,
-    ) -> Self {
+    pub(crate) fn new(connection: GrpcClient, stream: String, creds: Option<Credentials>) -> Self {
         WriteEvents {
             connection,
             stream,
@@ -540,7 +536,7 @@ impl WriteEvents {
 /// A command that reads several events from a stream. It can read events
 /// forward or backward.
 pub struct ReadStreamEvents {
-    connection: GrpcConnection,
+    connection: GrpcClient,
     stream: String,
     revision: Revision<u64>,
     resolve_link_tos: bool,
@@ -549,11 +545,7 @@ pub struct ReadStreamEvents {
 }
 
 impl ReadStreamEvents {
-    pub(crate) fn new(
-        connection: GrpcConnection,
-        stream: String,
-        creds: Option<Credentials>,
-    ) -> Self {
+    pub(crate) fn new(connection: GrpcClient, stream: String, creds: Option<Credentials>) -> Self {
         ReadStreamEvents {
             connection,
             stream,
@@ -749,7 +741,7 @@ impl ReadStreamEvents {
 
 /// Like `ReadStreamEvents` but specialized to system stream '$all'.
 pub struct ReadAllEvents {
-    connection: GrpcConnection,
+    connection: GrpcClient,
     revision: Revision<Position>,
     resolve_link_tos: bool,
     direction: ReadDirection,
@@ -757,7 +749,7 @@ pub struct ReadAllEvents {
 }
 
 impl ReadAllEvents {
-    pub(crate) fn new(connection: GrpcConnection, creds: Option<Credentials>) -> Self {
+    pub(crate) fn new(connection: GrpcClient, creds: Option<Credentials>) -> Self {
         ReadAllEvents {
             connection,
             revision: Revision::Start,
@@ -925,7 +917,7 @@ impl ReadAllEvents {
 ///
 /// [Deleting stream and events]: https://eventstore.org/docs/server/deleting-streams-and-events/index.html
 pub struct DeleteStream {
-    connection: GrpcConnection,
+    connection: GrpcClient,
     stream: String,
     version: ExpectedVersion,
     creds: Option<Credentials>,
@@ -933,11 +925,7 @@ pub struct DeleteStream {
 }
 
 impl DeleteStream {
-    pub(crate) fn new(
-        connection: GrpcConnection,
-        stream: String,
-        creds: Option<Credentials>,
-    ) -> Self {
+    pub(crate) fn new(connection: GrpcClient, stream: String, creds: Option<Credentials>) -> Self {
         DeleteStream {
             connection,
             stream,
@@ -1113,7 +1101,7 @@ impl DeleteStream {
 ///
 /// All this process happens without the user has to do anything.
 pub struct RegularCatchupSubscribe {
-    connection: GrpcConnection,
+    connection: GrpcClient,
     stream_id: String,
     resolve_link_tos: bool,
     revision: Option<u64>,
@@ -1122,7 +1110,7 @@ pub struct RegularCatchupSubscribe {
 
 impl RegularCatchupSubscribe {
     pub(crate) fn new(
-        connection: GrpcConnection,
+        connection: GrpcClient,
         stream_id: String,
         creds_opt: Option<Credentials>,
     ) -> Self {
@@ -1238,7 +1226,7 @@ impl RegularCatchupSubscribe {
 
 /// Like `RegularCatchupSubscribe` but specific to the system stream '$all'.
 pub struct AllCatchupSubscribe {
-    connection: GrpcConnection,
+    connection: GrpcClient,
     resolve_link_tos: bool,
     revision: Option<Position>,
     creds_opt: Option<Credentials>,
@@ -1246,7 +1234,7 @@ pub struct AllCatchupSubscribe {
 }
 
 impl AllCatchupSubscribe {
-    pub(crate) fn new(connection: GrpcConnection, creds_opt: Option<Credentials>) -> Self {
+    pub(crate) fn new(connection: GrpcClient, creds_opt: Option<Credentials>) -> Self {
         AllCatchupSubscribe {
             connection,
             resolve_link_tos: false,
@@ -1375,7 +1363,7 @@ impl AllCatchupSubscribe {
 
 /// A command that creates a persistent subscription for a given group.
 pub struct CreatePersistentSubscription {
-    connection: GrpcConnection,
+    connection: GrpcClient,
     stream_id: String,
     group_name: String,
     sub_settings: PersistentSubscriptionSettings,
@@ -1384,7 +1372,7 @@ pub struct CreatePersistentSubscription {
 
 impl CreatePersistentSubscription {
     pub(crate) fn new(
-        connection: GrpcConnection,
+        connection: GrpcClient,
         stream_id: String,
         group_name: String,
         creds: Option<Credentials>,
@@ -1452,7 +1440,7 @@ impl CreatePersistentSubscription {
 
 /// Command that updates an already existing subscription's settings.
 pub struct UpdatePersistentSubscription {
-    connection: GrpcConnection,
+    connection: GrpcClient,
     stream_id: String,
     group_name: String,
     sub_settings: PersistentSubscriptionSettings,
@@ -1461,7 +1449,7 @@ pub struct UpdatePersistentSubscription {
 
 impl UpdatePersistentSubscription {
     pub(crate) fn new(
-        connection: GrpcConnection,
+        connection: GrpcClient,
         stream_id: String,
         group_name: String,
         creds: Option<Credentials>,
@@ -1529,7 +1517,7 @@ impl UpdatePersistentSubscription {
 
 /// Command that  deletes a persistent subscription.
 pub struct DeletePersistentSubscription {
-    connection: GrpcConnection,
+    connection: GrpcClient,
     stream_id: String,
     group_name: String,
     creds: Option<Credentials>,
@@ -1537,7 +1525,7 @@ pub struct DeletePersistentSubscription {
 
 impl DeletePersistentSubscription {
     pub(crate) fn new(
-        connection: GrpcConnection,
+        connection: GrpcClient,
         stream_id: String,
         group_name: String,
         creds: Option<Credentials>,
@@ -1595,7 +1583,7 @@ impl DeletePersistentSubscription {
 /// compared to a regular subscription where the client hols the subscription
 /// state.
 pub struct ConnectToPersistentSubscription {
-    connection: GrpcConnection,
+    connection: GrpcClient,
     stream_id: String,
     group_name: String,
     batch_size: i32,
@@ -1604,7 +1592,7 @@ pub struct ConnectToPersistentSubscription {
 
 impl ConnectToPersistentSubscription {
     pub(crate) fn new(
-        connection: GrpcConnection,
+        connection: GrpcClient,
         stream_id: String,
         group_name: String,
         creds: Option<Credentials>,

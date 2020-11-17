@@ -44,7 +44,7 @@ fn test_connection_string() {
     #[derive(Debug, Serialize, Deserialize)]
     struct Mockup {
         string: String,
-        expected: ConnectionSettings,
+        expected: ClientSettings,
     }
 
     #[derive(Debug, Serialize, Deserialize)]
@@ -56,7 +56,7 @@ fn test_connection_string() {
     let fixtures: Mockups = toml::from_slice(mockups.as_slice()).unwrap();
 
     for mockup in fixtures.mockups {
-        match mockup.string.as_str().parse::<ConnectionSettings>() {
+        match mockup.string.as_str().parse::<ClientSettings>() {
             Ok(current) => assert_eq!(
                 current, mockup.expected,
                 "Failed parsing [{}]",
@@ -69,17 +69,17 @@ fn test_connection_string() {
 }
 
 #[derive(Clone, Debug)]
-pub struct ConnectionSettingsParseError {
+pub struct ClientSettingsParseError {
     input: String,
 }
 
-impl std::fmt::Display for ConnectionSettingsParseError {
+impl std::fmt::Display for ClientSettingsParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ConnectionSettings parsing error: {}", self.input)
+        write!(f, "ClientSettings parsing error: {}", self.input)
     }
 }
 
-impl std::error::Error for ConnectionSettingsParseError {}
+impl std::error::Error for ClientSettingsParseError {}
 
 struct DurationVisitor;
 
@@ -113,51 +113,51 @@ where
 }
 
 fn default_max_discover_attempts() -> usize {
-    ConnectionSettings::default().max_discover_attempts
+    ClientSettings::default().max_discover_attempts
 }
 
 fn default_discovery_interval() -> Duration {
-    ConnectionSettings::default().discovery_interval
+    ClientSettings::default().discovery_interval
 }
 
 fn default_gossip_timeout() -> Duration {
-    ConnectionSettings::default().gossip_timeout
+    ClientSettings::default().gossip_timeout
 }
 
 fn default_preference() -> NodePreference {
-    ConnectionSettings::default().preference
+    ClientSettings::default().preference
 }
 
 fn default_secure() -> bool {
-    ConnectionSettings::default().secure
+    ClientSettings::default().secure
 }
 
 fn default_tls_verify_cert() -> bool {
-    ConnectionSettings::default().tls_verify_cert
+    ClientSettings::default().tls_verify_cert
 }
 
 fn default_throw_on_append_failure() -> bool {
-    ConnectionSettings::default().throw_on_append_failure
+    ClientSettings::default().throw_on_append_failure
 }
 
-/// Gathers all the settings related to a gRPC connection with an EventStoreDB database.
-/// `ConnectionSettings` can only be created when parsing a connection string.
+/// Gathers all the settings related to a gRPC client with an EventStoreDB database.
+/// `ClientSettings` can only be created when parsing a connection string.
 ///
 /// ```
-/// # use eventstore::ConnectionSettings;
+/// # use eventstore::ClientSettings;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let setts = "esdb://localhost:1234?tls=false".parse::<ConnectionSettings>()?;
+/// let setts = "esdb://localhost:1234?tls=false".parse::<ClientSettings>()?;
 /// # Ok(())
 /// # }
 /// ```
 ///
-/// You can declare a single-node or a cluster connection while only using a connection string.
-/// For example, you can define a cluster connection based on a fixed set of gossip seeds:
+/// You can declare a single-node or a cluster-mode client while only using a connection string.
+/// For example, you can define a cluster-mode client based on a fixed set of gossip seeds:
 ///
 /// ```
-/// # use eventstore::ConnectionSettings;
+/// # use eventstore::ClientSettings;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let setts = "esdb://localhost:1111,localhost:2222,localhost:3333".parse::<ConnectionSettings>()?;
+/// let setts = "esdb://localhost:1111,localhost:2222,localhost:3333".parse::<ClientSettings>()?;
 /// # Ok(())
 /// # }
 /// ```
@@ -165,19 +165,19 @@ fn default_throw_on_append_failure() -> bool {
 /// Same example except we are using DNS discovery this time. The client will perform SRV queries
 /// to resolve all the node associated to that domain:
 /// ```
-/// # use eventstore::ConnectionSettings;
+/// # use eventstore::ClientSettings;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let setts = "esdb+discover://mydomain:1234".parse::<ConnectionSettings>()?;
+/// let setts = "esdb+discover://mydomain:1234".parse::<ClientSettings>()?;
 /// # Ok(())
 /// # }
 /// ```
 ///
-/// `ConnectionSettings` supports a wide range of settings. If a setting is not mentioned in the
+/// `ClientSettings` supports a wide range of settings. If a setting is not mentioned in the
 /// connection string, that setting default value is used.
 ///
 /// * `maxDiscoverAttempts`: default `3`. Maximum number of DNS discovery attempts before the
 ///    connection gives up.
-///    __*TODO - Current behavior keeps retrying endlessly.*__
+///    __*TODO - Current behavior keeps retrying ensdlessly.*__
 ///
 /// * `discoveryInterval`: default `500ms`. Waiting period between discovery attempts.
 ///
@@ -204,7 +204,7 @@ fn default_throw_on_append_failure() -> bool {
 ///   * `a`
 ///   * `srv`
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ConnectionSettings {
+pub struct ClientSettings {
     #[serde(default)]
     pub(crate) dns_discover: bool,
     #[serde(default)]
@@ -237,9 +237,9 @@ pub struct ConnectionSettings {
     pub(crate) dns_lookup_type: crate::LookupType,
 }
 
-impl ConnectionSettings {
+impl ClientSettings {
     pub fn parse(input: &str) -> IResult<&str, Self> {
-        let mut result: ConnectionSettings = Default::default();
+        let mut result: ClientSettings = Default::default();
         let mut parsed_authority = false;
 
         let (initial_input, scheme) = alt((tag("esdb://"), tag("esdb+discover://")))(input)?;
@@ -436,19 +436,19 @@ impl ConnectionSettings {
         Ok((input, result))
     }
 
-    pub fn parse_str(input: &str) -> Result<Self, ConnectionSettingsParseError> {
-        match complete(ConnectionSettings::parse)(input) {
+    pub fn parse_str(input: &str) -> Result<Self, ClientSettingsParseError> {
+        match complete(ClientSettings::parse)(input) {
             Ok((_, setts)) => Ok(setts),
             Err(err_type) => match err_type {
-                nom::Err::Error((input, _)) => Err(ConnectionSettingsParseError {
+                nom::Err::Error((input, _)) => Err(ClientSettingsParseError {
                     input: input.to_string(),
                 }),
 
-                nom::Err::Failure((input, _)) => Err(ConnectionSettingsParseError {
+                nom::Err::Failure((input, _)) => Err(ClientSettingsParseError {
                     input: input.to_string(),
                 }),
 
-                nom::Err::Incomplete(_) => Err(ConnectionSettingsParseError {
+                nom::Err::Incomplete(_) => Err(ClientSettingsParseError {
                     input: "Incomplete connection string".to_string(),
                 }),
             },
@@ -464,17 +464,17 @@ impl ConnectionSettings {
     }
 }
 
-impl FromStr for ConnectionSettings {
-    type Err = ConnectionSettingsParseError;
+impl FromStr for ClientSettings {
+    type Err = ClientSettingsParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        ConnectionSettings::parse_str(s)
+        ClientSettings::parse_str(s)
     }
 }
 
-impl Default for ConnectionSettings {
+impl Default for ClientSettings {
     fn default() -> Self {
-        ConnectionSettings {
+        ClientSettings {
             dns_discover: false,
             hosts: Vec::new(),
             max_discover_attempts: 3,
@@ -490,8 +490,8 @@ impl Default for ConnectionSettings {
     }
 }
 
-async fn cluster_mode_connection(
-    conn_setts: ConnectionSettings,
+async fn cluster_mode(
+    conn_setts: ClientSettings,
 ) -> Result<UnboundedSender<Msg>, Box<dyn std::error::Error>> {
     let (sender, mut consumer) = futures::channel::mpsc::unbounded::<Msg>();
     let kind = if conn_setts.dns_discover {
@@ -592,7 +592,7 @@ async fn cluster_mode_connection(
     Ok(sender)
 }
 
-fn single_node_mode(conn_setts: ConnectionSettings, endpoint: Endpoint) -> UnboundedSender<Msg> {
+fn single_node_mode(conn_setts: ClientSettings, endpoint: Endpoint) -> UnboundedSender<Msg> {
     let (sender, mut consumer) = futures::channel::mpsc::unbounded::<Msg>();
 
     tokio::spawn(async move {
@@ -658,7 +658,7 @@ fn single_node_mode(conn_setts: ConnectionSettings, endpoint: Endpoint) -> Unbou
 }
 
 async fn create_channel(
-    setts: &ConnectionSettings,
+    setts: &ClientSettings,
     endpoint: &Endpoint,
 ) -> Result<Channel, tonic::transport::Error> {
     let uri = setts.to_uri(endpoint);
@@ -712,16 +712,14 @@ impl std::fmt::Debug for Msg {
 }
 
 #[derive(Clone)]
-pub struct GrpcConnection {
+pub struct GrpcClient {
     sender: futures::channel::mpsc::UnboundedSender<Msg>,
 }
 
-impl GrpcConnection {
-    pub async fn create(
-        conn_setts: ConnectionSettings,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+impl GrpcClient {
+    pub async fn create(conn_setts: ClientSettings) -> Result<Self, Box<dyn std::error::Error>> {
         let sender = if conn_setts.dns_discover || conn_setts.hosts.len() > 1 {
-            cluster_mode_connection(conn_setts).await?
+            cluster_mode(conn_setts).await?
         } else {
             let endpoint = conn_setts
                 .hosts
@@ -732,7 +730,7 @@ impl GrpcConnection {
             single_node_mode(conn_setts, endpoint)
         };
 
-        Ok(GrpcConnection { sender })
+        Ok(GrpcClient { sender })
     }
 
     pub async fn execute<F, Fut, A>(&self, action: F) -> crate::Result<A>
@@ -801,7 +799,7 @@ struct Member {
 }
 
 async fn node_selection(
-    conn_setts: &ConnectionSettings,
+    conn_setts: &ClientSettings,
     kind: &Either<Vec<Endpoint>, DnsClusterSettings>,
     failed_endpoint: &Option<Endpoint>,
     rng: &mut SmallRng,
