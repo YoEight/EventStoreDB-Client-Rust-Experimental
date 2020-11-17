@@ -1,5 +1,5 @@
 use crate::commands;
-use crate::grpc_connection::{ConnectionSettings, GrpcConnection};
+use crate::grpc::{ClientSettings, GrpcClient};
 
 /// Represents a connection to a single node. `EventStoreDBConnection` maintains a full duplex
 /// connection to the EventStore server. An EventStore connection operates
@@ -14,20 +14,17 @@ use crate::grpc_connection::{ConnectionSettings, GrpcConnection};
 /// performance out of the connection, it is generally recommended to use it
 /// in this way.
 #[derive(Clone)]
-pub struct EventStoreDBConnection {
-    connection: GrpcConnection,
-    settings: ConnectionSettings,
+pub struct Client {
+    client: GrpcClient,
+    settings: ClientSettings,
 }
 
-impl EventStoreDBConnection {
+impl Client {
     /// Creates a gRPC connection to an EventStoreDB database.
-    pub async fn create(settings: ConnectionSettings) -> Result<Self, Box<dyn std::error::Error>> {
-        let connection = GrpcConnection::create(settings.clone()).await?;
+    pub async fn create(settings: ClientSettings) -> Result<Self, Box<dyn std::error::Error>> {
+        let client = GrpcClient::create(settings.clone()).await?;
 
-        Ok(EventStoreDBConnection {
-            connection,
-            settings,
-        })
+        Ok(Client { client, settings })
     }
     /// Sends events to a given stream.
     pub fn write_events<S>(&self, stream: S) -> commands::WriteEvents
@@ -35,7 +32,7 @@ impl EventStoreDBConnection {
         S: AsRef<str>,
     {
         commands::WriteEvents::new(
-            self.connection.clone(),
+            self.client.clone(),
             stream.as_ref().to_string(),
             self.settings.default_user_name.clone(),
         )
@@ -48,7 +45,7 @@ impl EventStoreDBConnection {
         S: AsRef<str>,
     {
         commands::ReadStreamEvents::new(
-            self.connection.clone(),
+            self.client.clone(),
             stream.as_ref().to_string(),
             self.settings.default_user_name.clone(),
         )
@@ -57,10 +54,7 @@ impl EventStoreDBConnection {
     /// Reads events for the system stream `$all`. The reading can be done
     /// forward and backward.
     pub fn read_all(&self) -> commands::ReadAllEvents {
-        commands::ReadAllEvents::new(
-            self.connection.clone(),
-            self.settings.default_user_name.clone(),
-        )
+        commands::ReadAllEvents::new(self.client.clone(), self.settings.default_user_name.clone())
     }
 
     /// Deletes a given stream. By default, the server performs a soft delete,
@@ -73,7 +67,7 @@ impl EventStoreDBConnection {
         S: AsRef<str>,
     {
         commands::DeleteStream::new(
-            self.connection.clone(),
+            self.client.clone(),
             stream.as_ref().to_string(),
             self.settings.default_user_name.clone(),
         )
@@ -98,7 +92,7 @@ impl EventStoreDBConnection {
         S: AsRef<str>,
     {
         commands::RegularCatchupSubscribe::new(
-            self.connection.clone(),
+            self.client.clone(),
             stream.as_ref().to_string(),
             self.settings.default_user_name.clone(),
         )
@@ -109,7 +103,7 @@ impl EventStoreDBConnection {
     /// [`subscribe_to_stream_from`]: #method.subscribe_to_stream_from
     pub fn subscribe_to_all_from(&self) -> commands::AllCatchupSubscribe {
         commands::AllCatchupSubscribe::new(
-            self.connection.clone(),
+            self.client.clone(),
             self.settings.default_user_name.clone(),
         )
     }
@@ -129,7 +123,7 @@ impl EventStoreDBConnection {
         S: AsRef<str>,
     {
         commands::CreatePersistentSubscription::new(
-            self.connection.clone(),
+            self.client.clone(),
             stream_id.as_ref().to_string(),
             group_name.as_ref().to_string(),
             self.settings.default_user_name.clone(),
@@ -146,7 +140,7 @@ impl EventStoreDBConnection {
         S: AsRef<str>,
     {
         commands::UpdatePersistentSubscription::new(
-            self.connection.clone(),
+            self.client.clone(),
             stream_id.as_ref().to_string(),
             group_name.as_ref().to_string(),
             self.settings.default_user_name.clone(),
@@ -163,7 +157,7 @@ impl EventStoreDBConnection {
         S: AsRef<str>,
     {
         commands::DeletePersistentSubscription::new(
-            self.connection.clone(),
+            self.client.clone(),
             stream_id.as_ref().to_string(),
             group_name.as_ref().to_string(),
             self.settings.default_user_name.clone(),
@@ -180,7 +174,7 @@ impl EventStoreDBConnection {
         S: AsRef<str>,
     {
         commands::ConnectToPersistentSubscription::new(
-            self.connection.clone(),
+            self.client.clone(),
             stream_id.as_ref().to_string(),
             group_name.as_ref().to_string(),
             self.settings.default_user_name.clone(),

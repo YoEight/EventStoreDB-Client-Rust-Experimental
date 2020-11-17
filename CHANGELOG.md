@@ -1,3 +1,7 @@
+0.9.4
+=====
+* Use consistent names across all official clients.
+
 0.9.3
 =====
 * Add prelude module.

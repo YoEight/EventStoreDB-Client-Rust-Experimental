@@ -3,9 +3,7 @@ extern crate log;
 #[macro_use]
 extern crate serde_json;
 
-use eventstore::{
-    ConnectionSettings, EventData, EventStoreDBConnection, PersistentSubscriptionSettings,
-};
+use eventstore::{Client, ClientSettings, EventData, PersistentSubscriptionSettings};
 use futures::channel::oneshot;
 use futures::stream::{self, TryStreamExt};
 use std::collections::HashMap;
@@ -32,11 +30,11 @@ fn generate_events(event_type: String, cnt: usize) -> Vec<EventData> {
     events
 }
 
-async fn test_write_events(connection: &EventStoreDBConnection) -> Result<(), Box<dyn Error>> {
+async fn test_write_events(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("write_events");
     let events = generate_events("es6-write-events-test".to_string(), 3);
 
-    let result = connection.write_events(stream_id).send_iter(events).await?;
+    let result = client.write_events(stream_id).send_iter(events).await?;
 
     debug!("Write response: {:?}", result);
 
@@ -44,15 +42,9 @@ async fn test_write_events(connection: &EventStoreDBConnection) -> Result<(), Bo
 }
 
 // We read all stream events by batch.
-async fn test_read_all_stream_events(
-    connection: &EventStoreDBConnection,
-) -> Result<(), Box<dyn Error>> {
+async fn test_read_all_stream_events(client: &Client) -> Result<(), Box<dyn Error>> {
     // Eventstore should always have "some" events in $all, since eventstore itself uses streams, ouroboros style.
-    let mut stream = connection
-        .read_all()
-        .start_from_beginning()
-        .execute(1)
-        .await?;
+    let mut stream = client.read_all().start_from_beginning().execute(1).await?;
 
     while let Some(_event) = stream.try_next().await? {}
 
@@ -61,13 +53,11 @@ async fn test_read_all_stream_events(
 
 // We read stream events by batch. We also test if we can properly read a
 // stream thoroughly.
-async fn test_read_stream_events(
-    connection: &EventStoreDBConnection,
-) -> Result<(), Box<dyn Error>> {
+async fn test_read_stream_events(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("read_stream_events");
     let events = generate_events("es6-read-stream-events-test".to_string(), 10);
 
-    let _ = connection
+    let _ = client
         .write_events(stream_id.clone())
         .send(stream::iter(events))
         .await?;
@@ -75,7 +65,7 @@ async fn test_read_stream_events(
     let mut pos = 0usize;
     let mut idx = 0i64;
 
-    let result = connection
+    let result = client
         .read_stream(stream_id)
         .start_from_beginning()
         .execute(10)
@@ -100,12 +90,10 @@ async fn test_read_stream_events(
 
 // We check to see the client can handle the correct GRPC proto response when
 // a stream does not exist
-async fn test_read_stream_events_non_existent(
-    connection: &EventStoreDBConnection,
-) -> Result<(), Box<dyn Error>> {
+async fn test_read_stream_events_non_existent(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("read_stream_events");
 
-    let result = connection
+    let result = client
         .read_stream(stream_id.as_str())
         .start_from_beginning()
         .execute(1)
@@ -120,19 +108,16 @@ async fn test_read_stream_events_non_existent(
 }
 
 // We write an event into a stream then delete that stream.
-async fn test_delete_stream(connection: &EventStoreDBConnection) -> Result<(), Box<dyn Error>> {
+async fn test_delete_stream(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("delete");
     let events = generate_events("delete-test".to_string(), 1);
 
-    let _ = connection
+    let _ = client
         .write_events(stream_id.clone())
         .send(stream::iter(events))
         .await?;
 
-    let result = connection
-        .delete_stream(stream_id.clone())
-        .execute()
-        .await?;
+    let result = client.delete_stream(stream_id.clone()).execute().await?;
 
     debug!("Delete stream [{}] result: {:?}", stream_id, result);
 
@@ -144,17 +129,17 @@ async fn test_delete_stream(connection: &EventStoreDBConnection) -> Result<(), B
 // sure we receive events written prior and after our subscription request.
 // To assess we received all the events we expected, we test our subscription
 // internal state value.
-async fn test_subscription(connection: &EventStoreDBConnection) -> Result<(), Box<dyn Error>> {
+async fn test_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("catchup");
     let events_before = generate_events("catchup-test-before".to_string(), 3);
     let events_after = generate_events("catchup-test-after".to_string(), 3);
 
-    let _ = connection
+    let _ = client
         .write_events(stream_id.clone())
         .send(stream::iter(events_before))
         .await?;
 
-    let mut sub = connection
+    let mut sub = client
         .subscribe_to_stream_from(stream_id.clone())
         .execute()
         .await?;
@@ -177,7 +162,7 @@ async fn test_subscription(connection: &EventStoreDBConnection) -> Result<(), Bo
         Ok(()) as eventstore::Result<()>
     });
 
-    let _ = connection
+    let _ = client
         .write_events(stream_id)
         .send(stream::iter(events_after))
         .await?;
@@ -193,12 +178,10 @@ async fn test_subscription(connection: &EventStoreDBConnection) -> Result<(), Bo
     Ok(())
 }
 
-async fn test_create_persistent_subscription(
-    connection: &EventStoreDBConnection,
-) -> Result<(), Box<dyn Error>> {
+async fn test_create_persistent_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("create_persistent_sub");
 
-    connection
+    client
         .create_persistent_subscription(stream_id, "a_group_name".to_string())
         .execute()
         .await?;
@@ -207,12 +190,10 @@ async fn test_create_persistent_subscription(
 }
 
 // We test we can successfully update a persistent subscription.
-async fn test_update_persistent_subscription(
-    connection: &EventStoreDBConnection,
-) -> Result<(), Box<dyn Error>> {
+async fn test_update_persistent_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("update_persistent_sub");
 
-    connection
+    client
         .create_persistent_subscription(stream_id.clone(), "a_group_name".to_string())
         .execute()
         .await?;
@@ -221,7 +202,7 @@ async fn test_update_persistent_subscription(
 
     setts.max_retry_count = 1000;
 
-    connection
+    client
         .update_persistent_subscription(stream_id, "a_group_name".to_string())
         .settings(setts)
         .execute()
@@ -231,16 +212,14 @@ async fn test_update_persistent_subscription(
 }
 
 // We test we can successfully delete a persistent subscription.
-async fn test_delete_persistent_subscription(
-    connection: &EventStoreDBConnection,
-) -> Result<(), Box<dyn Error>> {
+async fn test_delete_persistent_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("delete_persistent_sub");
-    connection
+    client
         .create_persistent_subscription(stream_id.clone(), "a_group_name".to_string())
         .execute()
         .await?;
 
-    connection
+    client
         .delete_persistent_subscription(stream_id, "a_group_name".to_string())
         .execute()
         .await?;
@@ -248,23 +227,21 @@ async fn test_delete_persistent_subscription(
     Ok(())
 }
 
-async fn test_persistent_subscription(
-    connection: &EventStoreDBConnection,
-) -> Result<(), Box<dyn Error>> {
+async fn test_persistent_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("persistent_subscription");
     let events = generate_events("es6-persistent-subscription-test".to_string(), 5);
 
-    connection
+    client
         .create_persistent_subscription(stream_id.clone(), "a_group_name".to_string())
         .execute()
         .await?;
 
-    let _ = connection
+    let _ = client
         .write_events(stream_id.clone())
         .send(stream::iter(events))
         .await?;
 
-    let (mut read, mut write) = connection
+    let (mut read, mut write) = client
         .connect_persistent_subscription(stream_id.clone(), "a_group_name".to_string())
         .execute()
         .await?;
@@ -287,7 +264,7 @@ async fn test_persistent_subscription(
     });
 
     let events = generate_events("es6-persistent-subscription-test".to_string(), 5);
-    let _ = connection
+    let _ = client
         .write_events(stream_id.clone())
         .send(stream::iter(events))
         .await?;
@@ -307,39 +284,39 @@ async fn test_persistent_subscription(
 async fn es6_20_6_test() -> Result<(), Box<dyn std::error::Error>> {
     let _ = pretty_env_logger::try_init();
     let settings = "esdb://admin:changeit@localhost:2111,localhost:2112,localhost:2113?tlsVerifyCert=false&nodePreference=leader"
-        .parse::<ConnectionSettings>()?;
+        .parse::<ClientSettings>()?;
 
-    let connection = EventStoreDBConnection::create(settings).await?;
+    let client = Client::create(settings).await?;
 
     debug!("Before test_write_events…");
-    test_write_events(&connection).await?;
+    test_write_events(&client).await?;
     debug!("Complete");
     debug!("Before test_all_read_stream_events…");
-    test_read_all_stream_events(&connection).await?;
+    test_read_all_stream_events(&client).await?;
     debug!("Complete");
     debug!("Before test_read_stream_events…");
-    test_read_stream_events(&connection).await?;
+    test_read_stream_events(&client).await?;
     debug!("Complete");
     debug!("Before test_read_stream_events_non_existent");
-    test_read_stream_events_non_existent(&connection).await?;
+    test_read_stream_events_non_existent(&client).await?;
     debug!("Complete");
     debug!("Before test_delete_stream…");
-    test_delete_stream(&connection).await?;
+    test_delete_stream(&client).await?;
     debug!("Complete");
     debug!("Before test_subscription…");
-    test_subscription(&connection).await?;
+    test_subscription(&client).await?;
     debug!("Complete");
     debug!("Before test_create_persistent_subscription…");
-    test_create_persistent_subscription(&connection).await?;
+    test_create_persistent_subscription(&client).await?;
     debug!("Complete");
     debug!("Before test_update_persistent_subscription…");
-    test_update_persistent_subscription(&connection).await?;
+    test_update_persistent_subscription(&client).await?;
     debug!("Complete");
     debug!("Before test_delete_persistent_subscription…");
-    test_delete_persistent_subscription(&connection).await?;
+    test_delete_persistent_subscription(&client).await?;
     debug!("Complete");
     debug!("Before test_persistent_subscription…");
-    test_persistent_subscription(&connection).await?;
+    test_persistent_subscription(&client).await?;
     debug!("Complete");
 
     Ok(())

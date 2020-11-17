@@ -13,7 +13,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use eventstore::{ EventStoreDBConnection, EventData, ReadResult };
+//! use eventstore::{ Client, EventData, ReadResult };
 //! use futures::stream::TryStreamExt;
 //! use serde::{Serialize, Deserialize};
 //!
@@ -25,9 +25,9 @@
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!
-//!     // Creates a connection settings for a single node connection.
+//!     // Creates a client settings for a single node connection.
 //!     let settings = "esdb://admin:changeit@localhost:2113".parse()?;
-//!     let connection = EventStoreDBConnection::create(settings).await?;
+//!     let client = Client::create(settings).await?;
 //!
 //!     let payload = Foo {
 //!         is_rust_a_nice_language: true,
@@ -37,12 +37,12 @@
 //!     // provides great additional value if you do so.
 //!     let evt = EventData::json("language-poll", &payload)?;
 //!
-//!     let _ = connection
+//!     let _ = client
 //!         .write_events("language-stream")
 //!         .send_event(evt)
 //!         .await?;
 //!
-//!     let result = connection
+//!     let result = client
 //!         .read_stream("language-stream")
 //!         .start_from_beginning()
 //!         .read_through()
@@ -70,21 +70,21 @@ extern crate serde_derive;
 #[macro_use]
 extern crate log;
 
+mod client;
 mod commands;
-mod connection;
 mod event_store;
 mod gossip;
-mod grpc_connection;
+mod grpc;
 mod types;
 
+pub use client::Client;
 pub use commands::FilterConf;
-pub use connection::EventStoreDBConnection;
-pub use grpc_connection::{ConnectionSettings, ConnectionSettingsParseError};
+pub use grpc::{ClientSettings, ClientSettingsParseError};
 pub use types::*;
 
 pub mod prelude {
+    pub use crate::client::Client;
     pub use crate::commands::FilterConf;
-    pub use crate::connection::EventStoreDBConnection;
-    pub use crate::grpc_connection::{ConnectionSettings, ConnectionSettingsParseError};
+    pub use crate::grpc::{ClientSettings, ClientSettingsParseError};
     pub use crate::types::*;
 }
