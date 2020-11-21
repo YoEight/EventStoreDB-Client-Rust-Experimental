@@ -20,7 +20,7 @@ Server setup instructions can be found here [EventStoreDB Docs], follow the dock
 # Example
 
 ```rust
-use eventstore::{ EventData, EventStoreDBConnection, ReadResult };
+use eventstore::{ EventData, Client, ReadResult };
 use futures::stream::TryStreamExt;
 use serde::{Serialize, Deserialize};
 
@@ -32,9 +32,9 @@ struct Foo {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
-    // Creates a connection settings for a single node connection.
+    // Creates a client settings for a single node configuration.
     let settings = "esdb://admin:changeit@localhost:2113".parse()?;
-    let connection = EventStoreDBConnection::create(settings).await?;
+    let client = Client::create(settings).await?;
 
     let payload = Foo {
         is_rust_a_nice_language: true,
@@ -44,12 +44,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // provides great additional value if you do so.
     let evt = EventData::json("language-poll", &payload)?;
 
-    let _ = connection
+    let _ = client
         .write_events("language-stream")
         .send_event(evt)
         .await?;
 
-    let result = connection
+    let result = client
         .read_stream("language-stream")
         .start_from_beginning()
         .read_through()

@@ -979,12 +979,12 @@ impl<A> ReadResult<A> {
         }
     }
 
-    /// Returns `true` if the result is [`ReadOk`].
+    /// Returns `true` if the result is [`ReadResult::Ok`].
     pub const fn is_ok(&self) -> bool {
         matches!(*self, ReadResult::Ok(_))
     }
 
-    /// Returns `true` if the result is [`ReadStreamNotFound`].
+    /// Returns `true` if the result is [`ReadResult::StreamNotFound`].
     pub const fn is_not_found(&self) -> bool {
         !self.is_ok()
     }
