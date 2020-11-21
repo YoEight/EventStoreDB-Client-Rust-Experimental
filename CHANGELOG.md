@@ -1,6 +1,7 @@
 0.9.4
 =====
 * Use consistent names across all official clients.
+* Fix documentation.
 
 0.9.3
 =====

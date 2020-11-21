@@ -25,7 +25,7 @@
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!
-//!     // Creates a client settings for a single node connection.
+//!     // Creates a client settings for a single node configuration.
 //!     let settings = "esdb://admin:changeit@localhost:2113".parse()?;
 //!     let client = Client::create(settings).await?;
 //!
@@ -78,13 +78,13 @@ mod grpc;
 mod types;
 
 pub use client::Client;
-pub use commands::FilterConf;
+pub use commands::*;
 pub use grpc::{ClientSettings, ClientSettingsParseError};
 pub use types::*;
 
 pub mod prelude {
     pub use crate::client::Client;
-    pub use crate::commands::FilterConf;
+    pub use crate::commands::*;
     pub use crate::grpc::{ClientSettings, ClientSettingsParseError};
     pub use crate::types::*;
 }

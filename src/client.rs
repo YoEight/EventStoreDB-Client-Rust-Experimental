@@ -1,18 +1,11 @@
 use crate::commands;
 use crate::grpc::{ClientSettings, GrpcClient};
 
-/// Represents a connection to a single node. `EventStoreDBConnection` maintains a full duplex
-/// connection to the EventStore server. An EventStore connection operates
-/// quite differently than say a SQL connection. Normally when you use an
-/// EventStore connection you want to keep the connection open for a much
-/// longer of time than when you use a SQL connection.
+/// Represents a client to a single node. `Client` maintains a full duplex
+/// communication to EventStoreDB.
 ///
-/// Another difference is that with the EventStore connection, all operations
-/// are handled in a full async manner (even if you call the synchronous
-/// behaviors). Many threads can use an EventStore connection at the same time
-/// or a single thread can make many asynchronous requests. To get the most
-/// performance out of the connection, it is generally recommended to use it
-/// in this way.
+/// Many threads can use an EventStoreDB client at the same time
+/// or a single thread can make many asynchronous requests.
 #[derive(Clone)]
 pub struct Client {
     client: GrpcClient,
@@ -20,7 +13,7 @@ pub struct Client {
 }
 
 impl Client {
-    /// Creates a gRPC connection to an EventStoreDB database.
+    /// Creates a gRPC client to an EventStoreDB database.
     pub async fn create(settings: ClientSettings) -> Result<Self, Box<dyn std::error::Error>> {
         let client = GrpcClient::create(settings.clone()).await?;
 
