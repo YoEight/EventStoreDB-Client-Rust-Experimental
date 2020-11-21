@@ -155,7 +155,8 @@ fn convert_proto_recorded_event(
         position,
         event_type,
         is_json,
-        metadata: event.custom_metadata.into(),
+        metadata: event.metadata,
+        custom_metadata: event.custom_metadata.into(),
         data: event.data.into(),
     }
 }
@@ -204,7 +205,8 @@ fn convert_persistent_proto_recorded_event(
         position,
         event_type,
         is_json,
-        metadata: event.custom_metadata.into(),
+        metadata: event.metadata,
+        custom_metadata: event.custom_metadata.into(),
         data: event.data.into(),
     }
 }
