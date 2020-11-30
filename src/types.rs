@@ -1,3 +1,4 @@
+#![allow(clippy::large_enum_variant)]
 //! Common types used across the library.
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -605,16 +606,14 @@ impl PersistentSubRead {
 /// Events related to a subscription.
 pub enum SubEvent {
     /// Indicates the subscription has been confirmed by the server.
-    Confirmed,
+    Confirmed(String),
 
     /// An event notification from the server.
-    EventAppeared {
-        event: Box<ResolvedEvent>,
-        retry_count: usize,
-    },
+    EventAppeared(ResolvedEvent),
 
-    /// Indicates the subscription has dropped.
-    Dropped,
+    /// Indicates a checkpoint has been created. Related to subscription to $all when
+    /// filters are used.
+    Checkpoint(Position),
 }
 
 #[derive(Debug)]
