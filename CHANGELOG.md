@@ -1,3 +1,8 @@
+0.9.5
+=====
+* Expose subscription lifecyle events.
+* Improve FilterConf usability.
+
 0.9.4
 =====
 * Use consistent names across all official clients.
