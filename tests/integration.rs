@@ -150,11 +150,13 @@ async fn test_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
         let mut count = 0usize;
         let max = 6usize;
 
-        while let Some(_) = sub.try_next().await? {
-            count += 1;
+        while let Some(event) = sub.try_next().await? {
+            if let eventstore::SubEvent::EventAppeared(_) = event {
+                count += 1;
 
-            if count == max {
-                break;
+                if count == max {
+                    break;
+                }
             }
         }
 
@@ -251,12 +253,14 @@ async fn test_persistent_subscription(client: &Client) -> Result<(), Box<dyn Err
     let handle = tokio::spawn(async move {
         let mut count = 0usize;
         while let Some(event) = read.try_next().await.unwrap() {
-            write.ack_event(event).await.unwrap();
+            if let eventstore::SubEvent::EventAppeared(event) = event {
+                write.ack_event(event).await.unwrap();
 
-            count += 1;
+                count += 1;
 
-            if count == max {
-                break;
+                if count == max {
+                    break;
+                }
             }
         }
 

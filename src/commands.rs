@@ -7,7 +7,8 @@ use futures::{Stream, StreamExt};
 use crate::event_store::client::{persistent, shared, streams};
 use crate::types::{
     EventData, ExpectedRevision, ExpectedVersion, PersistentSubscriptionSettings, Position,
-    ReadDirection, RecordedEvent, ResolvedEvent, Revision, WriteResult, WrongExpectedVersion,
+    ReadDirection, RecordedEvent, ResolvedEvent, Revision, SubEvent, WriteResult,
+    WrongExpectedVersion,
 };
 
 use persistent::persistent_subscriptions_client::PersistentSubscriptionsClient;
@@ -1159,7 +1160,7 @@ impl RegularCatchupSubscribe {
     /// Runs the subscription command.
     pub async fn execute(
         self,
-    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
+    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<SubEvent>> + Send + Unpin>> {
         use futures::future;
         use streams::read_req::options::stream_options::RevisionOption;
         use streams::read_req::options::{self, StreamOption, StreamOptions, SubscriptionOptions};
@@ -1206,23 +1207,37 @@ impl RegularCatchupSubscribe {
                 let mut client = StreamsClient::new(channel);
                 let stream = client.read(req).await?.into_inner();
                 let stream = stream
-                    .try_filter_map(|resp| {
-                        match resp.content.unwrap() {
-                            streams::read_resp::Content::Event(event) => {
-                                future::ok(Some(convert_proto_read_event(event)))
-                            }
-                            // TODO - We might end exposing when the subscription is confirmed by the server.
-                            _ => future::ok(None),
+                    .try_filter_map(|resp| match resp.content.unwrap() {
+                        streams::read_resp::Content::Event(event) => future::ok(Some(
+                            SubEvent::EventAppeared(convert_proto_read_event(event)),
+                        )),
+
+                        streams::read_resp::Content::Confirmation(sub) => {
+                            future::ok(Some(SubEvent::Confirmed(sub.subscription_id)))
                         }
+
+                        _ => future::ok(None),
                     })
                     .map_err(crate::Error::from_grpc);
 
-                let stream: Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin> =
+                let stream: Box<dyn Stream<Item = crate::Result<SubEvent>> + Send + Unpin> =
                     Box::new(stream);
 
                 Ok(stream)
             })
             .await
+    }
+
+    /// Runs the subscription command. Filter out all subscription events that are not `SubEvent::EventAppeared`.
+    pub async fn execute_event_appeared_only(
+        self,
+    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
+        let stream = self.execute().await?.try_filter_map(|event| match event {
+            SubEvent::EventAppeared(event) => futures::future::ok(Some(event)),
+            _ => futures::future::ok(None),
+        });
+
+        Ok(Box::new(stream))
     }
 }
 
@@ -1287,7 +1302,7 @@ impl AllCatchupSubscribe {
     /// subscription request.
     pub async fn execute(
         self,
-    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
+    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<SubEvent>> + Send + Unpin>> {
         use futures::future;
         use streams::read_req::options::all_options::AllOption;
         use streams::read_req::options::{self, AllOptions, StreamOption, SubscriptionOptions};
@@ -1343,23 +1358,46 @@ impl AllCatchupSubscribe {
                 let mut client = StreamsClient::new(channel);
                 let stream = client.read(req).await?.into_inner();
                 let stream = stream
-                    .try_filter_map(|resp| {
-                        match resp.content.unwrap() {
-                            streams::read_resp::Content::Event(event) => {
-                                future::ok(Some(convert_proto_read_event(event)))
-                            }
-                            // TODO - We might end exposing when the subscription is confirmed by the server.
-                            _ => future::ok(None),
+                    .try_filter_map(|resp| match resp.content.unwrap() {
+                        streams::read_resp::Content::Event(event) => future::ok(Some(
+                            SubEvent::EventAppeared(convert_proto_read_event(event)),
+                        )),
+
+                        streams::read_resp::Content::Confirmation(sub) => {
+                            future::ok(Some(SubEvent::Confirmed(sub.subscription_id)))
                         }
+
+                        streams::read_resp::Content::Checkpoint(chk) => {
+                            let position = Position {
+                                commit: chk.commit_position,
+                                prepare: chk.prepare_position,
+                            };
+
+                            future::ok(Some(SubEvent::Checkpoint(position)))
+                        }
+
+                        _ => future::ok(None),
                     })
                     .map_err(crate::Error::from_grpc);
 
-                let stream: Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin> =
+                let stream: Box<dyn Stream<Item = crate::Result<SubEvent>> + Send + Unpin> =
                     Box::new(stream);
 
                 Ok(stream)
             })
             .await
+    }
+
+    /// Runs the subscription command. Filter out all subscription events that are not `SubEvent::EventAppeared`.
+    pub async fn execute_event_appeared_only(
+        self,
+    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
+        let stream = self.execute().await?.try_filter_map(|event| match event {
+            SubEvent::EventAppeared(event) => futures::future::ok(Some(event)),
+            _ => futures::future::ok(None),
+        });
+
+        Ok(Box::new(stream))
     }
 }
 
@@ -1660,16 +1698,7 @@ impl ConnectToPersistentSubscription {
         self.connection
             .execute(|channel| async {
                 let mut client = PersistentSubscriptionsClient::new(channel);
-                let mut stream = client.read(req).await?.into_inner();
-                let mut sub_id_opt = None;
-
-                if let Some(evt) = stream.try_next().await? {
-                    if let Some(content) = evt.content {
-                        if let read_resp::Content::SubscriptionConfirmation(params) = content {
-                            sub_id_opt = Some(params.subscription_id);
-                        }
-                    }
-                }
+                let stream = client.read(req).await?.into_inner();
 
                 let stream = stream
                     .try_filter_map(|resp| {
@@ -1677,10 +1706,13 @@ impl ConnectToPersistentSubscription {
                             .content
                             .expect("Why response content wouldn't be defined?")
                         {
-                            read_resp::Content::Event(evt) => {
-                                Some(convert_persistent_proto_read_event(evt))
+                            read_resp::Content::Event(evt) => Some(SubEvent::EventAppeared(
+                                convert_persistent_proto_read_event(evt),
+                            )),
+
+                            read_resp::Content::SubscriptionConfirmation(sub) => {
+                                Some(SubEvent::Confirmed(sub.subscription_id))
                             }
-                            _ => None,
                         };
 
                         futures::future::ready(Ok(ret))
@@ -1690,7 +1722,7 @@ impl ConnectToPersistentSubscription {
                 let read = SubscriptionRead {
                     inner: Box::new(stream),
                 };
-                let write = SubscriptionWrite { sub_id_opt, sender };
+                let write = SubscriptionWrite { sender };
 
                 Ok((read, write))
             })
@@ -1699,12 +1731,24 @@ impl ConnectToPersistentSubscription {
 }
 
 pub struct SubscriptionRead {
-    inner: Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>,
+    inner: Box<dyn Stream<Item = crate::Result<SubEvent>> + Send + Unpin>,
 }
 
 impl SubscriptionRead {
-    pub async fn try_next(&mut self) -> crate::Result<Option<ResolvedEvent>> {
+    pub async fn try_next(&mut self) -> crate::Result<Option<SubEvent>> {
         self.inner.try_next().await
+    }
+
+    pub async fn try_next_event(&mut self) -> crate::Result<Option<ResolvedEvent>> {
+        let event = self.inner.try_next().await?;
+
+        if let Some(event) = event {
+            if let SubEvent::EventAppeared(event) = event {
+                return Ok(Some(event));
+            }
+        }
+
+        Ok(None)
     }
 }
 fn to_proto_uuid(id: uuid::Uuid) -> Uuid {
@@ -1714,7 +1758,6 @@ fn to_proto_uuid(id: uuid::Uuid) -> Uuid {
 }
 
 pub struct SubscriptionWrite {
-    sub_id_opt: Option<String>,
     sender: futures::channel::mpsc::Sender<persistent::ReadReq>,
 }
 
@@ -1733,12 +1776,7 @@ impl SubscriptionWrite {
 
         let ids = event_ids.into_iter().map(to_proto_uuid).collect();
         let ack = Ack {
-            id: base64::encode(
-                self.sub_id_opt
-                    .as_ref()
-                    .expect("subscription id must be defined"),
-            )
-            .into_bytes(),
+            id: Vec::new(),
             ids,
         };
 
@@ -1776,12 +1814,7 @@ impl SubscriptionWrite {
         };
 
         let nack = Nack {
-            id: base64::encode(
-                self.sub_id_opt
-                    .as_ref()
-                    .expect("subscription id must be defined"),
-            )
-            .into_bytes(),
+            id: Vec::new(),
             ids,
             action,
             reason,
