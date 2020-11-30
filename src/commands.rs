@@ -330,6 +330,7 @@ fn configure_auth_req<A>(req: &mut Request<A>, creds_opt: Option<Credentials>) {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct FilterConf {
     based_on_stream: bool,
     max: Option<u32>,
@@ -361,15 +362,15 @@ impl FilterConf {
         }
     }
 
-    pub fn regex(self, regex: String) -> Self {
+    pub fn regex<A: AsRef<str>>(self, regex: A) -> Self {
         FilterConf {
-            regex: Some(regex),
+            regex: Some(regex.as_ref().to_string()),
             ..self
         }
     }
 
-    pub fn add_prefix(mut self, prefix: String) -> Self {
-        self.prefixes.push(prefix);
+    pub fn add_prefix<A: AsRef<str>>(mut self, prefix: A) -> Self {
+        self.prefixes.push(prefix.as_ref().to_string());
         self
     }
 
