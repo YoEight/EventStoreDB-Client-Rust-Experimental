@@ -1407,7 +1407,6 @@ pub struct CreatePersistentSubscription {
     connection: GrpcClient,
     stream_id: String,
     group_name: String,
-    sub_settings: PersistentSubscriptionSettings,
     creds: Option<Credentials>,
 }
 
@@ -1423,7 +1422,6 @@ impl CreatePersistentSubscription {
             stream_id,
             group_name,
             creds,
-            sub_settings: PersistentSubscriptionSettings::default(),
         }
     }
 
@@ -1435,22 +1433,13 @@ impl CreatePersistentSubscription {
         }
     }
 
-    /// Creates a persistent subscription based on the given
-    /// `types::PersistentSubscriptionSettings`.
-    pub fn settings(self, sub_settings: PersistentSubscriptionSettings) -> Self {
-        CreatePersistentSubscription {
-            sub_settings,
-            ..self
-        }
-    }
-
     /// Sends the persistent subscription creation command asynchronously to
     /// the server.
-    pub async fn execute(self) -> crate::Result<()> {
+    pub async fn execute(self, settings: PersistentSubscriptionSettings) -> crate::Result<()> {
         use persistent::create_req::Options;
         use persistent::CreateReq;
 
-        let settings = convert_settings_create(self.sub_settings);
+        let settings = convert_settings_create(settings);
         let stream_identifier = Some(StreamIdentifier {
             stream_name: self.stream_id.into_bytes(),
         });
@@ -1484,7 +1473,6 @@ pub struct UpdatePersistentSubscription {
     connection: GrpcClient,
     stream_id: String,
     group_name: String,
-    sub_settings: PersistentSubscriptionSettings,
     creds: Option<Credentials>,
 }
 
@@ -1500,7 +1488,6 @@ impl UpdatePersistentSubscription {
             stream_id,
             group_name,
             creds,
-            sub_settings: PersistentSubscriptionSettings::default(),
         }
     }
 
@@ -1512,22 +1499,13 @@ impl UpdatePersistentSubscription {
         }
     }
 
-    /// Updates a persistent subscription using the given
-    /// `types::PersistentSubscriptionSettings`.
-    pub fn settings(self, sub_settings: PersistentSubscriptionSettings) -> Self {
-        UpdatePersistentSubscription {
-            sub_settings,
-            ..self
-        }
-    }
-
     /// Sends the persistent subscription update command asynchronously to
     /// the server.
-    pub async fn execute(self) -> crate::Result<()> {
+    pub async fn execute(self, settings: PersistentSubscriptionSettings) -> crate::Result<()> {
         use persistent::update_req::Options;
         use persistent::UpdateReq;
 
-        let settings = convert_settings_update(self.sub_settings);
+        let settings = convert_settings_update(settings);
         let stream_identifier = Some(StreamIdentifier {
             stream_name: self.stream_id.into_bytes(),
         });
