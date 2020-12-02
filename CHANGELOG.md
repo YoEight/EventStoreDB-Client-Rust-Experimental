@@ -1,3 +1,8 @@
+0.9.6
+=====
+* Add Debug instance for `SubEvent`.
+* No longer implicitly use `PersistentSubscriptionSettings` default values on both persistent subscription creation and update.
+
 0.9.5
 =====
 * Expose subscription lifecyle events.

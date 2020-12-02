@@ -604,6 +604,7 @@ impl PersistentSubRead {
 }
 
 /// Events related to a subscription.
+#[derive(Debug)]
 pub enum SubEvent {
     /// Indicates the subscription has been confirmed by the server. The String value represents
     /// the subscription id.

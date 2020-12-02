@@ -185,7 +185,7 @@ async fn test_create_persistent_subscription(client: &Client) -> Result<(), Box<
 
     client
         .create_persistent_subscription(stream_id, "a_group_name".to_string())
-        .execute()
+        .execute(Default::default())
         .await?;
 
     Ok(())
@@ -197,7 +197,7 @@ async fn test_update_persistent_subscription(client: &Client) -> Result<(), Box<
 
     client
         .create_persistent_subscription(stream_id.clone(), "a_group_name".to_string())
-        .execute()
+        .execute(Default::default())
         .await?;
 
     let mut setts = PersistentSubscriptionSettings::default();
@@ -206,8 +206,7 @@ async fn test_update_persistent_subscription(client: &Client) -> Result<(), Box<
 
     client
         .update_persistent_subscription(stream_id, "a_group_name".to_string())
-        .settings(setts)
-        .execute()
+        .execute(setts)
         .await?;
 
     Ok(())
@@ -218,7 +217,7 @@ async fn test_delete_persistent_subscription(client: &Client) -> Result<(), Box<
     let stream_id = fresh_stream_id("delete_persistent_sub");
     client
         .create_persistent_subscription(stream_id.clone(), "a_group_name".to_string())
-        .execute()
+        .execute(Default::default())
         .await?;
 
     client
@@ -235,7 +234,7 @@ async fn test_persistent_subscription(client: &Client) -> Result<(), Box<dyn Err
 
     client
         .create_persistent_subscription(stream_id.clone(), "a_group_name".to_string())
-        .execute()
+        .execute(Default::default())
         .await?;
 
     let _ = client
