@@ -1,6 +1,8 @@
 0.9.7
 =====
 * Update DNS discovery so it works properly with EventStore Cloud.
+* Expose `ClientSettings` values.
+* Load native certificates when TLS is enabled.
 
 0.9.6
 =====
