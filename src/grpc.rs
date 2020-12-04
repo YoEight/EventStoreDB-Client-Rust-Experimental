@@ -17,12 +17,10 @@ use rand::{RngCore, SeedableRng};
 use serde::de::Visitor;
 use serde::{Deserializer, Serializer};
 use std::cmp::Ordering;
-use std::net::IpAddr;
 use std::str::FromStr;
 use std::time::Duration;
 use tonic::transport::Channel;
 use tonic::Status;
-use trust_dns_resolver::proto::rr::rdata::SRV;
 use uuid::Uuid;
 
 struct NoVerification;
@@ -198,11 +196,6 @@ fn default_throw_on_append_failure() -> bool {
 ///
 /// * `throwOnAppendFailure`: default `true`. If the client raise an exception when facing a `WrongExpectedVersion`.
 ///    __*TODO - Not supported yet.*__
-///
-/// * `dnsLookUpType`: default `a`. DNS record type we are looking for during discovery of cluster
-///   nodes. Default behaviour is looking for A records. Supported values are:
-///   * `a`
-///   * `srv`
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientSettings {
     #[serde(default)]
@@ -233,8 +226,6 @@ pub struct ClientSettings {
     pub(crate) throw_on_append_failure: bool,
     #[serde(default)]
     pub(crate) default_user_name: Option<Credentials>,
-    #[serde(default)]
-    pub(crate) dns_lookup_type: crate::LookupType,
 }
 
 impl ClientSettings {
@@ -403,24 +394,6 @@ impl ClientSettings {
                             }
                         }
 
-                        "dnsLookUpType" => {
-                            let value = values.as_slice()[1];
-
-                            match value {
-                                "a" => {
-                                    result.dns_lookup_type = crate::LookupType::LookupA;
-                                }
-
-                                "srv" => {
-                                    result.dns_lookup_type = crate::LookupType::LookupSRV;
-                                }
-
-                                _ => {
-                                    return Err(nom::Err::Failure((value, ErrorKind::ParseTo)));
-                                }
-                            }
-                        }
-
                         _ => {
                             continue;
                         }
@@ -485,7 +458,6 @@ impl Default for ClientSettings {
             tls_verify_cert: true,
             throw_on_append_failure: true,
             default_user_name: None,
-            dns_lookup_type: crate::LookupType::LookupA,
         }
     }
 }
@@ -496,17 +468,7 @@ async fn cluster_mode(
     let (sender, mut consumer) = futures::channel::mpsc::unbounded::<Msg>();
     let kind = if conn_setts.dns_discover {
         let endpoint = conn_setts.hosts.as_slice()[0].clone();
-        let domain_name = format!("{}.", endpoint.host)
-            .as_str()
-            .parse::<trust_dns_resolver::Name>()?;
-
-        let resolver = trust_dns_resolver::TokioAsyncResolver::tokio_from_system_conf().await?;
-        let dns_settings = DnsClusterSettings {
-            resolver,
-            domain_name,
-            gossip_port: endpoint.port,
-            lookup: conn_setts.dns_lookup_type,
-        };
+        let dns_settings = DnsClusterSettings { endpoint };
 
         Either::Right(dns_settings)
     } else {
@@ -821,14 +783,7 @@ async fn node_selection(
         None => {
             let mut seeds = match kind.as_ref() {
                 Either::Left(seeds) => seeds.clone(),
-                Either::Right(dns) => match candidates_from_dns(dns).await {
-                    Ok(seeds) => seeds,
-
-                    Err(e) => {
-                        error!("Error when performing DNS resolution: {}", e);
-                        Vec::new()
-                    }
-                },
+                Either::Right(dns) => vec![dns.endpoint.clone()],
             };
 
             seeds.shuffle(rng);
@@ -909,44 +864,6 @@ impl Candidates {
 
         self.nodes.into_iter().map(|m| m.endpoint).collect()
     }
-}
-
-fn ip_to_endpoint(dns: &DnsClusterSettings, ip: IpAddr) -> Endpoint {
-    Endpoint {
-        host: ip.to_string(),
-        port: dns.gossip_port,
-    }
-}
-
-fn srv_to_endpoint(srv: &SRV) -> Endpoint {
-    Endpoint {
-        host: srv.target().to_string(),
-        port: srv.port() as u32,
-    }
-}
-
-async fn candidates_from_dns<'a>(
-    dns: &DnsClusterSettings,
-) -> Result<Vec<Endpoint>, trust_dns_resolver::error::ResolveError> {
-    let endpoints = match dns.lookup {
-        crate::LookupType::LookupA => dns
-            .resolver
-            .lookup_ip(dns.domain_name.clone())
-            .await?
-            .iter()
-            .map(|ip| ip_to_endpoint(dns, ip))
-            .collect(),
-
-        crate::LookupType::LookupSRV => dns
-            .resolver
-            .srv_lookup(dns.domain_name.clone())
-            .await?
-            .iter()
-            .map(srv_to_endpoint)
-            .collect(),
-    };
-
-    Ok(endpoints)
 }
 
 fn candidates_from_old_gossip(
