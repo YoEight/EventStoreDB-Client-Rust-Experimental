@@ -683,6 +683,8 @@ async fn create_channel(
             tonic::transport::ClientTlsConfig::new().rustls_client_config(rustls_config);
 
         channel = channel.tls_config(client_config)?;
+    } else {
+        channel = channel.tls_config(tonic::transport::ClientTlsConfig::new())?;
     }
 
     let channel = channel.connect().await?;
