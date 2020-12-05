@@ -1,3 +1,7 @@
+0.9.8
+=====
+* Fix insecure mode regression.
+
 0.9.7
 =====
 * Update DNS discovery so it works properly with EventStore Cloud.
