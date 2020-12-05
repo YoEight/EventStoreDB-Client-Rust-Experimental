@@ -669,7 +669,7 @@ async fn create_channel(
 
     let mut channel = Channel::builder(uri.clone());
 
-    if !setts.tls_verify_cert {
+    if !setts.tls_verify_cert && setts.secure {
         let mut rustls_config = rustls::ClientConfig::new();
         let protocols = vec![(b"h2".to_vec())];
 
@@ -683,7 +683,7 @@ async fn create_channel(
             tonic::transport::ClientTlsConfig::new().rustls_client_config(rustls_config);
 
         channel = channel.tls_config(client_config)?;
-    } else {
+    } else if setts.secure {
         channel = channel.tls_config(tonic::transport::ClientTlsConfig::new())?;
     }
 
