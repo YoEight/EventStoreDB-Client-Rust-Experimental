@@ -1,3 +1,7 @@
+0.9.9
+=====
+* Fix how we set RecordedEvent is_json.
+
 0.9.8
 =====
 * Fix insecure mode regression.

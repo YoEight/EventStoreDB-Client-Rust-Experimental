@@ -114,7 +114,7 @@ fn convert_event_data(event: EventData) -> streams::AppendReq {
 }
 
 fn convert_proto_recorded_event(
-    mut event: streams::read_resp::read_event::RecordedEvent,
+    event: streams::read_resp::read_event::RecordedEvent,
 ) -> RecordedEvent {
     let id = event
         .id
@@ -126,18 +126,14 @@ fn convert_proto_recorded_event(
         prepare: event.prepare_position,
     };
 
-    let event_type = if let Some(tpe) = event.metadata.remove(&"type".to_owned()) {
-        tpe
+    let event_type = if let Some(tpe) = event.metadata.get("type") {
+        tpe.to_string()
     } else {
-        "<no-event-type-provided>".to_owned()
+        "<no-event-type-provided>".to_string()
     };
 
-    let is_json = if let Some(is_json) = event.metadata.remove(&"is-json".to_owned()) {
-        match is_json.to_lowercase().as_str() {
-            "true" => true,
-            "false" => false,
-            unknown => panic!("Unknown [{}] 'is-json' metadata value", unknown),
-        }
+    let is_json = if let Some(content_type) = event.metadata.get("content-type") {
+        matches!(content_type.as_str(), "application/json")
     } else {
         false
     };
