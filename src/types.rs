@@ -910,6 +910,8 @@ pub enum Error {
     ConnectionClosed,
     #[error("Unmapped gRPC error: {0}.")]
     Grpc(Status),
+    #[error("gRPC connection error: {0}")]
+    GrpcConnectionError(GrpcConnectionError),
 }
 
 impl Error {
@@ -942,6 +944,15 @@ impl Error {
             }
         }
     }
+}
+
+#[derive(Error, Debug)]
+/// EventStoreDB command error.
+pub enum GrpcConnectionError {
+    #[error("Max discovery attempt count reached. count: {0}")]
+    MaxDiscoveryAttemptReached(usize),
+    #[error("Unmapped gRPC connection error: {0}.")]
+    Grpc(Status),
 }
 
 pub type Result<A> = std::result::Result<A, Error>;
