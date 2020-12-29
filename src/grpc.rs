@@ -1,5 +1,5 @@
 use crate::gossip::{Gossip, MemberInfo, VNodeState};
-use crate::types::Endpoint;
+use crate::types::{Endpoint, GrpcConnectionError};
 use crate::{Credentials, DnsClusterSettings, Either, NodePreference};
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;
@@ -175,7 +175,6 @@ fn default_throw_on_append_failure() -> bool {
 ///
 /// * `maxDiscoverAttempts`: default `3`. Maximum number of DNS discovery attempts before the
 ///    connection gives up.
-///    __*TODO - Current behavior keeps retrying ensdlessly.*__
 ///
 /// * `discoveryInterval`: default `500ms`. Waiting period between discovery attempts.
 ///
@@ -193,9 +192,6 @@ fn default_throw_on_append_failure() -> bool {
 ///    * `random`
 ///    * `follower`
 ///    * `readOnlyReplica`
-///
-/// * `throwOnAppendFailure`: default `true`. If the client raise an exception when facing a `WrongExpectedVersion`.
-///    __*TODO - Not supported yet.*__
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientSettings {
     #[serde(default)]
@@ -259,10 +255,6 @@ impl ClientSettings {
 
     pub fn is_tls_certificate_verification_enabled(&self) -> bool {
         self.tls_verify_cert
-    }
-
-    pub fn is_throw_on_append_failure_enabled(&self) -> bool {
-        self.throw_on_append_failure
     }
 
     pub fn default_authenticated_user(&self) -> &Option<Credentials> {
@@ -357,8 +349,9 @@ impl ClientSettings {
                 let values: Vec<&str> = param.split('=').collect();
 
                 if values.len() == 2 {
-                    match values.as_slice()[0] {
-                        "maxDiscoverAttempts" => {
+                    let name = values.as_slice()[0].to_lowercase();
+                    match name.as_str() {
+                        "maxdiscoverattempts" => {
                             let value = values.as_slice()[1];
                             if let Ok(attempt) = value.parse() {
                                 result.max_discover_attempts = attempt;
@@ -367,7 +360,7 @@ impl ClientSettings {
                             }
                         }
 
-                        "discoveryInterval" => {
+                        "discoveryinterval" => {
                             let value = values.as_slice()[1];
                             if let Ok(millis) = value.parse() {
                                 result.discovery_interval = Duration::from_millis(millis);
@@ -376,7 +369,7 @@ impl ClientSettings {
                             }
                         }
 
-                        "gossipTimeout" => {
+                        "gossiptimeout" => {
                             let value = values.as_slice()[1];
                             if let Ok(millis) = value.parse() {
                                 result.gossip_timeout = Duration::from_millis(millis);
@@ -394,7 +387,7 @@ impl ClientSettings {
                             }
                         }
 
-                        "tlsVerifyCert" => {
+                        "tlsverifycert" => {
                             let value = values.as_slice()[1];
                             if let Ok(bool) = value.parse() {
                                 result.tls_verify_cert = bool;
@@ -403,34 +396,31 @@ impl ClientSettings {
                             }
                         }
 
-                        "nodePreference" => match values.as_slice()[1] {
-                            "follower" => {
-                                result.preference = NodePreference::Follower;
-                            }
+                        "nodepreference" => {
+                            let value = values.as_slice()[1].to_lowercase();
+                            match value.as_str() {
+                                "follower" => {
+                                    result.preference = NodePreference::Follower;
+                                }
 
-                            "random" => {
-                                result.preference = NodePreference::Random;
-                            }
+                                "random" => {
+                                    result.preference = NodePreference::Random;
+                                }
 
-                            "leader" => {
-                                result.preference = NodePreference::Leader;
-                            }
+                                "leader" => {
+                                    result.preference = NodePreference::Leader;
+                                }
 
-                            "readOnlyReplica" => {
-                                result.preference = NodePreference::ReadOnlyReplica;
-                            }
+                                "readonlyreplica" => {
+                                    result.preference = NodePreference::ReadOnlyReplica;
+                                }
 
-                            wrong => {
-                                return Err(nom::Err::Failure((wrong, ErrorKind::ParseTo)));
-                            }
-                        },
-
-                        "throwOnAppendFailure" => {
-                            let value = values.as_slice()[1];
-                            if let Ok(bool) = value.parse() {
-                                result.throw_on_append_failure = bool;
-                            } else {
-                                return Err(nom::Err::Failure((value, ErrorKind::ParseTo)));
+                                _ => {
+                                    return Err(nom::Err::Failure((
+                                        values.as_slice()[1],
+                                        ErrorKind::ParseTo,
+                                    )));
+                                }
                             }
                         }
 
@@ -522,6 +512,7 @@ async fn cluster_mode(
         let mut previous_candidates: Option<Vec<Member>> = None;
         let mut work_queue = Vec::new();
         let mut rng = SmallRng::from_entropy();
+        let mut discovery_att_count = 0usize;
 
         while let Some(item) = consumer.next().await {
             work_queue.push(item);
@@ -537,6 +528,13 @@ async fn cluster_mode(
                             };
 
                             let _ = resp.send(Ok(handle));
+                        } else if discovery_att_count >= conn_setts.max_discover_attempts() {
+                            let _ =
+                                resp.send(Err(GrpcConnectionError::MaxDiscoveryAttemptReached(
+                                    conn_setts.max_discover_attempts(),
+                                )));
+
+                            discovery_att_count = 0;
                         } else {
                             // It means we need to create a new channel.
                             work_queue.push(Msg::GetChannel(resp));
@@ -568,6 +566,7 @@ async fn cluster_mode(
                                     failed_endpoint = Some(node);
                                     channel_id = Uuid::new_v4();
                                     channel = Some(new_channel);
+                                    discovery_att_count = 0;
 
                                     continue;
                                 }
@@ -580,11 +579,24 @@ async fn cluster_mode(
                                 }
                             }
                         } else {
-                            warn!("Unable to select a node. Retrying...");
+                            warn!(
+                                "Unable to select a node. Retrying...({}/{})",
+                                discovery_att_count,
+                                conn_setts.max_discover_attempts()
+                            );
                         }
 
-                        tokio::time::delay_for(conn_setts.discovery_interval).await;
-                        work_queue.push(Msg::CreateChannel(id, seed_opt));
+                        if discovery_att_count < conn_setts.max_discover_attempts() {
+                            tokio::time::delay_for(conn_setts.discovery_interval).await;
+                            discovery_att_count += 1;
+                            work_queue.push(Msg::CreateChannel(id, seed_opt));
+                            continue;
+                        }
+
+                        error!(
+                            "Maximum discovery attempt count reached: {0}",
+                            conn_setts.max_discover_attempts()
+                        );
                     }
                 }
             }
@@ -700,7 +712,7 @@ struct Handle {
 }
 
 enum Msg {
-    GetChannel(oneshot::Sender<Result<Handle, Status>>),
+    GetChannel(oneshot::Sender<Result<Handle, GrpcConnectionError>>),
     CreateChannel(Uuid, Option<Endpoint>),
 }
 
@@ -748,7 +760,7 @@ impl GrpcClient {
         let _ = self.sender.clone().send(Msg::GetChannel(sender)).await;
 
         let handle = match consumer.await {
-            Ok(handle) => handle.map_err(crate::Error::from_grpc),
+            Ok(handle) => handle.map_err(crate::Error::GrpcConnectionError),
             Err(_) => Err(crate::Error::ConnectionClosed),
         }?;
 
@@ -841,25 +853,31 @@ async fn node_selection(
                 let gossip_client = Gossip::create(channel.clone());
 
                 debug!("Calling gossip endpoint on: {:?}", candidate);
-                match gossip_client.read().await {
-                    Ok(members_info) => {
-                        debug!("Candidate {:?} gossip info: {:?}", candidate, members_info);
-                        let selected_node = determine_best_node(
-                            rng,
-                            conn_setts.preference,
-                            members_info.as_slice(),
-                        );
+                if let Ok(result) =
+                    tokio::time::timeout(conn_setts.gossip_timeout, gossip_client.read()).await
+                {
+                    match result {
+                        Ok(members_info) => {
+                            debug!("Candidate {:?} gossip info: {:?}", candidate, members_info);
+                            let selected_node = determine_best_node(
+                                rng,
+                                conn_setts.preference,
+                                members_info.as_slice(),
+                            );
 
-                        if let Some(selected_node) = selected_node {
-                            return Some(selected_node);
+                            if let Some(selected_node) = selected_node {
+                                return Some(selected_node);
+                            }
+                        }
+                        Err(err) => {
+                            debug!(
+                                "Failed to retrieve gossip information from candidate {:?}: {}",
+                                &candidate, err
+                            );
                         }
                     }
-                    Err(err) => {
-                        debug!(
-                            "Failed to retrieve gossip information from candidate {:?}: {}",
-                            &candidate, err
-                        );
-                    }
+                } else {
+                    warn!("Gossip request timeout for candidate: {:?}", candidate);
                 }
             }
 
