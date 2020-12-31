@@ -244,3 +244,18 @@ password = "pass"
 [[mockups.expected.hosts]]
 host = "host"
 port = 2_113
+
+[[mockups]]
+string = "esdb://host?MaxDiscoverAttempts=200&discoveryinterval=1000&GOSSIPTIMEOUT=1&nOdEpReFeReNcE=leader&TLS=false&TlsVerifyCert=false&THROWOnAppendFailure=true"
+[mockups.expected]
+dns_discover = false
+max_discover_attempts = 200
+discovery_interval = 1000
+gossip_timeout = 1
+preference = "Leader"
+secure = false
+tls_verify_cert = false
+throw_on_append_failure = true
+[[mockups.expected.hosts]]
+host = "host"
+port = 2_113
