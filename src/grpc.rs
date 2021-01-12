@@ -15,6 +15,7 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{RngCore, SeedableRng};
 use serde::de::Visitor;
+use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use std::cmp::Ordering;
 use std::str::FromStr;
