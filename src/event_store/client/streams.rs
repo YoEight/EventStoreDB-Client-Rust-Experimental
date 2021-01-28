@@ -1,8 +1,9 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReadReq {
     #[prost(message, optional, tag = "1")]
-    pub options: ::std::option::Option<read_req::Options>,
+    pub options: ::core::option::Option<read_req::Options>,
 }
+/// Nested message and enum types in `ReadReq`.
 pub mod read_req {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
@@ -11,23 +12,25 @@ pub mod read_req {
         #[prost(bool, tag = "4")]
         pub resolve_links: bool,
         #[prost(message, optional, tag = "9")]
-        pub uuid_option: ::std::option::Option<options::UuidOption>,
+        pub uuid_option: ::core::option::Option<options::UuidOption>,
         #[prost(oneof = "options::StreamOption", tags = "1, 2")]
-        pub stream_option: ::std::option::Option<options::StreamOption>,
+        pub stream_option: ::core::option::Option<options::StreamOption>,
         #[prost(oneof = "options::CountOption", tags = "5, 6")]
-        pub count_option: ::std::option::Option<options::CountOption>,
+        pub count_option: ::core::option::Option<options::CountOption>,
         #[prost(oneof = "options::FilterOption", tags = "7, 8")]
-        pub filter_option: ::std::option::Option<options::FilterOption>,
+        pub filter_option: ::core::option::Option<options::FilterOption>,
     }
+    /// Nested message and enum types in `Options`.
     pub mod options {
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct StreamOptions {
             #[prost(message, optional, tag = "1")]
             pub stream_identifier:
-                ::std::option::Option<super::super::super::shared::StreamIdentifier>,
+                ::core::option::Option<super::super::super::shared::StreamIdentifier>,
             #[prost(oneof = "stream_options::RevisionOption", tags = "2, 3, 4")]
-            pub revision_option: ::std::option::Option<stream_options::RevisionOption>,
+            pub revision_option: ::core::option::Option<stream_options::RevisionOption>,
         }
+        /// Nested message and enum types in `StreamOptions`.
         pub mod stream_options {
             #[derive(Clone, PartialEq, ::prost::Oneof)]
             pub enum RevisionOption {
@@ -42,8 +45,9 @@ pub mod read_req {
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct AllOptions {
             #[prost(oneof = "all_options::AllOption", tags = "1, 2, 3")]
-            pub all_option: ::std::option::Option<all_options::AllOption>,
+            pub all_option: ::core::option::Option<all_options::AllOption>,
         }
+        /// Nested message and enum types in `AllOptions`.
         pub mod all_options {
             #[derive(Clone, PartialEq, ::prost::Oneof)]
             pub enum AllOption {
@@ -69,17 +73,18 @@ pub mod read_req {
             #[prost(uint32, tag = "5")]
             pub checkpoint_interval_multiplier: u32,
             #[prost(oneof = "filter_options::Filter", tags = "1, 2")]
-            pub filter: ::std::option::Option<filter_options::Filter>,
+            pub filter: ::core::option::Option<filter_options::Filter>,
             #[prost(oneof = "filter_options::Window", tags = "3, 4")]
-            pub window: ::std::option::Option<filter_options::Window>,
+            pub window: ::core::option::Option<filter_options::Window>,
         }
+        /// Nested message and enum types in `FilterOptions`.
         pub mod filter_options {
             #[derive(Clone, PartialEq, ::prost::Message)]
             pub struct Expression {
                 #[prost(string, tag = "1")]
-                pub regex: std::string::String,
+                pub regex: ::prost::alloc::string::String,
                 #[prost(string, repeated, tag = "2")]
-                pub prefix: ::std::vec::Vec<std::string::String>,
+                pub prefix: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
             }
             #[derive(Clone, PartialEq, ::prost::Oneof)]
             pub enum Filter {
@@ -99,8 +104,9 @@ pub mod read_req {
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct UuidOption {
             #[prost(oneof = "uuid_option::Content", tags = "1, 2")]
-            pub content: ::std::option::Option<uuid_option::Content>,
+            pub content: ::core::option::Option<uuid_option::Content>,
         }
+        /// Nested message and enum types in `UUIDOption`.
         pub mod uuid_option {
             #[derive(Clone, PartialEq, ::prost::Oneof)]
             pub enum Content {
@@ -142,26 +148,28 @@ pub mod read_req {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReadResp {
     #[prost(oneof = "read_resp::Content", tags = "1, 2, 3, 4")]
-    pub content: ::std::option::Option<read_resp::Content>,
+    pub content: ::core::option::Option<read_resp::Content>,
 }
+/// Nested message and enum types in `ReadResp`.
 pub mod read_resp {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ReadEvent {
         #[prost(message, optional, tag = "1")]
-        pub event: ::std::option::Option<read_event::RecordedEvent>,
+        pub event: ::core::option::Option<read_event::RecordedEvent>,
         #[prost(message, optional, tag = "2")]
-        pub link: ::std::option::Option<read_event::RecordedEvent>,
+        pub link: ::core::option::Option<read_event::RecordedEvent>,
         #[prost(oneof = "read_event::Position", tags = "3, 4")]
-        pub position: ::std::option::Option<read_event::Position>,
+        pub position: ::core::option::Option<read_event::Position>,
     }
+    /// Nested message and enum types in `ReadEvent`.
     pub mod read_event {
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct RecordedEvent {
             #[prost(message, optional, tag = "1")]
-            pub id: ::std::option::Option<super::super::super::shared::Uuid>,
+            pub id: ::core::option::Option<super::super::super::shared::Uuid>,
             #[prost(message, optional, tag = "2")]
             pub stream_identifier:
-                ::std::option::Option<super::super::super::shared::StreamIdentifier>,
+                ::core::option::Option<super::super::super::shared::StreamIdentifier>,
             #[prost(uint64, tag = "3")]
             pub stream_revision: u64,
             #[prost(uint64, tag = "4")]
@@ -169,11 +177,14 @@ pub mod read_resp {
             #[prost(uint64, tag = "5")]
             pub commit_position: u64,
             #[prost(map = "string, string", tag = "6")]
-            pub metadata: ::std::collections::HashMap<std::string::String, std::string::String>,
-            #[prost(bytes, tag = "7")]
-            pub custom_metadata: std::vec::Vec<u8>,
-            #[prost(bytes, tag = "8")]
-            pub data: std::vec::Vec<u8>,
+            pub metadata: ::std::collections::HashMap<
+                ::prost::alloc::string::String,
+                ::prost::alloc::string::String,
+            >,
+            #[prost(bytes = "vec", tag = "7")]
+            pub custom_metadata: ::prost::alloc::vec::Vec<u8>,
+            #[prost(bytes = "vec", tag = "8")]
+            pub data: ::prost::alloc::vec::Vec<u8>,
         }
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Position {
@@ -186,7 +197,7 @@ pub mod read_resp {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct SubscriptionConfirmation {
         #[prost(string, tag = "1")]
-        pub subscription_id: std::string::String,
+        pub subscription_id: ::prost::alloc::string::String,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Checkpoint {
@@ -198,7 +209,7 @@ pub mod read_resp {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct StreamNotFound {
         #[prost(message, optional, tag = "1")]
-        pub stream_identifier: ::std::option::Option<super::super::shared::StreamIdentifier>,
+        pub stream_identifier: ::core::option::Option<super::super::shared::StreamIdentifier>,
     }
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Content {
@@ -215,16 +226,18 @@ pub mod read_resp {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AppendReq {
     #[prost(oneof = "append_req::Content", tags = "1, 2")]
-    pub content: ::std::option::Option<append_req::Content>,
+    pub content: ::core::option::Option<append_req::Content>,
 }
+/// Nested message and enum types in `AppendReq`.
 pub mod append_req {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(message, optional, tag = "1")]
-        pub stream_identifier: ::std::option::Option<super::super::shared::StreamIdentifier>,
+        pub stream_identifier: ::core::option::Option<super::super::shared::StreamIdentifier>,
         #[prost(oneof = "options::ExpectedStreamRevision", tags = "2, 3, 4, 5")]
-        pub expected_stream_revision: ::std::option::Option<options::ExpectedStreamRevision>,
+        pub expected_stream_revision: ::core::option::Option<options::ExpectedStreamRevision>,
     }
+    /// Nested message and enum types in `Options`.
     pub mod options {
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum ExpectedStreamRevision {
@@ -241,13 +254,16 @@ pub mod append_req {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ProposedMessage {
         #[prost(message, optional, tag = "1")]
-        pub id: ::std::option::Option<super::super::shared::Uuid>,
+        pub id: ::core::option::Option<super::super::shared::Uuid>,
         #[prost(map = "string, string", tag = "2")]
-        pub metadata: ::std::collections::HashMap<std::string::String, std::string::String>,
-        #[prost(bytes, tag = "3")]
-        pub custom_metadata: std::vec::Vec<u8>,
-        #[prost(bytes, tag = "4")]
-        pub data: std::vec::Vec<u8>,
+        pub metadata: ::std::collections::HashMap<
+            ::prost::alloc::string::String,
+            ::prost::alloc::string::String,
+        >,
+        #[prost(bytes = "vec", tag = "3")]
+        pub custom_metadata: ::prost::alloc::vec::Vec<u8>,
+        #[prost(bytes = "vec", tag = "4")]
+        pub data: ::prost::alloc::vec::Vec<u8>,
     }
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Content {
@@ -260,8 +276,9 @@ pub mod append_req {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AppendResp {
     #[prost(oneof = "append_resp::Result", tags = "1, 2")]
-    pub result: ::std::option::Option<append_resp::Result>,
+    pub result: ::core::option::Option<append_resp::Result>,
 }
+/// Nested message and enum types in `AppendResp`.
 pub mod append_resp {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Position {
@@ -273,10 +290,11 @@ pub mod append_resp {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Success {
         #[prost(oneof = "success::CurrentRevisionOption", tags = "1, 2")]
-        pub current_revision_option: ::std::option::Option<success::CurrentRevisionOption>,
+        pub current_revision_option: ::core::option::Option<success::CurrentRevisionOption>,
         #[prost(oneof = "success::PositionOption", tags = "3, 4")]
-        pub position_option: ::std::option::Option<success::PositionOption>,
+        pub position_option: ::core::option::Option<success::PositionOption>,
     }
+    /// Nested message and enum types in `Success`.
     pub mod success {
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum CurrentRevisionOption {
@@ -297,14 +315,15 @@ pub mod append_resp {
     pub struct WrongExpectedVersion {
         #[prost(oneof = "wrong_expected_version::CurrentRevisionOption", tags = "1, 2")]
         pub current_revision_option:
-            ::std::option::Option<wrong_expected_version::CurrentRevisionOption>,
+            ::core::option::Option<wrong_expected_version::CurrentRevisionOption>,
         #[prost(
             oneof = "wrong_expected_version::ExpectedRevisionOption",
             tags = "3, 4, 5"
         )]
         pub expected_revision_option:
-            ::std::option::Option<wrong_expected_version::ExpectedRevisionOption>,
+            ::core::option::Option<wrong_expected_version::ExpectedRevisionOption>,
     }
+    /// Nested message and enum types in `WrongExpectedVersion`.
     pub mod wrong_expected_version {
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum CurrentRevisionOption {
@@ -334,16 +353,18 @@ pub mod append_resp {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteReq {
     #[prost(message, optional, tag = "1")]
-    pub options: ::std::option::Option<delete_req::Options>,
+    pub options: ::core::option::Option<delete_req::Options>,
 }
+/// Nested message and enum types in `DeleteReq`.
 pub mod delete_req {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(message, optional, tag = "1")]
-        pub stream_identifier: ::std::option::Option<super::super::shared::StreamIdentifier>,
+        pub stream_identifier: ::core::option::Option<super::super::shared::StreamIdentifier>,
         #[prost(oneof = "options::ExpectedStreamRevision", tags = "2, 3, 4, 5")]
-        pub expected_stream_revision: ::std::option::Option<options::ExpectedStreamRevision>,
+        pub expected_stream_revision: ::core::option::Option<options::ExpectedStreamRevision>,
     }
+    /// Nested message and enum types in `Options`.
     pub mod options {
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum ExpectedStreamRevision {
@@ -361,8 +382,9 @@ pub mod delete_req {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteResp {
     #[prost(oneof = "delete_resp::PositionOption", tags = "1, 2")]
-    pub position_option: ::std::option::Option<delete_resp::PositionOption>,
+    pub position_option: ::core::option::Option<delete_resp::PositionOption>,
 }
+/// Nested message and enum types in `DeleteResp`.
 pub mod delete_resp {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Position {
@@ -382,16 +404,18 @@ pub mod delete_resp {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TombstoneReq {
     #[prost(message, optional, tag = "1")]
-    pub options: ::std::option::Option<tombstone_req::Options>,
+    pub options: ::core::option::Option<tombstone_req::Options>,
 }
+/// Nested message and enum types in `TombstoneReq`.
 pub mod tombstone_req {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(message, optional, tag = "1")]
-        pub stream_identifier: ::std::option::Option<super::super::shared::StreamIdentifier>,
+        pub stream_identifier: ::core::option::Option<super::super::shared::StreamIdentifier>,
         #[prost(oneof = "options::ExpectedStreamRevision", tags = "2, 3, 4, 5")]
-        pub expected_stream_revision: ::std::option::Option<options::ExpectedStreamRevision>,
+        pub expected_stream_revision: ::core::option::Option<options::ExpectedStreamRevision>,
     }
+    /// Nested message and enum types in `Options`.
     pub mod options {
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum ExpectedStreamRevision {
@@ -409,8 +433,9 @@ pub mod tombstone_req {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TombstoneResp {
     #[prost(oneof = "tombstone_resp::PositionOption", tags = "1, 2")]
-    pub position_option: ::std::option::Option<tombstone_resp::PositionOption>,
+    pub position_option: ::core::option::Option<tombstone_resp::PositionOption>,
 }
+/// Nested message and enum types in `TombstoneResp`.
 pub mod tombstone_resp {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Position {

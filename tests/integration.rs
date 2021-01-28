@@ -283,7 +283,7 @@ async fn test_persistent_subscription(client: &Client) -> Result<(), Box<dyn Err
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn es6_20_6_test() -> Result<(), Box<dyn std::error::Error>> {
     let _ = pretty_env_logger::try_init();
     let settings = "esdb://admin:changeit@localhost:2111,localhost:2112,localhost:2113?tlsVerifyCert=false&nodePreference=leader"

@@ -1,8 +1,9 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Uuid {
     #[prost(oneof = "uuid::Value", tags = "1, 2")]
-    pub value: ::std::option::Option<uuid::Value>,
+    pub value: ::core::option::Option<uuid::Value>,
 }
+/// Nested message and enum types in `UUID`.
 pub mod uuid {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Structured {
@@ -16,13 +17,13 @@ pub mod uuid {
         #[prost(message, tag = "1")]
         Structured(Structured),
         #[prost(string, tag = "2")]
-        String(std::string::String),
+        String(::prost::alloc::string::String),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Empty {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StreamIdentifier {
-    #[prost(bytes, tag = "3")]
-    pub stream_name: std::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub stream_name: ::prost::alloc::vec::Vec<u8>,
 }

@@ -1,19 +1,19 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClusterInfo {
     #[prost(message, repeated, tag = "1")]
-    pub members: ::std::vec::Vec<MemberInfo>,
+    pub members: ::prost::alloc::vec::Vec<MemberInfo>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EndPoint {
     #[prost(string, tag = "1")]
-    pub address: std::string::String,
+    pub address: ::prost::alloc::string::String,
     #[prost(uint32, tag = "2")]
     pub port: u32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MemberInfo {
     #[prost(message, optional, tag = "1")]
-    pub instance_id: ::std::option::Option<super::shared::Uuid>,
+    pub instance_id: ::core::option::Option<super::shared::Uuid>,
     #[prost(int64, tag = "2")]
     pub time_stamp: i64,
     #[prost(enumeration = "member_info::VNodeState", tag = "3")]
@@ -21,8 +21,9 @@ pub struct MemberInfo {
     #[prost(bool, tag = "4")]
     pub is_alive: bool,
     #[prost(message, optional, tag = "5")]
-    pub http_end_point: ::std::option::Option<EndPoint>,
+    pub http_end_point: ::core::option::Option<EndPoint>,
 }
+/// Nested message and enum types in `MemberInfo`.
 pub mod member_info {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
