@@ -1,26 +1,29 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReadReq {
     #[prost(oneof = "read_req::Content", tags = "1, 2, 3")]
-    pub content: ::std::option::Option<read_req::Content>,
+    pub content: ::core::option::Option<read_req::Content>,
 }
+/// Nested message and enum types in `ReadReq`.
 pub mod read_req {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(message, optional, tag = "1")]
-        pub stream_identifier: ::std::option::Option<super::super::shared::StreamIdentifier>,
+        pub stream_identifier: ::core::option::Option<super::super::shared::StreamIdentifier>,
         #[prost(string, tag = "2")]
-        pub group_name: std::string::String,
+        pub group_name: ::prost::alloc::string::String,
         #[prost(int32, tag = "3")]
         pub buffer_size: i32,
         #[prost(message, optional, tag = "4")]
-        pub uuid_option: ::std::option::Option<options::UuidOption>,
+        pub uuid_option: ::core::option::Option<options::UuidOption>,
     }
+    /// Nested message and enum types in `Options`.
     pub mod options {
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct UuidOption {
             #[prost(oneof = "uuid_option::Content", tags = "1, 2")]
-            pub content: ::std::option::Option<uuid_option::Content>,
+            pub content: ::core::option::Option<uuid_option::Content>,
         }
+        /// Nested message and enum types in `UUIDOption`.
         pub mod uuid_option {
             #[derive(Clone, PartialEq, ::prost::Oneof)]
             pub enum Content {
@@ -33,22 +36,23 @@ pub mod read_req {
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Ack {
-        #[prost(bytes, tag = "1")]
-        pub id: std::vec::Vec<u8>,
+        #[prost(bytes = "vec", tag = "1")]
+        pub id: ::prost::alloc::vec::Vec<u8>,
         #[prost(message, repeated, tag = "2")]
-        pub ids: ::std::vec::Vec<super::super::shared::Uuid>,
+        pub ids: ::prost::alloc::vec::Vec<super::super::shared::Uuid>,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Nack {
-        #[prost(bytes, tag = "1")]
-        pub id: std::vec::Vec<u8>,
+        #[prost(bytes = "vec", tag = "1")]
+        pub id: ::prost::alloc::vec::Vec<u8>,
         #[prost(message, repeated, tag = "2")]
-        pub ids: ::std::vec::Vec<super::super::shared::Uuid>,
+        pub ids: ::prost::alloc::vec::Vec<super::super::shared::Uuid>,
         #[prost(enumeration = "nack::Action", tag = "3")]
         pub action: i32,
         #[prost(string, tag = "4")]
-        pub reason: std::string::String,
+        pub reason: ::prost::alloc::string::String,
     }
+    /// Nested message and enum types in `Nack`.
     pub mod nack {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
         #[repr(i32)]
@@ -73,28 +77,30 @@ pub mod read_req {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReadResp {
     #[prost(oneof = "read_resp::Content", tags = "1, 2")]
-    pub content: ::std::option::Option<read_resp::Content>,
+    pub content: ::core::option::Option<read_resp::Content>,
 }
+/// Nested message and enum types in `ReadResp`.
 pub mod read_resp {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ReadEvent {
         #[prost(message, optional, tag = "1")]
-        pub event: ::std::option::Option<read_event::RecordedEvent>,
+        pub event: ::core::option::Option<read_event::RecordedEvent>,
         #[prost(message, optional, tag = "2")]
-        pub link: ::std::option::Option<read_event::RecordedEvent>,
+        pub link: ::core::option::Option<read_event::RecordedEvent>,
         #[prost(oneof = "read_event::Position", tags = "3, 4")]
-        pub position: ::std::option::Option<read_event::Position>,
+        pub position: ::core::option::Option<read_event::Position>,
         #[prost(oneof = "read_event::Count", tags = "5, 6")]
-        pub count: ::std::option::Option<read_event::Count>,
+        pub count: ::core::option::Option<read_event::Count>,
     }
+    /// Nested message and enum types in `ReadEvent`.
     pub mod read_event {
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct RecordedEvent {
             #[prost(message, optional, tag = "1")]
-            pub id: ::std::option::Option<super::super::super::shared::Uuid>,
+            pub id: ::core::option::Option<super::super::super::shared::Uuid>,
             #[prost(message, optional, tag = "2")]
             pub stream_identifier:
-                ::std::option::Option<super::super::super::shared::StreamIdentifier>,
+                ::core::option::Option<super::super::super::shared::StreamIdentifier>,
             #[prost(uint64, tag = "3")]
             pub stream_revision: u64,
             #[prost(uint64, tag = "4")]
@@ -102,11 +108,14 @@ pub mod read_resp {
             #[prost(uint64, tag = "5")]
             pub commit_position: u64,
             #[prost(map = "string, string", tag = "6")]
-            pub metadata: ::std::collections::HashMap<std::string::String, std::string::String>,
-            #[prost(bytes, tag = "7")]
-            pub custom_metadata: std::vec::Vec<u8>,
-            #[prost(bytes, tag = "8")]
-            pub data: std::vec::Vec<u8>,
+            pub metadata: ::std::collections::HashMap<
+                ::prost::alloc::string::String,
+                ::prost::alloc::string::String,
+            >,
+            #[prost(bytes = "vec", tag = "7")]
+            pub custom_metadata: ::prost::alloc::vec::Vec<u8>,
+            #[prost(bytes = "vec", tag = "8")]
+            pub data: ::prost::alloc::vec::Vec<u8>,
         }
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Position {
@@ -126,7 +135,7 @@ pub mod read_resp {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct SubscriptionConfirmation {
         #[prost(string, tag = "1")]
-        pub subscription_id: std::string::String,
+        pub subscription_id: ::prost::alloc::string::String,
     }
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Content {
@@ -139,17 +148,18 @@ pub mod read_resp {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateReq {
     #[prost(message, optional, tag = "1")]
-    pub options: ::std::option::Option<create_req::Options>,
+    pub options: ::core::option::Option<create_req::Options>,
 }
+/// Nested message and enum types in `CreateReq`.
 pub mod create_req {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(message, optional, tag = "1")]
-        pub stream_identifier: ::std::option::Option<super::super::shared::StreamIdentifier>,
+        pub stream_identifier: ::core::option::Option<super::super::shared::StreamIdentifier>,
         #[prost(string, tag = "2")]
-        pub group_name: std::string::String,
+        pub group_name: ::prost::alloc::string::String,
         #[prost(message, optional, tag = "3")]
-        pub settings: ::std::option::Option<Settings>,
+        pub settings: ::core::option::Option<Settings>,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Settings {
@@ -176,10 +186,11 @@ pub mod create_req {
         #[prost(enumeration = "ConsumerStrategy", tag = "13")]
         pub named_consumer_strategy: i32,
         #[prost(oneof = "settings::MessageTimeout", tags = "4, 14")]
-        pub message_timeout: ::std::option::Option<settings::MessageTimeout>,
+        pub message_timeout: ::core::option::Option<settings::MessageTimeout>,
         #[prost(oneof = "settings::CheckpointAfter", tags = "6, 15")]
-        pub checkpoint_after: ::std::option::Option<settings::CheckpointAfter>,
+        pub checkpoint_after: ::core::option::Option<settings::CheckpointAfter>,
     }
+    /// Nested message and enum types in `Settings`.
     pub mod settings {
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum MessageTimeout {
@@ -209,17 +220,18 @@ pub struct CreateResp {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateReq {
     #[prost(message, optional, tag = "1")]
-    pub options: ::std::option::Option<update_req::Options>,
+    pub options: ::core::option::Option<update_req::Options>,
 }
+/// Nested message and enum types in `UpdateReq`.
 pub mod update_req {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(message, optional, tag = "1")]
-        pub stream_identifier: ::std::option::Option<super::super::shared::StreamIdentifier>,
+        pub stream_identifier: ::core::option::Option<super::super::shared::StreamIdentifier>,
         #[prost(string, tag = "2")]
-        pub group_name: std::string::String,
+        pub group_name: ::prost::alloc::string::String,
         #[prost(message, optional, tag = "3")]
-        pub settings: ::std::option::Option<Settings>,
+        pub settings: ::core::option::Option<Settings>,
     }
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Settings {
@@ -246,10 +258,11 @@ pub mod update_req {
         #[prost(enumeration = "ConsumerStrategy", tag = "13")]
         pub named_consumer_strategy: i32,
         #[prost(oneof = "settings::MessageTimeout", tags = "4, 14")]
-        pub message_timeout: ::std::option::Option<settings::MessageTimeout>,
+        pub message_timeout: ::core::option::Option<settings::MessageTimeout>,
         #[prost(oneof = "settings::CheckpointAfter", tags = "6, 15")]
-        pub checkpoint_after: ::std::option::Option<settings::CheckpointAfter>,
+        pub checkpoint_after: ::core::option::Option<settings::CheckpointAfter>,
     }
+    /// Nested message and enum types in `Settings`.
     pub mod settings {
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum MessageTimeout {
@@ -279,15 +292,16 @@ pub struct UpdateResp {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteReq {
     #[prost(message, optional, tag = "1")]
-    pub options: ::std::option::Option<delete_req::Options>,
+    pub options: ::core::option::Option<delete_req::Options>,
 }
+/// Nested message and enum types in `DeleteReq`.
 pub mod delete_req {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(message, optional, tag = "1")]
-        pub stream_identifier: ::std::option::Option<super::super::shared::StreamIdentifier>,
+        pub stream_identifier: ::core::option::Option<super::super::shared::StreamIdentifier>,
         #[prost(string, tag = "2")]
-        pub group_name: std::string::String,
+        pub group_name: ::prost::alloc::string::String,
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
