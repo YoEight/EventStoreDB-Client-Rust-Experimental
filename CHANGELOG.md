@@ -1,3 +1,8 @@
+0.9.10
+======
+* Support Tokio 1.* and Tonic 0.4.
+* Fix how is_json is extracted for persistent subscriptions.
+
 0.9.9
 =====
 * Fix how we set RecordedEvent is_json.
