@@ -3,9 +3,12 @@ extern crate log;
 #[macro_use]
 extern crate serde_json;
 
-use eventstore::{Client, ClientSettings, EventData, PersistentSubscriptionSettings};
+use eventstore::{
+    Client, ClientSettings, EventData, PersistentSubscriptionOptions,
+    PersistentSubscriptionSettings, Single,
+};
 use futures::channel::oneshot;
-use futures::stream::{self, TryStreamExt};
+use futures::stream::TryStreamExt;
 use std::collections::HashMap;
 use std::error::Error;
 
@@ -34,7 +37,9 @@ async fn test_write_events(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("write_events");
     let events = generate_events("es6-write-events-test".to_string(), 3);
 
-    let result = client.write_events(stream_id).send_iter(events).await?;
+    let result = client
+        .append_to_stream(stream_id, &Default::default(), events)
+        .await?;
 
     debug!("Write response: {:?}", result);
 
@@ -44,9 +49,7 @@ async fn test_write_events(client: &Client) -> Result<(), Box<dyn Error>> {
 // We read all stream events by batch.
 async fn test_read_all_stream_events(client: &Client) -> Result<(), Box<dyn Error>> {
     // Eventstore should always have "some" events in $all, since eventstore itself uses streams, ouroboros style.
-    let mut stream = client.read_all().start_from_beginning().execute(1).await?;
-
-    while let Some(_event) = stream.try_next().await? {}
+    client.read_all(&Default::default(), Single).await?;
 
     Ok(())
 }
@@ -58,17 +61,14 @@ async fn test_read_stream_events(client: &Client) -> Result<(), Box<dyn Error>> 
     let events = generate_events("es6-read-stream-events-test".to_string(), 10);
 
     let _ = client
-        .write_events(stream_id.clone())
-        .send(stream::iter(events))
+        .append_to_stream(stream_id.clone(), &Default::default(), events)
         .await?;
 
     let mut pos = 0usize;
     let mut idx = 0i64;
 
     let result = client
-        .read_stream(stream_id)
-        .start_from_beginning()
-        .execute(10)
+        .read_stream(stream_id, &Default::default(), 10)
         .await?;
 
     if let eventstore::ReadResult::Ok(mut stream) = result {
@@ -94,9 +94,7 @@ async fn test_read_stream_events_non_existent(client: &Client) -> Result<(), Box
     let stream_id = fresh_stream_id("read_stream_events");
 
     let result = client
-        .read_stream(stream_id.as_str())
-        .start_from_beginning()
-        .execute(1)
+        .read_stream(stream_id.as_str(), &Default::default(), Single)
         .await?;
 
     if let eventstore::ReadResult::StreamNotFound(stream) = result {
@@ -113,11 +111,12 @@ async fn test_delete_stream(client: &Client) -> Result<(), Box<dyn Error>> {
     let events = generate_events("delete-test".to_string(), 1);
 
     let _ = client
-        .write_events(stream_id.clone())
-        .send(stream::iter(events))
+        .append_to_stream(stream_id.clone(), &Default::default(), events)
         .await?;
 
-    let result = client.delete_stream(stream_id.clone()).execute().await?;
+    let result = client
+        .delete_stream(stream_id.as_str(), &Default::default())
+        .await?;
 
     debug!("Delete stream [{}] result: {:?}", stream_id, result);
 
@@ -135,13 +134,11 @@ async fn test_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
     let events_after = generate_events("catchup-test-after".to_string(), 3);
 
     let _ = client
-        .write_events(stream_id.clone())
-        .send(stream::iter(events_before))
+        .append_to_stream(stream_id.as_str(), &Default::default(), events_before)
         .await?;
 
     let mut sub = client
-        .subscribe_to_stream_from(stream_id.clone())
-        .execute()
+        .subscribe_to_stream(stream_id.as_str(), &Default::default())
         .await?;
 
     let (tx, recv) = oneshot::channel();
@@ -165,8 +162,7 @@ async fn test_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
     });
 
     let _ = client
-        .write_events(stream_id)
-        .send(stream::iter(events_after))
+        .append_to_stream(stream_id, &Default::default(), events_after)
         .await?;
 
     let test_count = recv.await?;
@@ -184,8 +180,7 @@ async fn test_create_persistent_subscription(client: &Client) -> Result<(), Box<
     let stream_id = fresh_stream_id("create_persistent_sub");
 
     client
-        .create_persistent_subscription(stream_id, "a_group_name".to_string())
-        .execute(Default::default())
+        .create_persistent_subscription(stream_id, "a_group_name", &Default::default())
         .await?;
 
     Ok(())
@@ -196,17 +191,16 @@ async fn test_update_persistent_subscription(client: &Client) -> Result<(), Box<
     let stream_id = fresh_stream_id("update_persistent_sub");
 
     client
-        .create_persistent_subscription(stream_id.clone(), "a_group_name".to_string())
-        .execute(Default::default())
+        .create_persistent_subscription(stream_id.as_str(), "a_group_name", &Default::default())
         .await?;
 
     let mut setts = PersistentSubscriptionSettings::default();
 
     setts.max_retry_count = 1000;
 
+    let options = PersistentSubscriptionOptions::default().settings(setts);
     client
-        .update_persistent_subscription(stream_id, "a_group_name".to_string())
-        .execute(setts)
+        .update_persistent_subscription(stream_id, "a_group_name", &options)
         .await?;
 
     Ok(())
@@ -216,13 +210,11 @@ async fn test_update_persistent_subscription(client: &Client) -> Result<(), Box<
 async fn test_delete_persistent_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("delete_persistent_sub");
     client
-        .create_persistent_subscription(stream_id.clone(), "a_group_name".to_string())
-        .execute(Default::default())
+        .create_persistent_subscription(stream_id.as_str(), "a_group_name", &Default::default())
         .await?;
 
     client
-        .delete_persistent_subscription(stream_id, "a_group_name".to_string())
-        .execute()
+        .delete_persistent_subscription(stream_id, "a_group_name", &Default::default())
         .await?;
 
     Ok(())
@@ -233,18 +225,15 @@ async fn test_persistent_subscription(client: &Client) -> Result<(), Box<dyn Err
     let events = generate_events("es6-persistent-subscription-test".to_string(), 5);
 
     client
-        .create_persistent_subscription(stream_id.clone(), "a_group_name".to_string())
-        .execute(Default::default())
+        .create_persistent_subscription(stream_id.as_str(), "a_group_name", &Default::default())
         .await?;
 
     let _ = client
-        .write_events(stream_id.clone())
-        .send(stream::iter(events))
+        .append_to_stream(stream_id.as_str(), &Default::default(), events)
         .await?;
 
     let (mut read, mut write) = client
-        .connect_persistent_subscription(stream_id.clone(), "a_group_name".to_string())
-        .execute()
+        .connect_persistent_subscription(stream_id.as_str(), "a_group_name", &Default::default())
         .await?;
 
     let max = 10usize;
@@ -268,8 +257,7 @@ async fn test_persistent_subscription(client: &Client) -> Result<(), Box<dyn Err
 
     let events = generate_events("es6-persistent-subscription-test".to_string(), 5);
     let _ = client
-        .write_events(stream_id.clone())
-        .send(stream::iter(events))
+        .append_to_stream(stream_id.as_str(), &Default::default(), events)
         .await?;
 
     let count = handle.await?;

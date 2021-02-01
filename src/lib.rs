@@ -13,7 +13,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use eventstore::{ Client, EventData, ReadResult };
+//! use eventstore::{ All, Client, EventData, ReadResult };
 //! use futures::stream::TryStreamExt;
 //! use serde::{Serialize, Deserialize};
 //!
@@ -38,14 +38,11 @@
 //!     let evt = EventData::json("language-poll", &payload)?;
 //!
 //!     let _ = client
-//!         .write_events("language-stream")
-//!         .send_event(evt)
+//!         .append_to_stream("language-stream", &Default::default(), evt)
 //!         .await?;
 //!
 //!     let result = client
-//!         .read_stream("language-stream")
-//!         .start_from_beginning()
-//!         .read_through()
+//!         .read_stream("language-stream", &Default::default(), All)
 //!         .await?;
 //!
 //!     if let ReadResult::Ok(mut stream) = result {
@@ -71,16 +68,31 @@ mod commands;
 mod event_store;
 mod gossip;
 mod grpc;
+mod options;
 mod types;
 
 pub use client::Client;
-pub use commands::*;
+pub use commands::{SubscriptionRead, SubscriptionWrite};
 pub use grpc::{ClientSettings, ClientSettingsParseError};
+pub use options::append_to_stream::*;
+pub use options::delete_stream::*;
+pub use options::persistent_subscription::*;
+pub use options::read_all::*;
+pub use options::read_stream::*;
+pub use options::subscribe_to_all::*;
+pub use options::subscribe_to_stream::*;
 pub use types::*;
 
 pub mod prelude {
     pub use crate::client::Client;
-    pub use crate::commands::*;
+    pub use crate::commands::{SubscriptionRead, SubscriptionWrite};
     pub use crate::grpc::{ClientSettings, ClientSettingsParseError};
+    pub use crate::options::append_to_stream::*;
+    pub use crate::options::delete_stream::*;
+    pub use crate::options::persistent_subscription::*;
+    pub use crate::options::read_all::*;
+    pub use crate::options::read_stream::*;
+    pub use crate::options::subscribe_to_all::*;
+    pub use crate::options::subscribe_to_stream::*;
     pub use crate::types::*;
 }

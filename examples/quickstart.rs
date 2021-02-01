@@ -1,0 +1,62 @@
+use eventstore::{
+    AppendToStreamOptions, Client, Credentials, EventData, ExpectedRevision, ReadResult,
+    ReadStreamOptions,
+};
+use futures::TryStreamExt;
+use serde::{Deserialize, Serialize};
+use std::error::Error;
+use uuid::Uuid;
+
+#[derive(Serialize, Deserialize)]
+struct TestEvent {
+    pub id: String,
+    pub important_data: String,
+}
+
+type Result<A> = std::result::Result<A, Box<dyn Error>>;
+
+pub async fn run() -> Result<()> {
+    // region createClient
+    let settings = "{connectionString}".parse()?;
+    let client = Client::create(settings).await?;
+    // endregion createClient
+
+    // region createEvent
+    let event = TestEvent {
+        id: Uuid::new_v4().to_string(),
+        important_data: "I wrote my first event!".to_string(),
+    };
+
+    let event_data = EventData::json("TestEvent", event)?.id(Uuid::new_v4());
+    // endregion createEvent
+
+    let main_event_data = event_data.clone();
+
+    // region appendEvents
+    client
+        .append_to_stream("some-stream", &Default::default(), event_data)
+        .await?;
+    // endregion appendEvents
+
+    let event_data = main_event_data.clone();
+    let options =
+        AppendToStreamOptions::default().authenticated(Credentials::new("admin", "changeit"));
+
+    // region overriding-user-credentials
+    client
+        .append_to_stream("some-stream", &options, event_data)
+        .await?;
+    // endregion overriding-user-credentials
+
+    // region readStream
+    let result = client
+        .read_stream("some-stream", &Default::default(), 10)
+        .await?;
+
+    if let ReadResult::Ok(events) = result {
+        // Doing something productive with the events.
+    }
+    // endregion readStream
+
+    Ok(())
+}

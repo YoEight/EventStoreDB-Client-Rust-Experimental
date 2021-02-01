@@ -4,21 +4,21 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use bytes::Bytes;
-use serde::de::Visitor;
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-
+use futures::stream::BoxStream;
 use futures::Stream;
-use serde::{Deserializer, Serializer};
+use serde::de::Visitor;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 use tonic::Status;
+use uuid::Uuid;
 
 /// Represents a reconnection strategy when a connection has dropped or is
 /// about to be created.
 #[derive(Copy, Clone, Debug)]
 pub enum Retry {
-    Undefinately,
+    Indefinitely,
     Only(usize),
 }
 
@@ -96,34 +96,16 @@ where
     deserializer.deserialize_any(CredsVisitor)
 }
 
-/// Determines whether any link event encountered in the stream will be
-/// resolved. See the discussion on [Resolved Events](https://eventstore.com/docs/dotnet-api/reading-events/index.html#resolvedevent)
-/// for more information on this.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LinkTos {
-    ResolveLink,
-    NoResolution,
-}
-
-impl LinkTos {
-    pub(crate) fn raw_resolve_lnk_tos(self) -> bool {
-        match self {
-            LinkTos::ResolveLink => true,
-            LinkTos::NoResolution => false,
-        }
-    }
-}
-
 /// Constants used for expected version control.
 /// The use of expected version can be a bit tricky especially when discussing
 /// assurances given by the GetEventStore server.
 ///
 /// The GetEventStore server will assure idempotency for all operations using
-/// any value in `ExpectedVersion` except `ExpectedVersion::Any`. When using
-/// `ExpectedVersion::Any`, the GetEventStore server will do its best to assure
+/// any value in `ExpectedRevision` except `ExpectedRevision::Any`. When using
+/// `ExpectedRevision::Any`, the GetEventStore server will do its best to assure
 /// idempotency but will not guarantee idempotency.
-#[derive(Copy, Clone, Debug)]
-pub enum ExpectedVersion {
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum ExpectedRevision {
     /// This write should not conflict with anything and should always succeed.
     Any,
 
@@ -193,11 +175,11 @@ pub struct WriteResult {
     pub position: Position,
 }
 
-#[derive(Debug)]
-pub enum Revision<A> {
+#[derive(Debug, Clone, Copy)]
+pub enum StreamPosition<A> {
     Start,
     End,
-    Exact(A),
+    Point(A),
 }
 
 /// Enumeration detailing the possible outcomes of reading a stream.
@@ -325,7 +307,7 @@ pub struct VersionedMetadata {
 /// Represents the direction of read operation (both from '$all' and a regular
 /// stream).
 #[derive(Copy, Clone, Debug)]
-pub enum ReadDirection {
+pub(crate) enum ReadDirection {
     Forward,
     Backward,
 }
@@ -348,6 +330,7 @@ pub enum ReadStreamStatus<A> {
 }
 
 /// Holds data of event about to be sent to the server.
+#[derive(Clone)]
 pub struct EventData {
     pub(crate) payload: Bytes,
     pub(crate) id_opt: Option<Uuid>,
@@ -655,9 +638,9 @@ pub enum SystemConsumerStrategy {
 /// Gathers every persistent subscription property.
 #[derive(Debug, Clone, Copy)]
 pub struct PersistentSubscriptionSettings {
-    /// Whether or not the persistent subscription shoud resolve 'linkTo'
+    /// Whether or not the persistent subscription should resolve link
     /// events to their linked events.
-    pub resolve_links: bool,
+    pub resolve_link_tos: bool,
 
     /// Where the subscription should start from (event number).
     pub revision: u64,
@@ -703,7 +686,7 @@ pub struct PersistentSubscriptionSettings {
 impl PersistentSubscriptionSettings {
     pub fn default() -> PersistentSubscriptionSettings {
         PersistentSubscriptionSettings {
-            resolve_links: false,
+            resolve_link_tos: false,
             revision: 0,
             extra_stats: false,
             message_timeout: Duration::from_secs(30),
@@ -844,20 +827,6 @@ pub enum CurrentRevision {
     NoStream,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-/// Expected revision before a write occurs.
-pub enum ExpectedRevision {
-    /// States that the last event written to the stream should have an event number matching your
-    /// expected value.
-    Expected(u64),
-
-    /// You expected that write should not conflict with anything and should always succeed.
-    Any,
-
-    /// You expected the stream should exist.
-    StreamExists,
-}
-
 #[derive(Clone, Debug, Copy, Eq, PartialEq)]
 pub struct WrongExpectedVersion {
     pub current: CurrentRevision,
@@ -903,23 +872,22 @@ impl Error {
             tonic::Code::Unavailable => Error::ServerError,
             _ => {
                 let metadata = status.metadata();
-                if let Some(tpe) = metadata.get("exception").and_then(|e| e.to_str().ok()) {
-                    if let "not-leader" = tpe {
-                        let endpoint = metadata
-                            .get("leader-endpoint-host")
-                            .zip(metadata.get("leader-endpoint-port"))
-                            .and_then(|(host, port)| {
-                                let host = host.to_str().ok()?;
-                                let port = port.to_str().ok()?;
-                                let host = host.to_string();
-                                let port = port.parse().ok()?;
+                if let Some("not-leader") = metadata.get("exception").and_then(|e| e.to_str().ok())
+                {
+                    let endpoint = metadata
+                        .get("leader-endpoint-host")
+                        .zip(metadata.get("leader-endpoint-port"))
+                        .and_then(|(host, port)| {
+                            let host = host.to_str().ok()?;
+                            let port = port.to_str().ok()?;
+                            let host = host.to_string();
+                            let port = port.parse().ok()?;
 
-                                Some(Endpoint { host, port })
-                            });
+                            Some(Endpoint { host, port })
+                        });
 
-                        if let Some(leader) = endpoint {
-                            return Error::NotLeaderException(leader);
-                        }
+                    if let Some(leader) = endpoint {
+                        return Error::NotLeaderException(leader);
                     }
                 }
 
@@ -992,5 +960,116 @@ impl<A> ReadResult<A> {
                 &s
             ),
         }
+    }
+}
+
+#[async_trait]
+pub trait ToCount<'a> {
+    type Selection;
+    fn to_count(&self) -> usize;
+    async fn select(
+        self,
+        stream: BoxStream<'a, crate::Result<ResolvedEvent>>,
+    ) -> crate::Result<Self::Selection>;
+}
+
+#[async_trait]
+impl<'a> ToCount<'a> for usize {
+    type Selection = BoxStream<'a, crate::Result<ResolvedEvent>>;
+
+    fn to_count(&self) -> usize {
+        *self
+    }
+
+    async fn select(
+        self,
+        stream: BoxStream<'a, crate::Result<ResolvedEvent>>,
+    ) -> crate::Result<Self::Selection> {
+        Ok(stream)
+    }
+}
+
+/// Get all the stream's events.
+pub struct All;
+
+#[async_trait]
+impl<'a> ToCount<'a> for All {
+    type Selection = BoxStream<'a, crate::Result<ResolvedEvent>>;
+
+    fn to_count(&self) -> usize {
+        usize::MAX
+    }
+
+    async fn select(
+        self,
+        stream: BoxStream<'a, crate::Result<ResolvedEvent>>,
+    ) -> crate::Result<Self::Selection> {
+        Ok(stream)
+    }
+}
+
+/// Get only one stream's event.
+pub struct Single;
+
+#[async_trait]
+impl<'a> ToCount<'a> for Single {
+    type Selection = Option<ResolvedEvent>;
+
+    fn to_count(&self) -> usize {
+        1
+    }
+
+    async fn select(
+        self,
+        mut stream: BoxStream<'a, crate::Result<ResolvedEvent>>,
+    ) -> crate::Result<Self::Selection> {
+        use futures::stream::TryStreamExt;
+
+        stream.try_next().await
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SubscriptionFilter {
+    pub(crate) based_on_stream: bool,
+    pub(crate) max: Option<u32>,
+    pub(crate) regex: Option<String>,
+    pub(crate) prefixes: Vec<String>,
+}
+
+impl SubscriptionFilter {
+    pub fn on_stream_name() -> Self {
+        SubscriptionFilter {
+            based_on_stream: true,
+            max: None,
+            regex: None,
+            prefixes: Vec::new(),
+        }
+    }
+
+    pub fn on_event_type() -> Self {
+        let mut temp = SubscriptionFilter::on_stream_name();
+        temp.based_on_stream = false;
+
+        temp
+    }
+
+    pub fn max(self, max: u32) -> Self {
+        SubscriptionFilter {
+            max: Some(max),
+            ..self
+        }
+    }
+
+    pub fn regex<A: AsRef<str>>(self, regex: A) -> Self {
+        SubscriptionFilter {
+            regex: Some(regex.as_ref().to_string()),
+            ..self
+        }
+    }
+
+    pub fn add_prefix<A: AsRef<str>>(mut self, prefix: A) -> Self {
+        self.prefixes.push(prefix.as_ref().to_string());
+        self
     }
 }
