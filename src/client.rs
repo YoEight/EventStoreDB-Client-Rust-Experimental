@@ -1,5 +1,15 @@
-use crate::commands;
 use crate::grpc::{ClientSettings, GrpcClient};
+use crate::options::append_to_stream::{AppendToStreamOptions, ToEvents};
+use crate::options::persistent_subscription::PersistentSubscriptionOptions;
+use crate::options::read_all::ReadAllOptions;
+use crate::options::read_stream::ReadStreamOptions;
+use crate::options::subscribe_to_stream::SubscribeToStreamOptions;
+use crate::{
+    commands, ConnectToPersistentSubscription, DeletePersistentSubscriptionOptions,
+    DeleteStreamOptions, Position, ReadResult, SubEvent, SubscribeToAllOptions, SubscriptionRead,
+    SubscriptionWrite, ToCount, WriteResult, WrongExpectedVersion,
+};
+use futures::stream::BoxStream;
 
 /// Represents a client to a single node. `Client` maintains a full duplex
 /// communication to EventStoreDB.
@@ -20,85 +30,106 @@ impl Client {
         Ok(Client { client, settings })
     }
     /// Sends events to a given stream.
-    pub fn write_events<S>(&self, stream: S) -> commands::WriteEvents
+    pub async fn append_to_stream<StreamName, Events>(
+        &self,
+        stream_name: StreamName,
+        options: &AppendToStreamOptions,
+        events: Events,
+    ) -> crate::Result<Result<WriteResult, WrongExpectedVersion>>
     where
-        S: AsRef<str>,
+        StreamName: AsRef<str>,
+        Events: ToEvents + 'static,
     {
-        commands::WriteEvents::new(
-            self.client.clone(),
-            stream.as_ref().to_string(),
-            self.settings.default_user_name.clone(),
-        )
+        commands::append_to_stream(&self.client, stream_name, options, events.into_events()).await
     }
 
     /// Reads events from a given stream. The reading can be done forward and
     /// backward.
-    pub fn read_stream<S>(&self, stream: S) -> commands::ReadStreamEvents
+    pub async fn read_stream<StreamName, Count>(
+        &self,
+        stream_name: StreamName,
+        options: &ReadStreamOptions,
+        count: Count,
+    ) -> crate::Result<ReadResult<Count::Selection>>
     where
-        S: AsRef<str>,
+        StreamName: AsRef<str>,
+        Count: ToCount<'static>,
     {
-        commands::ReadStreamEvents::new(
-            self.client.clone(),
-            stream.as_ref().to_string(),
-            self.settings.default_user_name.clone(),
-        )
+        let result =
+            commands::read_stream(&self.client, options, stream_name, count.to_count() as u64)
+                .await?;
+
+        match result {
+            ReadResult::Ok(stream) => {
+                let stream = count.select(stream).await?;
+
+                Ok(ReadResult::Ok(stream))
+            }
+
+            ReadResult::StreamNotFound(stream_name) => Ok(ReadResult::StreamNotFound(stream_name)),
+        }
     }
 
     /// Reads events for the system stream `$all`. The reading can be done
     /// forward and backward.
-    pub fn read_all(&self) -> commands::ReadAllEvents {
-        commands::ReadAllEvents::new(self.client.clone(), self.settings.default_user_name.clone())
+    pub async fn read_all<Count>(
+        &self,
+        options: &ReadAllOptions,
+        count: Count,
+    ) -> crate::Result<Count::Selection>
+    where
+        Count: ToCount<'static>,
+    {
+        let stream = commands::read_all(&self.client, &options, count.to_count() as u64).await?;
+
+        count.select(stream).await
     }
 
-    /// Deletes a given stream. By default, the server performs a soft delete,
-    /// More information can be found on the [Deleting streams and events]
-    /// page.
-    ///
-    /// [Deleting stream and events]: https://eventstore.org/docs/server/deleting-streams-and-events/index.html
-    pub fn delete_stream<S>(&self, stream: S) -> commands::DeleteStream
+    /// Deletes a given stream. By default, the server performs a soft delete.
+    pub async fn delete_stream<StreamName>(
+        &self,
+        stream_name: StreamName,
+        options: &DeleteStreamOptions,
+    ) -> crate::Result<Option<Position>>
     where
-        S: AsRef<str>,
+        StreamName: AsRef<str>,
     {
-        commands::DeleteStream::new(
-            self.client.clone(),
-            stream.as_ref().to_string(),
-            self.settings.default_user_name.clone(),
-        )
+        commands::delete_stream(&self.client, stream_name, options).await
     }
 
     /// Subscribes to a given stream. This kind of subscription specifies a
     /// starting point (by default, the beginning of a stream). For a regular
     /// stream, that starting point will be an event number. For the system
     /// stream `$all`, it will be a position in the transaction file
-    /// (see [`subscribe_to_all_from`]). This subscription will fetch every event
+    /// (see [`subscribe_to_all`]). This subscription will fetch every event
     /// until the end of the stream, then will dispatch subsequently written
     /// events.
     ///
     /// For example, if a starting point of 50 is specified when a stream has
     /// 100 events in it, the subscriber can expect to see events 51 through
-    /// 100, and then any events subsequenttly written events until such time
+    /// 100, and then any events subsequently written events until such time
     /// as the subscription is dropped or closed.
     ///
     /// [`subscribe_to_all_from`]: #method.subscribe_to_all_from
-    pub fn subscribe_to_stream_from<S>(&self, stream: S) -> commands::RegularCatchupSubscribe
+    pub async fn subscribe_to_stream<'a, StreamName>(
+        &self,
+        stream_name: StreamName,
+        options: &SubscribeToStreamOptions,
+    ) -> crate::Result<BoxStream<'a, crate::Result<SubEvent>>>
     where
-        S: AsRef<str>,
+        StreamName: AsRef<str>,
     {
-        commands::RegularCatchupSubscribe::new(
-            self.client.clone(),
-            stream.as_ref().to_string(),
-            self.settings.default_user_name.clone(),
-        )
+        commands::subscribe_to_stream(&self.client, stream_name, options).await
     }
 
-    /// Like [`subscribe_to_stream_from`] but specific to system `$all` stream.
+    /// Like [`subscribe_to_stream`] but specific to system `$all` stream.
     ///
-    /// [`subscribe_to_stream_from`]: #method.subscribe_to_stream_from
-    pub fn subscribe_to_all_from(&self) -> commands::AllCatchupSubscribe {
-        commands::AllCatchupSubscribe::new(
-            self.client.clone(),
-            self.settings.default_user_name.clone(),
-        )
+    /// [`subscribe_to_stream`]: #method.subscribe_to_stream
+    pub async fn subscribe_to_all<'a>(
+        &self,
+        options: &SubscribeToAllOptions,
+    ) -> crate::Result<BoxStream<'a, crate::Result<SubEvent>>> {
+        commands::subscribe_to_all(&self.client, options).await
     }
 
     /// Creates a persistent subscription group on a stream.
@@ -107,70 +138,82 @@ impl Client {
     /// server remembers the state of the subscription. This allows for many
     /// different modes of operations compared to a regular or catchup
     /// subscription where the client holds the subscription state.
-    pub fn create_persistent_subscription<S>(
+    pub async fn create_persistent_subscription<StreamName, GroupName>(
         &self,
-        stream_id: S,
-        group_name: S,
-    ) -> commands::CreatePersistentSubscription
+        stream_name: StreamName,
+        group_name: GroupName,
+        options: &PersistentSubscriptionOptions,
+    ) -> crate::Result<()>
     where
-        S: AsRef<str>,
+        StreamName: AsRef<str>,
+        GroupName: AsRef<str>,
     {
-        commands::CreatePersistentSubscription::new(
-            self.client.clone(),
-            stream_id.as_ref().to_string(),
-            group_name.as_ref().to_string(),
-            self.settings.default_user_name.clone(),
+        commands::create_persistent_subscription(
+            &self.client,
+            stream_name.as_ref(),
+            group_name.as_ref(),
+            options,
         )
+        .await
     }
 
     /// Updates a persistent subscription group on a stream.
-    pub fn update_persistent_subscription<S>(
+    pub async fn update_persistent_subscription<StreamName, GroupName>(
         &self,
-        stream_id: S,
-        group_name: S,
-    ) -> commands::UpdatePersistentSubscription
+        stream_name: StreamName,
+        group_name: GroupName,
+        options: &PersistentSubscriptionOptions,
+    ) -> crate::Result<()>
     where
-        S: AsRef<str>,
+        StreamName: AsRef<str>,
+        GroupName: AsRef<str>,
     {
-        commands::UpdatePersistentSubscription::new(
-            self.client.clone(),
-            stream_id.as_ref().to_string(),
-            group_name.as_ref().to_string(),
-            self.settings.default_user_name.clone(),
+        commands::update_persistent_subscription(
+            &self.client,
+            stream_name.as_ref(),
+            group_name.as_ref(),
+            options,
         )
+        .await
     }
 
     /// Deletes a persistent subscription group on a stream.
-    pub fn delete_persistent_subscription<S>(
+    pub async fn delete_persistent_subscription<StreamName, GroupName>(
         &self,
-        stream_id: S,
-        group_name: S,
-    ) -> commands::DeletePersistentSubscription
+        stream_name: StreamName,
+        group_name: GroupName,
+        options: &DeletePersistentSubscriptionOptions,
+    ) -> crate::Result<()>
     where
-        S: AsRef<str>,
+        StreamName: AsRef<str>,
+        GroupName: AsRef<str>,
     {
-        commands::DeletePersistentSubscription::new(
-            self.client.clone(),
-            stream_id.as_ref().to_string(),
-            group_name.as_ref().to_string(),
-            self.settings.default_user_name.clone(),
+        commands::delete_persistent_subscription(
+            &self.client,
+            stream_name.as_ref(),
+            group_name.as_ref(),
+            options,
         )
+        .await
     }
 
     /// Connects to a persistent subscription group on a stream.
-    pub fn connect_persistent_subscription<S>(
+    pub async fn connect_persistent_subscription<StreamName, GroupName>(
         &self,
-        stream_id: S,
-        group_name: S,
-    ) -> commands::ConnectToPersistentSubscription
+        stream_name: StreamName,
+        group_name: GroupName,
+        options: &ConnectToPersistentSubscription,
+    ) -> crate::Result<(SubscriptionRead, SubscriptionWrite)>
     where
-        S: AsRef<str>,
+        StreamName: AsRef<str>,
+        GroupName: AsRef<str>,
     {
-        commands::ConnectToPersistentSubscription::new(
-            self.client.clone(),
-            stream_id.as_ref().to_string(),
-            group_name.as_ref().to_string(),
-            self.settings.default_user_name.clone(),
+        commands::connect_persistent_subscription(
+            &self.client,
+            stream_name.as_ref(),
+            group_name.as_ref(),
+            options,
         )
+        .await
     }
 }

@@ -760,10 +760,12 @@ impl std::fmt::Debug for Msg {
 #[derive(Clone)]
 pub struct GrpcClient {
     sender: futures::channel::mpsc::UnboundedSender<Msg>,
+    default_credentials: Option<Credentials>,
 }
 
 impl GrpcClient {
     pub async fn create(conn_setts: ClientSettings) -> Result<Self, Box<dyn std::error::Error>> {
+        let default_credentials = conn_setts.default_user_name.clone();
         let sender = if conn_setts.dns_discover || conn_setts.hosts.len() > 1 {
             cluster_mode(conn_setts).await?
         } else {
@@ -776,7 +778,10 @@ impl GrpcClient {
             single_node_mode(conn_setts, endpoint)
         };
 
-        Ok(GrpcClient { sender })
+        Ok(GrpcClient {
+            sender,
+            default_credentials,
+        })
     }
 
     pub async fn execute<F, Fut, A>(&self, action: F) -> crate::Result<A>
@@ -836,6 +841,10 @@ impl GrpcClient {
 
             Ok(a) => Ok(a),
         }
+    }
+
+    pub fn default_credentials(&self) -> Option<Credentials> {
+        self.default_credentials.clone()
     }
 }
 

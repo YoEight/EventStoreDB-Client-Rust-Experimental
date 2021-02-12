@@ -116,7 +116,9 @@ pub mod read_req {
                 String(super::super::super::super::shared::Empty),
             }
         }
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+        #[derive(
+            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
+        )]
         #[repr(i32)]
         pub enum ReadDirection {
             Forwards = 0,

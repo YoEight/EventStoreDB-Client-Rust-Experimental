@@ -4,29 +4,28 @@ use futures::{Stream, StreamExt};
 
 use crate::event_store::client::{persistent, shared, streams};
 use crate::types::{
-    EventData, ExpectedRevision, ExpectedVersion, PersistentSubscriptionSettings, Position,
-    ReadDirection, RecordedEvent, ResolvedEvent, Revision, SubEvent, WriteResult,
-    WrongExpectedVersion,
+    EventData, ExpectedRevision, PersistentSubscriptionSettings, Position, ReadDirection,
+    RecordedEvent, ResolvedEvent, StreamPosition, SubEvent, WriteResult, WrongExpectedVersion,
 };
 
 use persistent::persistent_subscriptions_client::PersistentSubscriptionsClient;
 use shared::{Empty, StreamIdentifier, Uuid};
 use std::marker::Unpin;
-use streams::append_req::options::ExpectedStreamRevision;
 use streams::streams_client::StreamsClient;
 
 use crate::grpc::GrpcClient;
-use crate::{Credentials, CurrentRevision, LinkTos, NakAction, ReadResult, SystemConsumerStrategy};
+use crate::options::append_to_stream::AppendToStreamOptions;
+use crate::options::persistent_subscription::PersistentSubscriptionOptions;
+use crate::options::read_all::ReadAllOptions;
+use crate::options::read_stream::ReadStreamOptions;
+use crate::options::subscribe_to_stream::SubscribeToStreamOptions;
+use crate::{
+    ConnectToPersistentSubscription, Credentials, CurrentRevision,
+    DeletePersistentSubscriptionOptions, DeleteStreamOptions, NakAction, ReadResult,
+    SubscribeToAllOptions, SubscriptionFilter, SystemConsumerStrategy,
+};
+use futures::stream::BoxStream;
 use tonic::Request;
-
-fn convert_expected_version(version: ExpectedVersion) -> ExpectedStreamRevision {
-    match version {
-        ExpectedVersion::Any => ExpectedStreamRevision::Any(Empty {}),
-        ExpectedVersion::StreamExists => ExpectedStreamRevision::StreamExists(Empty {}),
-        ExpectedVersion::NoStream => ExpectedStreamRevision::NoStream(Empty {}),
-        ExpectedVersion::Exact(version) => ExpectedStreamRevision::Revision(version),
-    }
-}
 
 fn raw_uuid_to_uuid(src: Uuid) -> uuid::Uuid {
     use byteorder::{BigEndian, ByteOrder};
@@ -201,7 +200,7 @@ fn convert_settings_create(
     };
 
     persistent::create_req::Settings {
-        resolve_links: settings.resolve_links,
+        resolve_links: settings.resolve_link_tos,
         revision: settings.revision,
         extra_statistics: settings.extra_stats,
         message_timeout: Some(
@@ -235,7 +234,7 @@ fn convert_settings_update(
     };
 
     persistent::update_req::Settings {
-        resolve_links: settings.resolve_links,
+        resolve_links: settings.resolve_link_tos,
         revision: settings.revision,
         extra_statistics: settings.extra_stats,
         message_timeout: Some(
@@ -308,1384 +307,794 @@ fn configure_auth_req<A>(req: &mut Request<A>, creds_opt: Option<Credentials>) {
         req.metadata_mut().insert("authorization", header_value);
     }
 }
+pub fn filter_into_proto(filter: SubscriptionFilter) -> streams::read_req::options::FilterOptions {
+    use options::filter_options::{Expression, Filter, Window};
+    use streams::read_req::options::{self, FilterOptions};
 
-#[derive(Debug, Clone)]
-pub struct FilterConf {
-    based_on_stream: bool,
-    max: Option<u32>,
-    regex: Option<String>,
-    prefixes: Vec<String>,
-}
+    let window = match filter.max {
+        Some(max) => Window::Max(max),
+        None => Window::Count(Empty {}),
+    };
 
-impl FilterConf {
-    pub fn based_on_stream_name() -> Self {
-        FilterConf {
-            based_on_stream: true,
-            max: None,
-            regex: None,
-            prefixes: Vec::new(),
-        }
-    }
+    let expr = Expression {
+        regex: filter.regex.unwrap_or_else(|| "".to_string()),
+        prefix: filter.prefixes,
+    };
 
-    pub fn based_on_event_type() -> Self {
-        let mut temp = FilterConf::based_on_stream_name();
-        temp.based_on_stream = false;
+    let filter = if filter.based_on_stream {
+        Filter::StreamIdentifier(expr)
+    } else {
+        Filter::EventType(expr)
+    };
 
-        temp
-    }
-
-    pub fn max(self, max: u32) -> Self {
-        FilterConf {
-            max: Some(max),
-            ..self
-        }
-    }
-
-    pub fn regex<A: AsRef<str>>(self, regex: A) -> Self {
-        FilterConf {
-            regex: Some(regex.as_ref().to_string()),
-            ..self
-        }
-    }
-
-    pub fn add_prefix<A: AsRef<str>>(mut self, prefix: A) -> Self {
-        self.prefixes.push(prefix.as_ref().to_string());
-        self
-    }
-
-    pub fn into_proto(self) -> streams::read_req::options::FilterOptions {
-        use options::filter_options::{Expression, Filter, Window};
-        use streams::read_req::options::{self, FilterOptions};
-
-        let window = match self.max {
-            Some(max) => Window::Max(max),
-            None => Window::Count(Empty {}),
-        };
-
-        let expr = Expression {
-            regex: self.regex.unwrap_or_else(|| "".to_string()),
-            prefix: self.prefixes,
-        };
-
-        let filter = if self.based_on_stream {
-            Filter::StreamIdentifier(expr)
-        } else {
-            Filter::EventType(expr)
-        };
-
-        FilterOptions {
-            filter: Some(filter),
-            window: Some(window),
-            checkpoint_interval_multiplier: 1,
-        }
+    FilterOptions {
+        filter: Some(filter),
+        window: Some(window),
+        checkpoint_interval_multiplier: 1,
     }
 }
 
-/// Command that sends events to a given stream.
-pub struct WriteEvents {
-    connection: GrpcClient,
-    stream: String,
-    version: ExpectedVersion,
-    creds: Option<Credentials>,
+/// Sends asynchronously the write command to the server.
+pub async fn append_to_stream<S, Events>(
+    connection: &GrpcClient,
+    stream: S,
+    options: &AppendToStreamOptions,
+    events: Events,
+) -> crate::Result<Result<WriteResult, WrongExpectedVersion>>
+where
+    S: AsRef<str>,
+    Events: Stream<Item = EventData> + Send + Sync + 'static,
+{
+    use streams::append_req::{self, Content};
+    use streams::AppendReq;
+
+    let stream = stream.as_ref().to_string();
+
+    connection.execute(move |channel| async move {
+        let stream_identifier = Some(StreamIdentifier {
+            stream_name: stream.into_bytes(),
+        });
+        let header = Content::Options(append_req::Options {
+            stream_identifier,
+            expected_stream_revision: Some(options.version.clone()),
+        });
+        let header = AppendReq {
+            content: Some(header),
+        };
+        let header = stream::once(async move { header });
+        let events = events.map(convert_event_data);
+        let payload = header.chain(events);
+        let mut req = Request::new(payload);
+
+        let credentials = options.credentials.clone().or_else(|| connection.default_credentials());
+
+        configure_auth_req(&mut req, credentials);
+
+        let mut client = StreamsClient::new(channel);
+        let resp = client.append(req).await?.into_inner();
+
+        match resp.result.unwrap() {
+            streams::append_resp::Result::Success(success) => {
+                let next_expected_version = match success.current_revision_option.unwrap() {
+                    streams::append_resp::success::CurrentRevisionOption::CurrentRevision(rev) => {
+                        rev
+                    }
+                    streams::append_resp::success::CurrentRevisionOption::NoStream(_) => 0,
+                };
+
+                let position = match success.position_option.unwrap() {
+                    streams::append_resp::success::PositionOption::Position(pos) => Position {
+                        commit: pos.commit_position,
+                        prepare: pos.prepare_position,
+                    },
+
+                    streams::append_resp::success::PositionOption::NoPosition(_) => {
+                        Position::start()
+                    }
+                };
+
+                let write_result = WriteResult {
+                    next_expected_version,
+                    position,
+                };
+
+                Ok(Ok(write_result))
+            }
+
+            streams::append_resp::Result::WrongExpectedVersion(error) => {
+                let current = match error.current_revision_option.unwrap() {
+                    streams::append_resp::wrong_expected_version::CurrentRevisionOption::CurrentRevision(rev) => CurrentRevision::Current(rev),
+                    streams::append_resp::wrong_expected_version::CurrentRevisionOption::NoStream(_) => CurrentRevision::NoStream,
+                };
+
+                let expected = match error.expected_revision_option.unwrap() {
+                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedRevision(rev) => ExpectedRevision::Exact(rev),
+                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::Any(_) => ExpectedRevision::Any,
+                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::StreamExists(_) => ExpectedRevision::StreamExists,
+                };
+
+                Ok(Err(WrongExpectedVersion { current, expected }))
+            }
+        }
+    }).await
 }
 
-impl WriteEvents {
-    pub(crate) fn new(connection: GrpcClient, stream: String, creds: Option<Credentials>) -> Self {
-        WriteEvents {
-            connection,
-            stream,
-            version: ExpectedVersion::Any,
-            creds,
-        }
-    }
+/// Sends asynchronously the read command to the server.
+pub async fn read_stream<'a, S: AsRef<str>>(
+    connection: &GrpcClient,
+    options: &ReadStreamOptions,
+    stream: S,
+    count: u64,
+) -> crate::Result<ReadResult<BoxStream<'a, crate::Result<ResolvedEvent>>>> {
+    use streams::read_req::options::stream_options::RevisionOption;
+    use streams::read_req::options::{self, StreamOption, StreamOptions};
+    use streams::read_req::Options;
 
-    /// Asks the server to check that the stream receiving the event is at
-    /// the given expected version. Default: `Credentials::Any`.
-    pub fn expected_version(self, version: ExpectedVersion) -> Self {
-        WriteEvents { version, ..self }
-    }
+    let read_direction = match options.direction {
+        ReadDirection::Forward => 0,
+        ReadDirection::Backward => 1,
+    };
 
-    /// Performs the command with the given credentials.
-    pub fn credentials(self, creds: Credentials) -> Self {
-        WriteEvents {
-            creds: Some(creds),
-            ..self
-        }
-    }
+    let revision_option = match options.position {
+        StreamPosition::Point(rev) => RevisionOption::Revision(rev),
+        StreamPosition::Start => RevisionOption::Start(Empty {}),
+        StreamPosition::End => RevisionOption::End(Empty {}),
+    };
 
-    /// Sends asynchronously the write command to the server.
-    pub async fn send_event(
-        self,
-        event: EventData,
-    ) -> crate::Result<Result<WriteResult, WrongExpectedVersion>> {
-        self.send_iter(vec![event]).await
-    }
+    let stream_identifier = Some(StreamIdentifier {
+        stream_name: stream.as_ref().to_string().into_bytes(),
+    });
+    let stream_options = StreamOptions {
+        stream_identifier,
+        revision_option: Some(revision_option),
+    };
 
-    /// Sends asynchronously the write command to the server.
-    pub async fn send_iter<I>(
-        self,
-        events: I,
-    ) -> crate::Result<Result<WriteResult, WrongExpectedVersion>>
-    where
-        I: IntoIterator<Item = EventData> + Send + Sync,
-        <I as IntoIterator>::IntoIter: Send + Sync + 'static,
-    {
-        self.send(futures::stream::iter(events)).await
-    }
+    let uuid_option = options::UuidOption {
+        content: Some(options::uuid_option::Content::String(Empty {})),
+    };
 
-    /// Sends asynchronously the write command to the server.
-    pub async fn send<S>(
-        self,
-        events: S,
-    ) -> crate::Result<Result<WriteResult, WrongExpectedVersion>>
-    where
-        S: Stream<Item = EventData> + Send + Sync + 'static,
-    {
-        use streams::append_req::{self, Content};
-        use streams::AppendReq;
+    let credentials = options
+        .credentials
+        .clone()
+        .or_else(|| connection.default_credentials());
 
-        let stream = self.stream;
-        let version = self.version;
-        let creds = self.creds;
+    let options = Options {
+        stream_option: Some(StreamOption::Stream(stream_options)),
+        resolve_links: options.resolve_link_tos,
+        filter_option: Some(options::FilterOption::NoFilter(Empty {})),
+        count_option: Some(options::CountOption::Count(count)),
+        uuid_option: Some(uuid_option),
+        read_direction,
+    };
 
-        self.connection.execute(move |channel| async move {
-            let stream_identifier = Some(StreamIdentifier {
-                stream_name: stream.into_bytes(),
-            });
-            let header = Content::Options(append_req::Options {
-                stream_identifier,
-                expected_stream_revision: Some(convert_expected_version(version)),
-            });
-            let header = AppendReq {
-                content: Some(header),
-            };
-            let header = stream::once(async move { header });
-            let events = events.map(convert_event_data);
-            let payload = header.chain(events);
-            let mut req = Request::new(payload);
+    let req = streams::ReadReq {
+        options: Some(options),
+    };
 
-            configure_auth_req(&mut req, creds);
+    let mut req = Request::new(req);
 
+    configure_auth_req(&mut req, credentials);
+
+    connection
+        .execute(|channel| async {
             let mut client = StreamsClient::new(channel);
-            let resp = client.append(req).await?.into_inner();
+            let mut stream = client.read(req).await?.into_inner();
 
-            match resp.result.unwrap() {
-                streams::append_resp::Result::Success(success) => {
-                    let next_expected_version = match success.current_revision_option.unwrap() {
-                        streams::append_resp::success::CurrentRevisionOption::CurrentRevision(rev) => {
-                            rev
-                        }
-                        streams::append_resp::success::CurrentRevisionOption::NoStream(_) => 0,
-                    };
+            if let Some(resp) = stream.try_next().await? {
+                match resp.content.as_ref().unwrap() {
+                    streams::read_resp::Content::StreamNotFound(params) => {
+                        let stream_name = std::string::String::from_utf8(
+                            params
+                                .stream_identifier
+                                .as_ref()
+                                .unwrap()
+                                .stream_name
+                                .clone(),
+                        )
+                        .expect("Don't worry this string is valid!");
 
-                    let position = match success.position_option.unwrap() {
-                        streams::append_resp::success::PositionOption::Position(pos) => Position {
-                            commit: pos.commit_position,
-                            prepare: pos.prepare_position,
-                        },
-
-                        streams::append_resp::success::PositionOption::NoPosition(_) => {
-                            Position::start()
-                        }
-                    };
-
-                    let write_result = WriteResult {
-                        next_expected_version,
-                        position,
-                    };
-
-                    Ok(Ok(write_result))
-                }
-
-                streams::append_resp::Result::WrongExpectedVersion(error) => {
-                    let current = match error.current_revision_option.unwrap() {
-                        streams::append_resp::wrong_expected_version::CurrentRevisionOption::CurrentRevision(rev) => CurrentRevision::Current(rev),
-                        streams::append_resp::wrong_expected_version::CurrentRevisionOption::NoStream(_) => CurrentRevision::NoStream,
-                    };
-
-                    let expected = match error.expected_revision_option.unwrap() {
-                        streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedRevision(rev) => ExpectedRevision::Expected(rev),
-                        streams::append_resp::wrong_expected_version::ExpectedRevisionOption::Any(_) => ExpectedRevision::Any,
-                        streams::append_resp::wrong_expected_version::ExpectedRevisionOption::StreamExists(_) => ExpectedRevision::StreamExists,
-                    };
-
-                    Ok(Err(WrongExpectedVersion { current, expected }))
-                }
-            }
-        }).await
-    }
-}
-
-/// A command that reads several events from a stream. It can read events
-/// forward or backward.
-pub struct ReadStreamEvents {
-    connection: GrpcClient,
-    stream: String,
-    revision: Revision<u64>,
-    resolve_link_tos: bool,
-    direction: ReadDirection,
-    creds: Option<Credentials>,
-}
-
-impl ReadStreamEvents {
-    pub(crate) fn new(connection: GrpcClient, stream: String, creds: Option<Credentials>) -> Self {
-        ReadStreamEvents {
-            connection,
-            stream,
-            revision: Revision::Start,
-            resolve_link_tos: false,
-            direction: ReadDirection::Forward,
-            creds,
-        }
-    }
-
-    /// Asks the command to read forward (toward the end of the stream).
-    /// That's the default behavior.
-    pub fn forward(self) -> Self {
-        self.set_direction(ReadDirection::Forward)
-    }
-
-    /// Asks the command to read backward (toward the begining of the stream).
-    pub fn backward(self) -> Self {
-        self.set_direction(ReadDirection::Backward)
-    }
-
-    fn set_direction(self, direction: ReadDirection) -> Self {
-        ReadStreamEvents { direction, ..self }
-    }
-
-    /// Performs the command with the given credentials.
-    pub fn credentials(self, value: Credentials) -> Self {
-        ReadStreamEvents {
-            creds: Some(value),
-            ..self
-        }
-    }
-
-    /// Performs the command with the given credentials.
-    pub fn set_credentials(self, creds: Option<Credentials>) -> Self {
-        ReadStreamEvents { creds, ..self }
-    }
-
-    /// Starts the read at the given event number. By default, it starts at
-    /// 0.
-    pub fn start_from(self, start: u64) -> Self {
-        ReadStreamEvents {
-            revision: Revision::Exact(start),
-            ..self
-        }
-    }
-
-    /// Starts the read from the beginning of the stream. It also set the read
-    /// direction to `Forward`.
-    pub fn start_from_beginning(self) -> Self {
-        ReadStreamEvents {
-            revision: Revision::Start,
-            direction: ReadDirection::Forward,
-            ..self
-        }
-    }
-
-    /// Starts the read from the end of the stream. It also set the read
-    /// direction to `Backward`.
-    pub fn start_from_end_of_stream(self) -> Self {
-        ReadStreamEvents {
-            revision: Revision::End,
-            direction: ReadDirection::Backward,
-            ..self
-        }
-    }
-
-    /// When using projections, you can have links placed into another stream.
-    /// If you set `true`, the server will resolve those links and will return
-    /// the event that the link points to. Default: [NoResolution](../types/enum.LinkTos.html).
-    pub fn resolve_link_tos(self, tos: LinkTos) -> Self {
-        let resolve_link_tos = tos.raw_resolve_lnk_tos();
-
-        ReadStreamEvents {
-            resolve_link_tos,
-            ..self
-        }
-    }
-
-    /// Sends asynchronously the read command to the server.
-    pub async fn execute(
-        self,
-        count: u64,
-    ) -> crate::Result<
-        ReadResult<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>>,
-    > {
-        use streams::read_req::options::stream_options::RevisionOption;
-        use streams::read_req::options::{self, StreamOption, StreamOptions};
-        use streams::read_req::Options;
-
-        let read_direction = match self.direction {
-            ReadDirection::Forward => 0,
-            ReadDirection::Backward => 1,
-        };
-
-        let revision_option = match self.revision {
-            Revision::Exact(rev) => RevisionOption::Revision(rev),
-            Revision::Start => RevisionOption::Start(Empty {}),
-            Revision::End => RevisionOption::End(Empty {}),
-        };
-
-        let stream_identifier = Some(StreamIdentifier {
-            stream_name: self.stream.into_bytes(),
-        });
-        let stream_options = StreamOptions {
-            stream_identifier,
-            revision_option: Some(revision_option),
-        };
-
-        let uuid_option = options::UuidOption {
-            content: Some(options::uuid_option::Content::String(Empty {})),
-        };
-
-        let options = Options {
-            stream_option: Some(StreamOption::Stream(stream_options)),
-            resolve_links: self.resolve_link_tos,
-            filter_option: Some(options::FilterOption::NoFilter(Empty {})),
-            count_option: Some(options::CountOption::Count(count)),
-            uuid_option: Some(uuid_option),
-            read_direction,
-        };
-
-        let req = streams::ReadReq {
-            options: Some(options),
-        };
-
-        let mut req = Request::new(req);
-
-        configure_auth_req(&mut req, self.creds);
-
-        self.connection
-            .execute(|channel| async {
-                let mut client = StreamsClient::new(channel);
-                let mut stream = client.read(req).await?.into_inner();
-
-                if let Some(resp) = stream.try_next().await? {
-                    match resp.content.as_ref().unwrap() {
-                        streams::read_resp::Content::StreamNotFound(params) => {
-                            let stream_name = std::string::String::from_utf8(
-                                params
-                                    .stream_identifier
-                                    .as_ref()
-                                    .unwrap()
-                                    .stream_name
-                                    .clone(),
-                            )
-                            .expect("Don't worry this string is valid!");
-
-                            return Ok(ReadResult::StreamNotFound(stream_name));
-                        }
-
-                        _ => {
-                            let stream = stream::once(futures::future::ok::<
-                                streams::ReadResp,
-                                tonic::Status,
-                            >(resp))
-                            .chain(stream)
-                            .try_filter_map(|resp| {
-                                let value = match resp.content.unwrap() {
-                                    streams::read_resp::Content::Event(event) => {
-                                        Some(convert_proto_read_event(event))
-                                    }
-                                    _ => None,
-                                };
-
-                                futures::future::ok(value)
-                            })
-                            .map_err(crate::Error::from_grpc);
-
-                            let stream: Box<
-                                dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin,
-                            > = Box::new(stream);
-
-                            return Ok(ReadResult::Ok(stream));
-                        }
+                        return Ok(ReadResult::StreamNotFound(stream_name));
                     }
-                }
 
-                Ok(ReadResult::Ok(Box::new(stream::empty())))
-            })
-            .await
-    }
-
-    /// Reads all the events of a stream.
-    pub async fn read_through(
-        self,
-    ) -> crate::Result<
-        ReadResult<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>>,
-    > {
-        self.execute(u64::MAX).await
-    }
-}
-
-/// Like `ReadStreamEvents` but specialized to system stream '$all'.
-pub struct ReadAllEvents {
-    connection: GrpcClient,
-    revision: Revision<Position>,
-    resolve_link_tos: bool,
-    direction: ReadDirection,
-    creds: Option<Credentials>,
-}
-
-impl ReadAllEvents {
-    pub(crate) fn new(connection: GrpcClient, creds: Option<Credentials>) -> Self {
-        ReadAllEvents {
-            connection,
-            revision: Revision::Start,
-            resolve_link_tos: false,
-            direction: ReadDirection::Forward,
-            creds,
-        }
-    }
-
-    /// Asks the command to read forward (toward the end of the stream).
-    /// That's the default behavior.
-    pub fn forward(self) -> Self {
-        self.set_direction(ReadDirection::Forward)
-    }
-
-    /// Asks the command to read backward (toward the begining of the stream).
-    pub fn backward(self) -> Self {
-        self.set_direction(ReadDirection::Backward)
-    }
-
-    fn set_direction(self, direction: ReadDirection) -> Self {
-        ReadAllEvents { direction, ..self }
-    }
-
-    /// Performs the command with the given credentials.
-    pub fn credentials(self, value: Credentials) -> Self {
-        ReadAllEvents {
-            creds: Some(value),
-            ..self
-        }
-    }
-
-    /// Starts the read ot the given event number. By default, it starts at
-    /// `types::Position::start`.
-    pub fn start_from(self, start: Position) -> Self {
-        let revision = Revision::Exact(start);
-        ReadAllEvents { revision, ..self }
-    }
-
-    /// Starts the read from the beginning of the stream. It also set the read
-    /// direction to `Forward`.
-    pub fn start_from_beginning(self) -> Self {
-        let revision = Revision::Start;
-        let direction = ReadDirection::Forward;
-
-        ReadAllEvents {
-            revision,
-            direction,
-            ..self
-        }
-    }
-
-    /// Starts the read from the end of the stream. It also set the read
-    /// direction to `Backward`.
-    pub fn start_from_end_of_stream(self) -> Self {
-        let revision = Revision::End;
-        let direction = ReadDirection::Backward;
-
-        ReadAllEvents {
-            revision,
-            direction,
-            ..self
-        }
-    }
-
-    /// When using projections, you can have links placed into another stream.
-    /// If you set `true`, the server will resolve those links and will return
-    /// the event that the link points to. Default: [NoResolution](../types/enum.LinkTos.html).
-    pub fn resolve_link_tos(self, tos: LinkTos) -> Self {
-        let resolve_link_tos = tos.raw_resolve_lnk_tos();
-
-        ReadAllEvents {
-            resolve_link_tos,
-            ..self
-        }
-    }
-
-    /// Sends asynchronously the read command to the server.
-    pub async fn execute(
-        self,
-        count: u64,
-    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
-        use streams::read_req::options::all_options::AllOption;
-        use streams::read_req::options::{self, AllOptions, StreamOption};
-        use streams::read_req::Options;
-
-        let read_direction = match self.direction {
-            ReadDirection::Forward => 0,
-            ReadDirection::Backward => 1,
-        };
-
-        let all_option = match self.revision {
-            Revision::Exact(pos) => {
-                let pos = options::Position {
-                    commit_position: pos.commit,
-                    prepare_position: pos.prepare,
-                };
-
-                AllOption::Position(pos)
-            }
-
-            Revision::Start => AllOption::Start(Empty {}),
-            Revision::End => AllOption::End(Empty {}),
-        };
-
-        let stream_options = AllOptions {
-            all_option: Some(all_option),
-        };
-
-        let uuid_option = options::UuidOption {
-            content: Some(options::uuid_option::Content::String(Empty {})),
-        };
-
-        let options = Options {
-            stream_option: Some(StreamOption::All(stream_options)),
-            resolve_links: self.resolve_link_tos,
-            filter_option: Some(options::FilterOption::NoFilter(Empty {})),
-            count_option: Some(options::CountOption::Count(count)),
-            uuid_option: Some(uuid_option),
-            read_direction,
-        };
-
-        let req = streams::ReadReq {
-            options: Some(options),
-        };
-
-        let mut req = Request::new(req);
-
-        configure_auth_req(&mut req, self.creds);
-
-        self.connection
-            .execute(|channel| async {
-                let mut client = StreamsClient::new(channel);
-                let stream = client.read(req).await?.into_inner();
-                let stream = stream
-                    .try_filter_map(|resp| {
-                        let value = match resp.content.unwrap() {
-                            streams::read_resp::Content::Event(event) => {
-                                Some(convert_proto_read_event(event))
-                            }
-                            _ => None,
-                        };
-
-                        futures::future::ok(value)
-                    })
-                    .map_err(crate::Error::from_grpc);
-
-                let stream: Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin> =
-                    Box::new(stream);
-
-                Ok(stream)
-            })
-            .await
-    }
-
-    /// Reads all the events of $all stream.
-    pub async fn read_through(
-        self,
-    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
-        self.execute(u64::MAX).await
-    }
-}
-
-/// Command that deletes a stream. More information on [Deleting stream and events].
-///
-/// [Deleting stream and events]: https://eventstore.org/docs/server/deleting-streams-and-events/index.html
-pub struct DeleteStream {
-    connection: GrpcClient,
-    stream: String,
-    version: ExpectedVersion,
-    creds: Option<Credentials>,
-    hard_delete: bool,
-}
-
-impl DeleteStream {
-    pub(crate) fn new(connection: GrpcClient, stream: String, creds: Option<Credentials>) -> Self {
-        DeleteStream {
-            connection,
-            stream,
-            hard_delete: false,
-            version: ExpectedVersion::Any,
-            creds,
-        }
-    }
-
-    /// Asks the server to check that the stream receiving the event is at
-    /// the given expected version. Default: `ExpectedVersion::Any`.
-    pub fn expected_version(self, version: ExpectedVersion) -> Self {
-        DeleteStream { version, ..self }
-    }
-
-    /// Performs the command with the given credentials.
-    pub fn credentials(self, value: Credentials) -> Self {
-        DeleteStream {
-            creds: Some(value),
-            ..self
-        }
-    }
-
-    /// Makes use of Truncate before. When a stream is deleted, its Truncate
-    /// before is set to the streams current last event number. When a soft
-    /// deleted stream is read, the read will return a StreamNotFound. After
-    /// deleting the stream, you are able to write to it again, continuing from
-    /// where it left off.
-    ///
-    /// That is the default behavior.
-    pub fn soft_delete(self) -> Self {
-        DeleteStream {
-            hard_delete: false,
-            ..self
-        }
-    }
-
-    /// A hard delete writes a tombstone event to the stream, permanently
-    /// deleting it. The stream cannot be recreated or written to again.
-    /// Tombstone events are written with the event type '$streamDeleted'. When
-    /// a hard deleted stream is read, the read will return a StreamDeleted.
-    pub fn hard_delete(self) -> Self {
-        DeleteStream {
-            hard_delete: true,
-            ..self
-        }
-    }
-
-    /// Sends asynchronously the delete command to the server.
-    pub async fn execute(self) -> crate::Result<Option<Position>> {
-        if self.hard_delete {
-            use streams::tombstone_req::options::ExpectedStreamRevision;
-            use streams::tombstone_req::Options;
-            use streams::tombstone_resp::PositionOption;
-
-            let expected_stream_revision = match self.version {
-                ExpectedVersion::Any => ExpectedStreamRevision::Any(Empty {}),
-                ExpectedVersion::NoStream => ExpectedStreamRevision::NoStream(Empty {}),
-                ExpectedVersion::StreamExists => ExpectedStreamRevision::StreamExists(Empty {}),
-                ExpectedVersion::Exact(rev) => ExpectedStreamRevision::Revision(rev),
-            };
-
-            let expected_stream_revision = Some(expected_stream_revision);
-            let stream_identifier = Some(StreamIdentifier {
-                stream_name: self.stream.into_bytes(),
-            });
-            let options = Options {
-                stream_identifier,
-                expected_stream_revision,
-            };
-
-            let mut req = Request::new(streams::TombstoneReq {
-                options: Some(options),
-            });
-
-            configure_auth_req(&mut req, self.creds);
-
-            self.connection
-                .execute(|channel| async {
-                    let mut client = StreamsClient::new(channel);
-                    let result = client.tombstone(req).await?.into_inner();
-
-                    if let Some(opts) = result.position_option {
-                        match opts {
-                            PositionOption::Position(pos) => {
-                                let pos = Position {
-                                    commit: pos.commit_position,
-                                    prepare: pos.prepare_position,
-                                };
-
-                                Ok(Some(pos))
-                            }
-
-                            PositionOption::NoPosition(_) => Ok(None),
-                        }
-                    } else {
-                        Ok(None)
-                    }
-                })
-                .await
-        } else {
-            use streams::delete_req::options::ExpectedStreamRevision;
-            use streams::delete_req::Options;
-            use streams::delete_resp::PositionOption;
-
-            let expected_stream_revision = match self.version {
-                ExpectedVersion::Any => ExpectedStreamRevision::Any(Empty {}),
-                ExpectedVersion::NoStream => ExpectedStreamRevision::NoStream(Empty {}),
-                ExpectedVersion::StreamExists => ExpectedStreamRevision::StreamExists(Empty {}),
-                ExpectedVersion::Exact(rev) => ExpectedStreamRevision::Revision(rev),
-            };
-
-            let expected_stream_revision = Some(expected_stream_revision);
-            let stream_identifier = Some(StreamIdentifier {
-                stream_name: self.stream.into_bytes(),
-            });
-            let options = Options {
-                stream_identifier,
-                expected_stream_revision,
-            };
-
-            let mut req = Request::new(streams::DeleteReq {
-                options: Some(options),
-            });
-
-            configure_auth_req(&mut req, self.creds);
-
-            self.connection
-                .execute(|channel| async {
-                    let mut client = StreamsClient::new(channel);
-                    let result = client.delete(req).await?.into_inner();
-
-                    if let Some(opts) = result.position_option {
-                        match opts {
-                            PositionOption::Position(pos) => {
-                                let pos = Position {
-                                    commit: pos.commit_position,
-                                    prepare: pos.prepare_position,
-                                };
-
-                                Ok(Some(pos))
-                            }
-
-                            PositionOption::NoPosition(_) => Ok(None),
-                        }
-                    } else {
-                        Ok(None)
-                    }
-                })
-                .await
-        }
-    }
-}
-
-/// Subscribes to a given stream. This kind of subscription specifies a
-/// starting point (by default, the beginning of a stream). For a regular
-/// stream, that starting point will be an event number. For the system
-/// stream `$all`, it will be a position in the transaction file
-/// (see `subscribe_to_all_from`). This subscription will fetch every event
-/// until the end of the stream, then will dispatch subsequently written
-/// events.
-///
-/// For example, if a starting point of 50 is specified when a stream has
-/// 100 events in it, the subscriber can expect to see events 51 through
-/// 100, and then any events subsequenttly written events until such time
-/// as the subscription is dropped or closed.
-///
-/// * Notes
-/// Catchup subscription are resilient to connection drops.
-/// Basically, if the connection drops. The command will restart its
-/// catching up phase from the begining and then emit a new volatile
-/// subscription request.
-///
-/// All this process happens without the user has to do anything.
-pub struct RegularCatchupSubscribe {
-    connection: GrpcClient,
-    stream_id: String,
-    resolve_link_tos: bool,
-    revision: Option<u64>,
-    creds_opt: Option<Credentials>,
-}
-
-impl RegularCatchupSubscribe {
-    pub(crate) fn new(
-        connection: GrpcClient,
-        stream_id: String,
-        creds_opt: Option<Credentials>,
-    ) -> Self {
-        RegularCatchupSubscribe {
-            connection,
-            stream_id,
-            resolve_link_tos: false,
-            revision: None,
-            creds_opt,
-        }
-    }
-
-    /// When using projections, you can have links placed into another stream.
-    /// If you set `true`, the server will resolve those links and will return
-    /// the event that the link points to. Default: [NoResolution](../types/enum.LinkTos.html).
-    pub fn resolve_link_tos(self, tos: LinkTos) -> Self {
-        let resolve_link_tos = tos.raw_resolve_lnk_tos();
-
-        RegularCatchupSubscribe {
-            resolve_link_tos,
-            ..self
-        }
-    }
-
-    /// For example, if a starting point of 50 is specified when a stream has
-    /// 100 events in it, the subscriber can expect to see events 51 through
-    /// 100, and then any events subsequently written events until such time
-    /// as the subscription is dropped or closed.
-    ///
-    /// By default, it will start from the event number 0.
-    pub fn start_position(self, start_pos: u64) -> Self {
-        let revision = Some(start_pos);
-        RegularCatchupSubscribe { revision, ..self }
-    }
-
-    /// Performs the command with the given credentials.
-    pub fn credentials(self, creds: Credentials) -> Self {
-        RegularCatchupSubscribe {
-            creds_opt: Some(creds),
-            ..self
-        }
-    }
-
-    /// Runs the subscription command.
-    pub async fn execute(
-        self,
-    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<SubEvent>> + Send + Unpin>> {
-        use futures::future;
-        use streams::read_req::options::stream_options::RevisionOption;
-        use streams::read_req::options::{self, StreamOption, StreamOptions, SubscriptionOptions};
-        use streams::read_req::Options;
-
-        let read_direction = 0; // <- Going forward.
-
-        let revision_option = match self.revision {
-            Some(rev) => RevisionOption::Revision(rev),
-            None => RevisionOption::Start(Empty {}),
-        };
-
-        let stream_identifier = Some(StreamIdentifier {
-            stream_name: self.stream_id.into_bytes(),
-        });
-        let stream_options = StreamOptions {
-            stream_identifier,
-            revision_option: Some(revision_option),
-        };
-
-        let uuid_option = options::UuidOption {
-            content: Some(options::uuid_option::Content::String(Empty {})),
-        };
-
-        let options = Options {
-            stream_option: Some(StreamOption::Stream(stream_options)),
-            resolve_links: self.resolve_link_tos,
-            filter_option: Some(options::FilterOption::NoFilter(Empty {})),
-            count_option: Some(options::CountOption::Subscription(SubscriptionOptions {})),
-            uuid_option: Some(uuid_option),
-            read_direction,
-        };
-
-        let req = streams::ReadReq {
-            options: Some(options),
-        };
-
-        let mut req = Request::new(req);
-
-        configure_auth_req(&mut req, self.creds_opt);
-
-        self.connection
-            .execute(|channel| async {
-                let mut client = StreamsClient::new(channel);
-                let stream = client.read(req).await?.into_inner();
-                let stream = stream
-                    .try_filter_map(|resp| match resp.content.unwrap() {
-                        streams::read_resp::Content::Event(event) => future::ok(Some(
-                            SubEvent::EventAppeared(convert_proto_read_event(event)),
-                        )),
-
-                        streams::read_resp::Content::Confirmation(sub) => {
-                            future::ok(Some(SubEvent::Confirmed(sub.subscription_id)))
-                        }
-
-                        _ => future::ok(None),
-                    })
-                    .map_err(crate::Error::from_grpc);
-
-                let stream: Box<dyn Stream<Item = crate::Result<SubEvent>> + Send + Unpin> =
-                    Box::new(stream);
-
-                Ok(stream)
-            })
-            .await
-    }
-
-    /// Runs the subscription command. Filter out all subscription events that are not `SubEvent::EventAppeared`.
-    pub async fn execute_event_appeared_only(
-        self,
-    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
-        let stream = self.execute().await?.try_filter_map(|event| match event {
-            SubEvent::EventAppeared(event) => futures::future::ok(Some(event)),
-            _ => futures::future::ok(None),
-        });
-
-        Ok(Box::new(stream))
-    }
-}
-
-/// Like `RegularCatchupSubscribe` but specific to the system stream '$all'.
-pub struct AllCatchupSubscribe {
-    connection: GrpcClient,
-    resolve_link_tos: bool,
-    revision: Option<Position>,
-    creds_opt: Option<Credentials>,
-    filter: Option<FilterConf>,
-}
-
-impl AllCatchupSubscribe {
-    pub(crate) fn new(connection: GrpcClient, creds_opt: Option<Credentials>) -> Self {
-        AllCatchupSubscribe {
-            connection,
-            resolve_link_tos: false,
-            revision: None,
-            filter: None,
-            creds_opt,
-        }
-    }
-
-    /// When using projections, you can have links placed into another stream.
-    /// If you set `true`, the server will resolve those links and will return
-    /// the event that the link points to. Default: [NoResolution](../types/enum.LinkTos.html).
-    pub fn resolve_link_tos(self, tos: LinkTos) -> Self {
-        let resolve_link_tos = tos.raw_resolve_lnk_tos();
-
-        AllCatchupSubscribe {
-            resolve_link_tos,
-            ..self
-        }
-    }
-
-    /// Starting point in the transaction journal log. By default, it will start at
-    /// `Revision::Start`.
-    pub fn start_position(self, start_pos: Position) -> Self {
-        let revision = Some(start_pos);
-
-        AllCatchupSubscribe { revision, ..self }
-    }
-
-    /// Performs the command with the given credentials.
-    pub fn credentials(self, creds: Credentials) -> Self {
-        AllCatchupSubscribe {
-            creds_opt: Some(creds),
-            ..self
-        }
-    }
-
-    /// Filters events or streams based upon a predicate.
-    pub fn filter(self, filter: FilterConf) -> Self {
-        AllCatchupSubscribe {
-            filter: Some(filter),
-            ..self
-        }
-    }
-
-    /// Preforms the catching up phase of the subscription asynchronously. When
-    /// it will reach the head of stream, the command will emit a volatile
-    /// subscription request.
-    pub async fn execute(
-        self,
-    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<SubEvent>> + Send + Unpin>> {
-        use futures::future;
-        use streams::read_req::options::all_options::AllOption;
-        use streams::read_req::options::{self, AllOptions, StreamOption, SubscriptionOptions};
-        use streams::read_req::Options;
-
-        let read_direction = 0; // <- Going forward.
-
-        let all_option = match self.revision {
-            Some(pos) => {
-                let pos = options::Position {
-                    commit_position: pos.commit,
-                    prepare_position: pos.prepare,
-                };
-
-                AllOption::Position(pos)
-            }
-
-            None => AllOption::Start(Empty {}),
-        };
-
-        let stream_options = AllOptions {
-            all_option: Some(all_option),
-        };
-
-        let uuid_option = options::UuidOption {
-            content: Some(options::uuid_option::Content::String(Empty {})),
-        };
-
-        let filter_option = match self.filter {
-            Some(filter) => options::FilterOption::Filter(filter.into_proto()),
-            None => options::FilterOption::NoFilter(Empty {}),
-        };
-
-        let options = Options {
-            stream_option: Some(StreamOption::All(stream_options)),
-            resolve_links: self.resolve_link_tos,
-            filter_option: Some(filter_option),
-            count_option: Some(options::CountOption::Subscription(SubscriptionOptions {})),
-            uuid_option: Some(uuid_option),
-            read_direction,
-        };
-
-        let req = streams::ReadReq {
-            options: Some(options),
-        };
-
-        let mut req = Request::new(req);
-
-        configure_auth_req(&mut req, self.creds_opt);
-
-        self.connection
-            .execute(|channel| async {
-                let mut client = StreamsClient::new(channel);
-                let stream = client.read(req).await?.into_inner();
-                let stream = stream
-                    .try_filter_map(|resp| match resp.content.unwrap() {
-                        streams::read_resp::Content::Event(event) => future::ok(Some(
-                            SubEvent::EventAppeared(convert_proto_read_event(event)),
-                        )),
-
-                        streams::read_resp::Content::Confirmation(sub) => {
-                            future::ok(Some(SubEvent::Confirmed(sub.subscription_id)))
-                        }
-
-                        streams::read_resp::Content::Checkpoint(chk) => {
-                            let position = Position {
-                                commit: chk.commit_position,
-                                prepare: chk.prepare_position,
+                    _ => {
+                        let stream = stream::once(futures::future::ok::<
+                            streams::ReadResp,
+                            tonic::Status,
+                        >(resp))
+                        .chain(stream)
+                        .try_filter_map(|resp| {
+                            let value = match resp.content.unwrap() {
+                                streams::read_resp::Content::Event(event) => {
+                                    Some(convert_proto_read_event(event))
+                                }
+                                _ => None,
                             };
 
-                            future::ok(Some(SubEvent::Checkpoint(position)))
+                            futures::future::ok(value)
+                        })
+                        .map_err(crate::Error::from_grpc);
+
+                        let stream: BoxStream<crate::Result<ResolvedEvent>> = Box::pin(stream);
+
+                        return Ok(ReadResult::Ok(stream));
+                    }
+                }
+            }
+
+            Ok(ReadResult::Ok(Box::pin(stream::empty())))
+        })
+        .await
+}
+
+pub async fn read_all<'a>(
+    connection: &GrpcClient,
+    options: &ReadAllOptions,
+    count: u64,
+) -> crate::Result<BoxStream<'a, crate::Result<ResolvedEvent>>> {
+    use streams::read_req::options::all_options::AllOption;
+    use streams::read_req::options::{self, AllOptions, StreamOption};
+    use streams::read_req::Options;
+
+    let read_direction = match options.direction {
+        ReadDirection::Forward => 0,
+        ReadDirection::Backward => 1,
+    };
+
+    let all_option = match options.position {
+        StreamPosition::Point(pos) => {
+            let pos = options::Position {
+                commit_position: pos.commit,
+                prepare_position: pos.prepare,
+            };
+
+            AllOption::Position(pos)
+        }
+
+        StreamPosition::Start => AllOption::Start(Empty {}),
+        StreamPosition::End => AllOption::End(Empty {}),
+    };
+
+    let stream_options = AllOptions {
+        all_option: Some(all_option),
+    };
+
+    let uuid_option = options::UuidOption {
+        content: Some(options::uuid_option::Content::String(Empty {})),
+    };
+
+    let credentials = options
+        .credentials
+        .clone()
+        .or_else(|| connection.default_credentials());
+
+    let options = Options {
+        stream_option: Some(StreamOption::All(stream_options)),
+        resolve_links: options.resolve_link_tos,
+        filter_option: Some(options::FilterOption::NoFilter(Empty {})),
+        count_option: Some(options::CountOption::Count(count)),
+        uuid_option: Some(uuid_option),
+        read_direction,
+    };
+
+    let req = streams::ReadReq {
+        options: Some(options),
+    };
+
+    let mut req = Request::new(req);
+
+    configure_auth_req(&mut req, credentials);
+
+    connection
+        .execute(|channel| async {
+            let mut client = StreamsClient::new(channel);
+            let stream = client.read(req).await?.into_inner();
+            let stream = stream
+                .try_filter_map(|resp| {
+                    let value = match resp.content.unwrap() {
+                        streams::read_resp::Content::Event(event) => {
+                            Some(convert_proto_read_event(event))
+                        }
+                        _ => None,
+                    };
+
+                    futures::future::ok(value)
+                })
+                .map_err(crate::Error::from_grpc);
+
+            let stream: BoxStream<crate::Result<ResolvedEvent>> = Box::pin(stream);
+
+            Ok(stream)
+        })
+        .await
+}
+
+/// Sends asynchronously the delete command to the server.
+pub async fn delete_stream<S: AsRef<str>>(
+    connection: &GrpcClient,
+    stream: S,
+    options: &DeleteStreamOptions,
+) -> crate::Result<Option<Position>> {
+    let credentials = options
+        .credentials
+        .clone()
+        .or_else(|| connection.default_credentials());
+
+    if options.hard_delete {
+        use streams::tombstone_req::options::ExpectedStreamRevision;
+        use streams::tombstone_req::Options;
+        use streams::tombstone_resp::PositionOption;
+
+        let expected_stream_revision = match options.version {
+            ExpectedRevision::Any => ExpectedStreamRevision::Any(Empty {}),
+            ExpectedRevision::NoStream => ExpectedStreamRevision::NoStream(Empty {}),
+            ExpectedRevision::StreamExists => ExpectedStreamRevision::StreamExists(Empty {}),
+            ExpectedRevision::Exact(rev) => ExpectedStreamRevision::Revision(rev),
+        };
+
+        let expected_stream_revision = Some(expected_stream_revision);
+        let stream_identifier = Some(StreamIdentifier {
+            stream_name: stream.as_ref().to_string().into_bytes(),
+        });
+        let options = Options {
+            stream_identifier,
+            expected_stream_revision,
+        };
+
+        let mut req = Request::new(streams::TombstoneReq {
+            options: Some(options),
+        });
+
+        configure_auth_req(&mut req, credentials);
+
+        connection
+            .execute(|channel| async {
+                let mut client = StreamsClient::new(channel);
+                let result = client.tombstone(req).await?.into_inner();
+
+                if let Some(opts) = result.position_option {
+                    match opts {
+                        PositionOption::Position(pos) => {
+                            let pos = Position {
+                                commit: pos.commit_position,
+                                prepare: pos.prepare_position,
+                            };
+
+                            Ok(Some(pos))
                         }
 
-                        _ => future::ok(None),
-                    })
-                    .map_err(crate::Error::from_grpc);
-
-                let stream: Box<dyn Stream<Item = crate::Result<SubEvent>> + Send + Unpin> =
-                    Box::new(stream);
-
-                Ok(stream)
+                        PositionOption::NoPosition(_) => Ok(None),
+                    }
+                } else {
+                    Ok(None)
+                }
             })
             .await
-    }
+    } else {
+        use streams::delete_req::options::ExpectedStreamRevision;
+        use streams::delete_req::Options;
+        use streams::delete_resp::PositionOption;
 
-    /// Runs the subscription command. Filter out all subscription events that are not `SubEvent::EventAppeared`.
-    pub async fn execute_event_appeared_only(
-        self,
-    ) -> crate::Result<Box<dyn Stream<Item = crate::Result<ResolvedEvent>> + Send + Unpin>> {
-        let stream = self.execute().await?.try_filter_map(|event| match event {
-            SubEvent::EventAppeared(event) => futures::future::ok(Some(event)),
-            _ => futures::future::ok(None),
-        });
+        let expected_stream_revision = match options.version {
+            ExpectedRevision::Any => ExpectedStreamRevision::Any(Empty {}),
+            ExpectedRevision::NoStream => ExpectedStreamRevision::NoStream(Empty {}),
+            ExpectedRevision::StreamExists => ExpectedStreamRevision::StreamExists(Empty {}),
+            ExpectedRevision::Exact(rev) => ExpectedStreamRevision::Revision(rev),
+        };
 
-        Ok(Box::new(stream))
-    }
-}
-
-/// A command that creates a persistent subscription for a given group.
-pub struct CreatePersistentSubscription {
-    connection: GrpcClient,
-    stream_id: String,
-    group_name: String,
-    creds: Option<Credentials>,
-}
-
-impl CreatePersistentSubscription {
-    pub(crate) fn new(
-        connection: GrpcClient,
-        stream_id: String,
-        group_name: String,
-        creds: Option<Credentials>,
-    ) -> Self {
-        CreatePersistentSubscription {
-            connection,
-            stream_id,
-            group_name,
-            creds,
-        }
-    }
-
-    /// Performs the command with the given credentials.
-    pub fn credentials(self, creds: Credentials) -> Self {
-        CreatePersistentSubscription {
-            creds: Some(creds),
-            ..self
-        }
-    }
-
-    /// Sends the persistent subscription creation command asynchronously to
-    /// the server.
-    pub async fn execute(self, settings: PersistentSubscriptionSettings) -> crate::Result<()> {
-        use persistent::create_req::Options;
-        use persistent::CreateReq;
-
-        let settings = convert_settings_create(settings);
+        let expected_stream_revision = Some(expected_stream_revision);
         let stream_identifier = Some(StreamIdentifier {
-            stream_name: self.stream_id.into_bytes(),
+            stream_name: stream.as_ref().to_string().into_bytes(),
         });
         let options = Options {
             stream_identifier,
-            group_name: self.group_name,
-            settings: Some(settings),
+            expected_stream_revision,
         };
 
-        let req = CreateReq {
+        let mut req = Request::new(streams::DeleteReq {
             options: Some(options),
-        };
+        });
 
-        let mut req = Request::new(req);
+        configure_auth_req(&mut req, credentials);
 
-        configure_auth_req(&mut req, self.creds);
-
-        self.connection
+        connection
             .execute(|channel| async {
-                let mut client = PersistentSubscriptionsClient::new(channel);
-                client.create(req).await?;
+                let mut client = StreamsClient::new(channel);
+                let result = client.delete(req).await?.into_inner();
 
-                Ok(())
+                if let Some(opts) = result.position_option {
+                    match opts {
+                        PositionOption::Position(pos) => {
+                            let pos = Position {
+                                commit: pos.commit_position,
+                                prepare: pos.prepare_position,
+                            };
+
+                            Ok(Some(pos))
+                        }
+
+                        PositionOption::NoPosition(_) => Ok(None),
+                    }
+                } else {
+                    Ok(None)
+                }
             })
             .await
     }
 }
 
-/// Command that updates an already existing subscription's settings.
-pub struct UpdatePersistentSubscription {
-    connection: GrpcClient,
-    stream_id: String,
-    group_name: String,
-    creds: Option<Credentials>,
+/// Runs the subscription command.
+pub async fn subscribe_to_stream<'a, S: AsRef<str>>(
+    connection: &GrpcClient,
+    stream_id: S,
+    options: &SubscribeToStreamOptions,
+) -> crate::Result<BoxStream<'a, crate::Result<SubEvent>>> {
+    use futures::future;
+    use streams::read_req::options::stream_options::RevisionOption;
+    use streams::read_req::options::{self, StreamOption, StreamOptions, SubscriptionOptions};
+    use streams::read_req::Options;
+
+    let read_direction = 0; // <- Going forward.
+
+    let revision = match options.position {
+        StreamPosition::Start => RevisionOption::Start(Empty {}),
+        StreamPosition::End => RevisionOption::End(Empty {}),
+        StreamPosition::Point(revision) => RevisionOption::Revision(revision),
+    };
+
+    let stream_identifier = Some(StreamIdentifier {
+        stream_name: stream_id.as_ref().to_string().into_bytes(),
+    });
+    let stream_options = StreamOptions {
+        stream_identifier,
+        revision_option: Some(revision),
+    };
+
+    let uuid_option = options::UuidOption {
+        content: Some(options::uuid_option::Content::String(Empty {})),
+    };
+
+    let credentials = options
+        .credentials
+        .clone()
+        .or_else(|| connection.default_credentials());
+
+    let options = Options {
+        stream_option: Some(StreamOption::Stream(stream_options)),
+        resolve_links: options.resolve_link_tos,
+        filter_option: Some(options::FilterOption::NoFilter(Empty {})),
+        count_option: Some(options::CountOption::Subscription(SubscriptionOptions {})),
+        uuid_option: Some(uuid_option),
+        read_direction,
+    };
+
+    let req = streams::ReadReq {
+        options: Some(options),
+    };
+
+    let mut req = Request::new(req);
+
+    configure_auth_req(&mut req, credentials);
+
+    connection
+        .execute(|channel| async {
+            let mut client = StreamsClient::new(channel);
+            let stream = client.read(req).await?.into_inner();
+            let stream = stream
+                .try_filter_map(|resp| match resp.content.unwrap() {
+                    streams::read_resp::Content::Event(event) => future::ok(Some(
+                        SubEvent::EventAppeared(convert_proto_read_event(event)),
+                    )),
+
+                    streams::read_resp::Content::Confirmation(sub) => {
+                        future::ok(Some(SubEvent::Confirmed(sub.subscription_id)))
+                    }
+
+                    // Checkpoints will not ever happen in this case.
+                    _ => future::ok(None),
+                })
+                .map_err(crate::Error::from_grpc);
+
+            let stream: BoxStream<crate::Result<SubEvent>> = Box::pin(stream);
+
+            Ok(stream)
+        })
+        .await
 }
 
-impl UpdatePersistentSubscription {
-    pub(crate) fn new(
-        connection: GrpcClient,
-        stream_id: String,
-        group_name: String,
-        creds: Option<Credentials>,
-    ) -> Self {
-        UpdatePersistentSubscription {
-            connection,
-            stream_id,
-            group_name,
-            creds,
-        }
-    }
+pub async fn subscribe_to_all<'a>(
+    connection: &GrpcClient,
+    options: &SubscribeToAllOptions,
+) -> crate::Result<BoxStream<'a, crate::Result<SubEvent>>> {
+    use futures::future;
+    use streams::read_req::options::all_options::AllOption;
+    use streams::read_req::options::{self, AllOptions, StreamOption, SubscriptionOptions};
+    use streams::read_req::Options;
 
-    /// Performs the command with the given credentials.
-    pub fn credentials(self, creds: Credentials) -> Self {
-        UpdatePersistentSubscription {
-            creds: Some(creds),
-            ..self
-        }
-    }
+    let read_direction = 0; // <- Going forward.
 
-    /// Sends the persistent subscription update command asynchronously to
-    /// the server.
-    pub async fn execute(self, settings: PersistentSubscriptionSettings) -> crate::Result<()> {
-        use persistent::update_req::Options;
-        use persistent::UpdateReq;
+    let revision = match options.position {
+        StreamPosition::Start => AllOption::Start(Empty {}),
+        StreamPosition::Point(pos) => AllOption::Position(options::Position {
+            prepare_position: pos.prepare,
+            commit_position: pos.commit,
+        }),
+        StreamPosition::End => AllOption::End(Empty {}),
+    };
 
-        let settings = convert_settings_update(settings);
-        let stream_identifier = Some(StreamIdentifier {
-            stream_name: self.stream_id.into_bytes(),
-        });
-        let options = Options {
-            stream_identifier,
-            group_name: self.group_name,
-            settings: Some(settings),
-        };
+    let stream_options = AllOptions {
+        all_option: Some(revision),
+    };
 
-        let req = UpdateReq {
-            options: Some(options),
-        };
+    let uuid_option = options::UuidOption {
+        content: Some(options::uuid_option::Content::String(Empty {})),
+    };
 
-        let mut req = Request::new(req);
+    let filter_option = match options.filter.as_ref() {
+        Some(filter) => options::FilterOption::Filter(filter_into_proto(filter.clone())),
+        None => options::FilterOption::NoFilter(Empty {}),
+    };
 
-        configure_auth_req(&mut req, self.creds);
+    let credentials = options
+        .credentials
+        .clone()
+        .or_else(|| connection.default_credentials());
 
-        self.connection
-            .execute(|channel| async {
-                let mut client = PersistentSubscriptionsClient::new(channel);
-                client.update(req).await?;
+    let options = Options {
+        stream_option: Some(StreamOption::All(stream_options)),
+        resolve_links: options.resolve_link_tos,
+        filter_option: Some(filter_option),
+        count_option: Some(options::CountOption::Subscription(SubscriptionOptions {})),
+        uuid_option: Some(uuid_option),
+        read_direction,
+    };
 
-                Ok(())
-            })
-            .await
-    }
-}
+    let req = streams::ReadReq {
+        options: Some(options),
+    };
 
-/// Command that  deletes a persistent subscription.
-pub struct DeletePersistentSubscription {
-    connection: GrpcClient,
-    stream_id: String,
-    group_name: String,
-    creds: Option<Credentials>,
-}
+    let mut req = Request::new(req);
 
-impl DeletePersistentSubscription {
-    pub(crate) fn new(
-        connection: GrpcClient,
-        stream_id: String,
-        group_name: String,
-        creds: Option<Credentials>,
-    ) -> Self {
-        DeletePersistentSubscription {
-            connection,
-            stream_id,
-            group_name,
-            creds,
-        }
-    }
+    configure_auth_req(&mut req, credentials);
 
-    /// Performs the command with the given credentials.
-    pub fn credentials(self, creds: Credentials) -> Self {
-        DeletePersistentSubscription {
-            creds: Some(creds),
-            ..self
-        }
-    }
+    connection
+        .execute(|channel| async {
+            let mut client = StreamsClient::new(channel);
+            let stream = client.read(req).await?.into_inner();
+            let stream = stream
+                .try_filter_map(|resp| match resp.content.unwrap() {
+                    streams::read_resp::Content::Event(event) => future::ok(Some(
+                        SubEvent::EventAppeared(convert_proto_read_event(event)),
+                    )),
 
-    /// Sends the persistent subscription deletion command asynchronously to
-    /// the server.
-    pub async fn execute(self) -> crate::Result<()> {
-        use persistent::delete_req::Options;
+                    streams::read_resp::Content::Confirmation(sub) => {
+                        future::ok(Some(SubEvent::Confirmed(sub.subscription_id)))
+                    }
 
-        let stream_identifier = Some(StreamIdentifier {
-            stream_name: self.stream_id.into_bytes(),
-        });
-        let options = Options {
-            stream_identifier,
-            group_name: self.group_name,
-        };
-
-        let req = persistent::DeleteReq {
-            options: Some(options),
-        };
-
-        let mut req = Request::new(req);
-
-        configure_auth_req(&mut req, self.creds);
-
-        self.connection
-            .execute(|channel| async {
-                let mut client = PersistentSubscriptionsClient::new(channel);
-                client.delete(req).await?;
-
-                Ok(())
-            })
-            .await
-    }
-}
-
-/// A subscription model where the server remembers the state of the
-/// consumption of a stream. This allows for many different modes of operations
-/// compared to a regular subscription where the client hols the subscription
-/// state.
-pub struct ConnectToPersistentSubscription {
-    connection: GrpcClient,
-    stream_id: String,
-    group_name: String,
-    batch_size: i32,
-    creds: Option<Credentials>,
-}
-
-impl ConnectToPersistentSubscription {
-    pub(crate) fn new(
-        connection: GrpcClient,
-        stream_id: String,
-        group_name: String,
-        creds: Option<Credentials>,
-    ) -> Self {
-        ConnectToPersistentSubscription {
-            connection,
-            stream_id,
-            group_name,
-            batch_size: 10,
-            creds,
-        }
-    }
-
-    /// Performs the command with the given credentials.
-    pub fn credentials(self, creds: Credentials) -> Self {
-        ConnectToPersistentSubscription {
-            creds: Some(creds),
-            ..self
-        }
-    }
-
-    /// The buffer size to use  for the persistent subscription.
-    pub fn batch_size(self, batch_size: i32) -> Self {
-        ConnectToPersistentSubscription { batch_size, ..self }
-    }
-
-    /// Sends the persistent subscription connection request to the server
-    /// asynchronously even if the subscription is available right away.
-    pub async fn execute(self) -> crate::Result<(SubscriptionRead, SubscriptionWrite)> {
-        use futures::channel::mpsc;
-        use futures::sink::SinkExt;
-        use persistent::read_req::options::{self, UuidOption};
-        use persistent::read_req::{self, Options};
-        use persistent::read_resp;
-        use persistent::ReadReq;
-
-        let (mut sender, recv) = mpsc::channel(500);
-
-        let uuid_option = UuidOption {
-            content: Some(options::uuid_option::Content::String(Empty {})),
-        };
-
-        let stream_identifier = Some(StreamIdentifier {
-            stream_name: self.stream_id.into_bytes(),
-        });
-        let options = Options {
-            stream_identifier,
-            group_name: self.group_name,
-            buffer_size: self.batch_size,
-            uuid_option: Some(uuid_option),
-        };
-
-        let read_req = ReadReq {
-            content: Some(read_req::Content::Options(options)),
-        };
-
-        let mut req = Request::new(recv);
-
-        configure_auth_req(&mut req, self.creds.clone());
-
-        let _ = sender.send(read_req).await;
-
-        self.connection
-            .execute(|channel| async {
-                let mut client = PersistentSubscriptionsClient::new(channel);
-                let stream = client.read(req).await?.into_inner();
-
-                let stream = stream
-                    .try_filter_map(|resp| {
-                        let ret = match resp
-                            .content
-                            .expect("Why response content wouldn't be defined?")
-                        {
-                            read_resp::Content::Event(evt) => Some(SubEvent::EventAppeared(
-                                convert_persistent_proto_read_event(evt),
-                            )),
-
-                            read_resp::Content::SubscriptionConfirmation(sub) => {
-                                Some(SubEvent::Confirmed(sub.subscription_id))
-                            }
+                    streams::read_resp::Content::Checkpoint(chk) => {
+                        let position = Position {
+                            commit: chk.commit_position,
+                            prepare: chk.prepare_position,
                         };
 
-                        futures::future::ready(Ok(ret))
-                    })
-                    .map_err(crate::Error::from_grpc);
+                        future::ok(Some(SubEvent::Checkpoint(position)))
+                    }
 
-                let read = SubscriptionRead {
-                    inner: Box::new(stream),
-                };
-                let write = SubscriptionWrite { sender };
+                    _ => future::ok(None),
+                })
+                .map_err(crate::Error::from_grpc);
 
-                Ok((read, write))
-            })
-            .await
-    }
+            let stream: BoxStream<'a, crate::Result<SubEvent>> = Box::pin(stream);
+
+            Ok(stream)
+        })
+        .await
+}
+
+pub async fn create_persistent_subscription<S: AsRef<str>>(
+    connection: &GrpcClient,
+    stream: S,
+    group: S,
+    options: &PersistentSubscriptionOptions,
+) -> crate::Result<()> {
+    use persistent::create_req::Options;
+    use persistent::CreateReq;
+
+    let settings = convert_settings_create(options.setts);
+    let stream_identifier = Some(StreamIdentifier {
+        stream_name: stream.as_ref().to_string().into_bytes(),
+    });
+
+    let credentials = options
+        .credentials
+        .clone()
+        .or_else(|| connection.default_credentials());
+
+    let options = Options {
+        stream_identifier,
+        group_name: group.as_ref().to_string(),
+        settings: Some(settings),
+    };
+
+    let req = CreateReq {
+        options: Some(options),
+    };
+
+    let mut req = Request::new(req);
+
+    configure_auth_req(&mut req, credentials);
+
+    connection
+        .execute(|channel| async {
+            let mut client = PersistentSubscriptionsClient::new(channel);
+            client.create(req).await?;
+
+            Ok(())
+        })
+        .await
+}
+
+pub async fn update_persistent_subscription<S: AsRef<str>>(
+    connection: &GrpcClient,
+    stream: S,
+    group: S,
+    options: &PersistentSubscriptionOptions,
+) -> crate::Result<()> {
+    use persistent::update_req::Options;
+    use persistent::UpdateReq;
+
+    let settings = convert_settings_update(options.setts);
+    let stream_identifier = Some(StreamIdentifier {
+        stream_name: stream.as_ref().to_string().into_bytes(),
+    });
+
+    let credentials = options
+        .credentials
+        .clone()
+        .or_else(|| connection.default_credentials());
+
+    let options = Options {
+        stream_identifier,
+        group_name: group.as_ref().to_string(),
+        settings: Some(settings),
+    };
+
+    let req = UpdateReq {
+        options: Some(options),
+    };
+
+    let mut req = Request::new(req);
+
+    configure_auth_req(&mut req, credentials);
+
+    connection
+        .execute(|channel| async {
+            let mut client = PersistentSubscriptionsClient::new(channel);
+            client.update(req).await?;
+
+            Ok(())
+        })
+        .await
+}
+
+pub async fn delete_persistent_subscription<S: AsRef<str>>(
+    connection: &GrpcClient,
+    stream_id: S,
+    group_name: S,
+    options: &DeletePersistentSubscriptionOptions,
+) -> crate::Result<()> {
+    use persistent::delete_req::Options;
+
+    let stream_identifier = Some(StreamIdentifier {
+        stream_name: stream_id.as_ref().to_string().into_bytes(),
+    });
+
+    let credentials = options
+        .credentials
+        .clone()
+        .or_else(|| connection.default_credentials());
+
+    let options = Options {
+        stream_identifier,
+        group_name: group_name.as_ref().to_string(),
+    };
+
+    let req = persistent::DeleteReq {
+        options: Some(options),
+    };
+
+    let mut req = Request::new(req);
+
+    configure_auth_req(&mut req, credentials);
+
+    connection
+        .execute(|channel| async {
+            let mut client = PersistentSubscriptionsClient::new(channel);
+            client.delete(req).await?;
+
+            Ok(())
+        })
+        .await
+}
+
+/// Sends the persistent subscription connection request to the server
+/// asynchronously even if the subscription is available right away.
+pub async fn connect_persistent_subscription<S: AsRef<str>>(
+    connection: &GrpcClient,
+    stream_id: S,
+    group_name: S,
+    options: &ConnectToPersistentSubscription,
+) -> crate::Result<(SubscriptionRead, SubscriptionWrite)> {
+    use futures::channel::mpsc;
+    use futures::sink::SinkExt;
+    use persistent::read_req::options::{self, UuidOption};
+    use persistent::read_req::{self, Options};
+    use persistent::read_resp;
+    use persistent::ReadReq;
+
+    let (mut sender, recv) = mpsc::channel(500);
+
+    let uuid_option = UuidOption {
+        content: Some(options::uuid_option::Content::String(Empty {})),
+    };
+
+    let stream_identifier = Some(StreamIdentifier {
+        stream_name: stream_id.as_ref().to_string().into_bytes(),
+    });
+
+    let credentials = options
+        .credentials
+        .clone()
+        .or_else(|| connection.default_credentials());
+
+    let options = Options {
+        stream_identifier,
+        group_name: group_name.as_ref().to_string(),
+        buffer_size: options.batch_size as i32,
+        uuid_option: Some(uuid_option),
+    };
+
+    let read_req = ReadReq {
+        content: Some(read_req::Content::Options(options)),
+    };
+
+    let mut req = Request::new(recv);
+
+    configure_auth_req(&mut req, credentials);
+
+    let _ = sender.send(read_req).await;
+
+    connection
+        .execute(|channel| async {
+            let mut client = PersistentSubscriptionsClient::new(channel);
+            let stream = client.read(req).await?.into_inner();
+
+            let stream = stream
+                .try_filter_map(|resp| {
+                    let ret = match resp
+                        .content
+                        .expect("Why response content wouldn't be defined?")
+                    {
+                        read_resp::Content::Event(evt) => Some(SubEvent::EventAppeared(
+                            convert_persistent_proto_read_event(evt),
+                        )),
+
+                        read_resp::Content::SubscriptionConfirmation(sub) => {
+                            Some(SubEvent::Confirmed(sub.subscription_id))
+                        }
+                    };
+
+                    futures::future::ready(Ok(ret))
+                })
+                .map_err(crate::Error::from_grpc);
+
+            let read = SubscriptionRead {
+                inner: Box::new(stream),
+            };
+            let write = SubscriptionWrite { sender };
+
+            Ok((read, write))
+        })
+        .await
 }
 
 pub struct SubscriptionRead {
@@ -1700,10 +1109,8 @@ impl SubscriptionRead {
     pub async fn try_next_event(&mut self) -> crate::Result<Option<ResolvedEvent>> {
         let event = self.inner.try_next().await?;
 
-        if let Some(event) = event {
-            if let SubEvent::EventAppeared(event) = event {
-                return Ok(Some(event));
-            }
+        if let Some(SubEvent::EventAppeared(event)) = event {
+            return Ok(Some(event));
         }
 
         Ok(None)
