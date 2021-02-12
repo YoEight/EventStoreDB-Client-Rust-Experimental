@@ -20,7 +20,7 @@ Server setup instructions can be found here [EventStoreDB Docs], follow the dock
 # Example
 
 ```rust
-use eventstore::{ EventData, Client, ReadResult };
+use eventstore::{ All, Client, EventData, ReadResult };
 use futures::stream::TryStreamExt;
 use serde::{Serialize, Deserialize};
 
@@ -45,21 +45,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let evt = EventData::json("language-poll", &payload)?;
 
     let _ = client
-        .write_events("language-stream")
-        .send_event(evt)
+        .append_to_stream("language-stream", &Default::default(), evt)
         .await?;
 
     let result = client
-        .read_stream("language-stream")
-        .start_from_beginning()
-        .read_through()
+        .read_stream("language-stream", &Default::default(), All)
         .await?;
 
     if let ReadResult::Ok(mut stream) = result {
         while let Some(event) = stream.try_next().await? {
             let event = event.get_original_event()
                     .as_json::<Foo>()?;
-    
+
             // Do something productive with the result.
             println!("{:?}", event);
         }
