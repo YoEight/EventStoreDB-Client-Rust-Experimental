@@ -1,5 +1,6 @@
 use crate::event_store::client::shared::Empty;
 use crate::event_store::client::streams::append_req::options::ExpectedStreamRevision;
+use crate::private::Sealed;
 use crate::{Credentials, EventData, ExpectedRevision};
 use futures::future::Ready;
 use futures::stream::{Iter, Once};
@@ -46,7 +47,7 @@ impl AppendToStreamOptions {
 
 pub struct Streaming<S>(S);
 
-pub trait ToEvents {
+pub trait ToEvents: Sealed {
     type Events: Stream<Item = EventData> + Send + Sync;
     fn into_events(self) -> Self::Events;
 }

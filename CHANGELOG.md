@@ -1,7 +1,8 @@
-0.9.10
+1.0.0
 ======
 * Support Tokio 1.* and Tonic 0.4.
 * Fix how is_json is extracted for persistent subscriptions.
+* Apply same public API as other official gRPC clients.
 
 0.9.9
 =====
@@ -13,7 +14,7 @@
 
 0.9.7
 =====
-* Update DNS discovery so it works properly with EventStore Cloud.
+* Update DNS discovery, so it works properly with EventStore Cloud.
 * Expose `ClientSettings` values.
 * Load native certificates when TLS is enabled.
 

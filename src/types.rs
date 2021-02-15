@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::time::Duration;
 
+use crate::private::Sealed;
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
@@ -964,7 +965,7 @@ impl<A> ReadResult<A> {
 }
 
 #[async_trait]
-pub trait ToCount<'a> {
+pub trait ToCount<'a>: Sealed {
     type Selection;
     fn to_count(&self) -> usize;
     async fn select(

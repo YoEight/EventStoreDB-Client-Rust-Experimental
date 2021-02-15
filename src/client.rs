@@ -110,7 +110,7 @@ impl Client {
     /// 100, and then any events subsequently written events until such time
     /// as the subscription is dropped or closed.
     ///
-    /// [`subscribe_to_all_from`]: #method.subscribe_to_all_from
+    /// [`subscribe_to_all`]: #method.subscribe_to_all_from
     pub async fn subscribe_to_stream<'a, StreamName>(
         &self,
         stream_name: StreamName,
