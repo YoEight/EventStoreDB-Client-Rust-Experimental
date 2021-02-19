@@ -43,6 +43,8 @@ fn test_connection_string() {
     #[derive(Debug, Serialize, Deserialize)]
     struct Mockup {
         string: String,
+        #[serde(default)]
+        expect_failure: bool,
         expected: ClientSettings,
     }
 
@@ -62,7 +64,11 @@ fn test_connection_string() {
                 mockup.string
             ),
 
-            Err(e) => panic!(format!("Failed parsing [{}]: {:?}", mockup.string, e)),
+            Err(e) => {
+                if !mockup.expect_failure {
+                    panic!(format!("Failed parsing [{}]: {:?}", mockup.string, e));
+                }
+            }
         }
     }
 }
@@ -93,6 +99,10 @@ impl<'de> Visitor<'de> for DurationVisitor {
     where
         E: serde::de::Error,
     {
+        if v == -1 {
+            return Ok(Duration::from_millis(u64::MAX));
+        }
+
         Ok(Duration::from_millis(v as u64))
     }
 }
@@ -137,6 +147,14 @@ fn default_tls_verify_cert() -> bool {
 
 fn default_throw_on_append_failure() -> bool {
     ClientSettings::default().throw_on_append_failure
+}
+
+fn default_keep_alive_interval() -> Duration {
+    ClientSettings::default().keep_alive_interval
+}
+
+fn default_keep_alive_timeout() -> Duration {
+    ClientSettings::default().keep_alive_timeout
 }
 
 /// Gathers all the settings related to a gRPC client with an EventStoreDB database.
@@ -193,6 +211,9 @@ fn default_throw_on_append_failure() -> bool {
 ///    * `random`
 ///    * `follower`
 ///    * `readOnlyReplica`
+///
+/// * `keepAliveInterval`: default `10s`
+/// * `keepAliveTimeout`: default `10s`
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientSettings {
     #[serde(default)]
@@ -223,6 +244,18 @@ pub struct ClientSettings {
     pub(crate) throw_on_append_failure: bool,
     #[serde(default)]
     pub(crate) default_user_name: Option<Credentials>,
+    #[serde(
+        default = "default_keep_alive_interval",
+        serialize_with = "serialize_duration",
+        deserialize_with = "deserialize_duration"
+    )]
+    pub(crate) keep_alive_interval: Duration,
+    #[serde(
+        default = "default_keep_alive_timeout",
+        serialize_with = "serialize_duration",
+        deserialize_with = "deserialize_duration"
+    )]
+    pub(crate) keep_alive_timeout: Duration,
 }
 
 impl ClientSettings {
@@ -449,7 +482,75 @@ impl ClientSettings {
                             }
                         }
 
-                        _ => {
+                        "keepaliveinterval" => {
+                            let value = values.as_slice()[1];
+
+                            if let Ok(int) = value.parse::<i64>() {
+                                if int >= 0
+                                    && int < self::defaults::KEEP_ALIVE_INTERVAL_IN_MS as i64
+                                {
+                                    warn!("Specified keepAliveInterval of {} is less than recommended {}", int, self::defaults::KEEP_ALIVE_INTERVAL_IN_MS);
+                                    continue;
+                                }
+
+                                if int == -1 {
+                                    result.keep_alive_interval = Duration::from_millis(u64::MAX);
+                                    continue;
+                                }
+
+                                if int < -1 {
+                                    error!("Invalid keepAliveInterval of {}. Please provide a positive integer, or -1 to disable", int);
+
+                                    return Err(nom::Err::Failure(nom::error::Error::new(
+                                        value,
+                                        ErrorKind::ParseTo,
+                                    )));
+                                }
+
+                                result.keep_alive_interval = Duration::from_millis(int as u64);
+                            } else {
+                                return Err(nom::Err::Failure(nom::error::Error::new(
+                                    value,
+                                    ErrorKind::ParseTo,
+                                )));
+                            }
+                        }
+
+                        "keepalivetimeout" => {
+                            let value = values.as_slice()[1];
+
+                            if let Ok(int) = value.parse::<i64>() {
+                                if int >= 0 && int < self::defaults::KEEP_ALIVE_TIMEOUT_IN_MS as i64
+                                {
+                                    warn!("Specified keepAliveTimeout of {} is less than recommended {}", int, self::defaults::KEEP_ALIVE_TIMEOUT_IN_MS);
+                                    continue;
+                                }
+
+                                if int == -1 {
+                                    result.keep_alive_timeout = Duration::from_millis(u64::MAX);
+                                    continue;
+                                }
+
+                                if int < -1 {
+                                    error!("Invalid keepAliveTimeout of {}. Please provide a positive integer, or -1 to disable", int);
+
+                                    return Err(nom::Err::Failure(nom::error::Error::new(
+                                        value,
+                                        ErrorKind::ParseTo,
+                                    )));
+                                }
+
+                                result.keep_alive_timeout = Duration::from_millis(int as u64);
+                            } else {
+                                return Err(nom::Err::Failure(nom::error::Error::new(
+                                    value,
+                                    ErrorKind::ParseTo,
+                                )));
+                            }
+                        }
+
+                        ignored => {
+                            warn!("Ignored connection string parameter: {}", ignored);
                             continue;
                         }
                     }
@@ -518,8 +619,15 @@ impl Default for ClientSettings {
             tls_verify_cert: true,
             throw_on_append_failure: true,
             default_user_name: None,
+            keep_alive_interval: Duration::from_millis(self::defaults::KEEP_ALIVE_INTERVAL_IN_MS),
+            keep_alive_timeout: Duration::from_millis(self::defaults::KEEP_ALIVE_TIMEOUT_IN_MS),
         }
     }
+}
+
+pub(crate) mod defaults {
+    pub const KEEP_ALIVE_INTERVAL_IN_MS: u64 = 10_000;
+    pub const KEEP_ALIVE_TIMEOUT_IN_MS: u64 = 10_000;
 }
 
 async fn cluster_mode(
@@ -729,7 +837,12 @@ async fn create_channel(
         channel = channel.tls_config(tonic::transport::ClientTlsConfig::new())?;
     }
 
-    let channel = channel.connect().await?;
+    let channel = channel
+        .http2_keep_alive_interval(setts.keep_alive_interval)
+        .keep_alive_timeout(setts.keep_alive_timeout)
+        .connect()
+        .await?;
+
     debug!("Connected to Node: {}", uri);
 
     Ok(channel)

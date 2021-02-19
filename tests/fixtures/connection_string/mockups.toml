@@ -9,6 +9,8 @@ preference = "Random"
 secure = true
 tls_verify_cert = true
 throw_on_append_failure = true
+keep_alive_interval = 10_000
+keep_alive_timeout = 10_000
 [[mockups.expected.hosts]]
 host = "localhost"
 port = 2_113
@@ -24,6 +26,8 @@ preference = "Random"
 secure = true
 tls_verify_cert = true
 throw_on_append_failure = true
+keep_alive_interval = 10_000
+keep_alive_timeout = 10_000
 [[mockups.expected.hosts]]
 host = "localhost"
 port = 2_114
@@ -39,6 +43,8 @@ preference = "Random"
 secure = true
 tls_verify_cert = true
 throw_on_append_failure = true
+keep_alive_interval = 10_000
+keep_alive_timeout = 10_000
 [mockups.expected.default_user_name]
 login = "user"
 password = "pass"
@@ -57,6 +63,8 @@ preference = "Random"
 secure = true
 tls_verify_cert = true
 throw_on_append_failure = true
+keep_alive_interval = 10_000
+keep_alive_timeout = 10_000
 [mockups.expected.default_user_name]
 login = "user"
 password = "pass"
@@ -75,6 +83,8 @@ preference = "Random"
 secure = true
 tls_verify_cert = false
 throw_on_append_failure = true
+keep_alive_interval = 10_000
+keep_alive_timeout = 10_000
 [mockups.expected.default_user_name]
 login = "user"
 password = "pass"
@@ -93,6 +103,8 @@ preference = "Random"
 secure = false
 tls_verify_cert = true
 throw_on_append_failure = true
+keep_alive_interval = 10_000
+keep_alive_timeout = 10_000
 [mockups.expected.default_user_name]
 login = "user"
 password = "pass"
@@ -111,6 +123,8 @@ preference = "Random"
 secure = true
 tls_verify_cert = true
 throw_on_append_failure = true
+keep_alive_interval = 10_000
+keep_alive_timeout = 10_000
 [[mockups.expected.hosts]]
 host = "host1"
 port = 2_113
@@ -132,6 +146,8 @@ preference = "Random"
 secure = true
 tls_verify_cert = true
 throw_on_append_failure = true
+keep_alive_interval = 10_000
+keep_alive_timeout = 10_000
 [[mockups.expected.hosts]]
 host = "host1"
 port = 1_234
@@ -153,6 +169,8 @@ preference = "Follower"
 secure = true
 tls_verify_cert = true
 throw_on_append_failure = true
+keep_alive_interval = 10_000
+keep_alive_timeout = 10_000
 [mockups.expected.default_user_name]
 login = "user"
 password = "pass"
@@ -177,6 +195,8 @@ preference = "Random"
 secure = false
 tls_verify_cert = true
 throw_on_append_failure = true
+keep_alive_interval = 10_000
+keep_alive_timeout = 10_000
 [[mockups.expected.hosts]]
 host = "host1"
 port = 2_113
@@ -198,6 +218,8 @@ preference = "Random"
 secure = true
 tls_verify_cert = false
 throw_on_append_failure = true
+keep_alive_interval = 10_000
+keep_alive_timeout = 10_000
 [[mockups.expected.hosts]]
 host = "host1"
 port = 2_113
@@ -219,6 +241,8 @@ preference = "Follower"
 secure = true
 tls_verify_cert = false
 throw_on_append_failure = true
+keep_alive_interval = 10_000
+keep_alive_timeout = 10_000
 [mockups.expected.default_user_name]
 login = "user"
 password = "pass"
@@ -238,6 +262,8 @@ secure = true
 tls_verify_cert = false
 throw_on_append_failure = true
 dns_lookup_type = "srv"
+keep_alive_interval = 10_000
+keep_alive_timeout = 10_000
 [mockups.expected.default_user_name]
 login = "user"
 password = "pass"
@@ -256,6 +282,79 @@ preference = "Leader"
 secure = false
 tls_verify_cert = false
 throw_on_append_failure = true
+keep_alive_interval = 10_000
+keep_alive_timeout = 10_000
 [[mockups.expected.hosts]]
 host = "host"
 port = 2_113
+
+[[mockups]]
+string = "esdb://localhost?keepAliveInterval=20000&keepAliveTimeout=30000"
+[mockups.expected]
+dns_discover = false
+max_discover_attempts = 3
+discovery_interval = 500
+gossip_timeout = 3_000
+preference = "Random"
+secure = true
+tls_verify_cert = true
+throw_on_append_failure = true
+keep_alive_interval = 20_000
+keep_alive_timeout = 30_000
+[[mockups.expected.hosts]]
+host = "localhost"
+port = 2_113
+
+[[mockups]]
+string = "esdb://localhost?keepAliveInterval=-1&keepAliveTimeout=-1"
+[mockups.expected]
+dns_discover = false
+max_discover_attempts = 3
+discovery_interval = 500
+gossip_timeout = 3_000
+preference = "Random"
+secure = true
+tls_verify_cert = true
+throw_on_append_failure = true
+keep_alive_interval = -1
+keep_alive_timeout = -1
+[[mockups.expected.hosts]]
+host = "localhost"
+port = 2_113
+
+[[mockups]]
+string = "esdb://localhost?keepAliveInterval=20000&keepAliveTimeout=-33"
+expect_failure = true
+[mockups.expected]
+dns_discover = false
+max_discover_attempts = 3
+discovery_interval = 500
+gossip_timeout = 3_000
+preference = "Random"
+secure = true
+tls_verify_cert = true
+throw_on_append_failure = true
+keep_alive_interval = 20_000
+keep_alive_timeout = 30_000
+[[mockups.expected.hosts]]
+host = "localhost"
+port = 2_113
+
+[[mockups]]
+string = "esdb://localhost?keepAliveInterval=kjslkjfds&keepAliveTimeout=30000"
+expect_failure = true
+[mockups.expected]
+dns_discover = false
+max_discover_attempts = 3
+discovery_interval = 500
+gossip_timeout = 3_000
+preference = "Random"
+secure = true
+tls_verify_cert = true
+throw_on_append_failure = true
+keep_alive_interval = 20_000
+keep_alive_timeout = 30_000
+[[mockups.expected.hosts]]
+host = "localhost"
+port = 2_113
+
