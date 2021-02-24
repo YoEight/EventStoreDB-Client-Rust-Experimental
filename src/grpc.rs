@@ -643,6 +643,8 @@ async fn cluster_mode(
         Either::Left(conn_setts.hosts.clone())
     };
 
+    let dup_sender = sender.clone();
+
     tokio::spawn(async move {
         let mut channel: Option<Channel> = None;
         let mut channel_id = Uuid::new_v4();
@@ -663,6 +665,7 @@ async fn cluster_mode(
                             let handle = Handle {
                                 id: channel_id,
                                 channel: channel.clone(),
+                                sender: dup_sender.clone(),
                             };
 
                             let _ = resp.send(Ok(handle));
@@ -746,6 +749,7 @@ async fn cluster_mode(
 
 fn single_node_mode(conn_setts: ClientSettings, endpoint: Endpoint) -> UnboundedSender<Msg> {
     let (sender, mut consumer) = futures::channel::mpsc::unbounded::<Msg>();
+    let dup_sender = sender.clone();
 
     tokio::spawn(async move {
         let mut channel: Option<Channel> = None;
@@ -756,12 +760,15 @@ fn single_node_mode(conn_setts: ClientSettings, endpoint: Endpoint) -> Unbounded
             work_queue.push(item);
 
             while let Some(msg) = work_queue.pop() {
+                debug!(">>> {:?}", msg);
+
                 match msg {
                     Msg::GetChannel(resp) => {
                         if let Some(channel) = channel.as_ref() {
                             let handle = Handle {
                                 id: channel_id,
                                 channel: channel.clone(),
+                                sender: dup_sender.clone(),
                             };
 
                             let _ = resp.send(Ok(handle));
@@ -849,9 +856,17 @@ async fn create_channel(
 }
 
 #[derive(Clone)]
-struct Handle {
+pub(crate) struct Handle {
     id: Uuid,
-    channel: Channel,
+    pub(crate) channel: Channel,
+    sender: futures::channel::mpsc::UnboundedSender<Msg>,
+}
+
+impl Handle {
+    pub(crate) async fn report_error(mut self, e: crate::Error) {
+        error!("Error occurred during operation execution: {:?}", e);
+        let _ = self.sender.send(Msg::CreateChannel(self.id, None)).await;
+    }
 }
 
 enum Msg {
@@ -897,9 +912,9 @@ impl GrpcClient {
         })
     }
 
-    pub async fn execute<F, Fut, A>(&self, action: F) -> crate::Result<A>
+    pub(crate) async fn execute<F, Fut, A>(&self, action: F) -> crate::Result<A>
     where
-        F: FnOnce(Channel) -> Fut + Send,
+        F: FnOnce(Handle) -> Fut + Send,
         Fut: Future<Output = Result<A, Status>> + Send,
         A: Send,
     {
@@ -912,28 +927,25 @@ impl GrpcClient {
             Err(_) => Err(crate::Error::ConnectionClosed),
         }?;
 
-        match action(handle.channel).await {
+        let id = handle.id;
+        match action(handle).await {
             Err(status) => {
                 let err = crate::Error::from_grpc(status);
 
                 match &err {
-                    crate::Error::ServerError => {
+                    crate::Error::ServerError(status) => {
                         error!(
-                            "Current selected EventStoreDB node gone unavailable. Starting node selection process"
+                            "Current selected EventStoreDB node gone unavailable. Starting node selection process: {}", status
                         );
 
-                        let _ = self
-                            .sender
-                            .clone()
-                            .send(Msg::CreateChannel(handle.id, None))
-                            .await;
+                        let _ = self.sender.clone().send(Msg::CreateChannel(id, None)).await;
                     }
 
                     crate::Error::NotLeaderException(leader) => {
                         let _ = self
                             .sender
                             .clone()
-                            .send(Msg::CreateChannel(handle.id, Some(leader.clone())))
+                            .send(Msg::CreateChannel(id, Some(leader.clone())))
                             .await;
 
                         warn!(
