@@ -852,11 +852,11 @@ pub struct Endpoint {
     pub port: u32,
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 /// EventStoreDB command error.
 pub enum Error {
     #[error("Server-side error.")]
-    ServerError,
+    ServerError(Status),
     #[error("You tried to execute a command that requires a leader node on a follower node. New leader: ")]
     NotLeaderException(Endpoint),
     #[error("Connection is closed.")]
@@ -869,36 +869,30 @@ pub enum Error {
 
 impl Error {
     pub fn from_grpc(status: Status) -> Self {
-        match status.code() {
-            tonic::Code::Unavailable => Error::ServerError,
-            _ => {
-                let metadata = status.metadata();
-                if let Some("not-leader") = metadata.get("exception").and_then(|e| e.to_str().ok())
-                {
-                    let endpoint = metadata
-                        .get("leader-endpoint-host")
-                        .zip(metadata.get("leader-endpoint-port"))
-                        .and_then(|(host, port)| {
-                            let host = host.to_str().ok()?;
-                            let port = port.to_str().ok()?;
-                            let host = host.to_string();
-                            let port = port.parse().ok()?;
+        let metadata = status.metadata();
+        if let Some("not-leader") = metadata.get("exception").and_then(|e| e.to_str().ok()) {
+            let endpoint = metadata
+                .get("leader-endpoint-host")
+                .zip(metadata.get("leader-endpoint-port"))
+                .and_then(|(host, port)| {
+                    let host = host.to_str().ok()?;
+                    let port = port.to_str().ok()?;
+                    let host = host.to_string();
+                    let port = port.parse().ok()?;
 
-                            Some(Endpoint { host, port })
-                        });
+                    Some(Endpoint { host, port })
+                });
 
-                    if let Some(leader) = endpoint {
-                        return Error::NotLeaderException(leader);
-                    }
-                }
-
-                Error::Grpc(status)
+            if let Some(leader) = endpoint {
+                return Error::NotLeaderException(leader);
             }
         }
+
+        Error::ServerError(status)
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 /// EventStoreDB command error.
 pub enum GrpcConnectionError {
     #[error("Max discovery attempt count reached. count: {0}")]

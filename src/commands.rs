@@ -8,9 +8,9 @@ use crate::types::{
     RecordedEvent, ResolvedEvent, StreamPosition, SubEvent, WriteResult, WrongExpectedVersion,
 };
 
+use async_stream::stream;
 use persistent::persistent_subscriptions_client::PersistentSubscriptionsClient;
 use shared::{Empty, StreamIdentifier, Uuid};
-use std::marker::Unpin;
 use streams::streams_client::StreamsClient;
 
 use crate::grpc::GrpcClient;
@@ -370,7 +370,7 @@ where
 
         configure_auth_req(&mut req, credentials);
 
-        let mut client = StreamsClient::new(channel);
+        let mut client = StreamsClient::new(channel.channel);
         let resp = client.append(req).await?.into_inner();
 
         match resp.result.unwrap() {
@@ -477,7 +477,7 @@ pub async fn read_stream<'a, S: AsRef<str>>(
 
     connection
         .execute(|channel| async {
-            let mut client = StreamsClient::new(channel);
+            let mut client = StreamsClient::new(channel.channel.clone());
             let mut stream = client.read(req).await?.into_inner();
 
             if let Some(resp) = stream.try_next().await? {
@@ -497,22 +497,36 @@ pub async fn read_stream<'a, S: AsRef<str>>(
                     }
 
                     _ => {
-                        let stream = stream::once(futures::future::ok::<
-                            streams::ReadResp,
-                            tonic::Status,
-                        >(resp))
-                        .chain(stream)
-                        .try_filter_map(|resp| {
-                            let value = match resp.content.unwrap() {
-                                streams::read_resp::Content::Event(event) => {
-                                    Some(convert_proto_read_event(event))
-                                }
-                                _ => None,
-                            };
+                        let stream = stream! {
+                            // We send back to the user the first event we received.
+                            if let streams::read_resp::Content::Event(event) = resp.content.expect("content is defined") {
+                                yield Ok(convert_proto_read_event(event));
+                            }
 
-                            futures::future::ok(value)
-                        })
-                        .map_err(crate::Error::from_grpc);
+                            loop {
+                                match stream.try_next().await {
+                                    Err(e) => {
+                                        let e = crate::Error::from_grpc(e);
+
+                                        channel.report_error(e.clone()).await;
+                                        yield Err(e);
+                                        break;
+                                    }
+
+                                    Ok(resp) => {
+                                        if let Some(resp) = resp {
+                                            if let streams::read_resp::Content::Event(event) = resp.content.expect("content is defined") {
+                                                yield Ok(convert_proto_read_event(event));
+                                            }
+
+                                            continue;
+                                        }
+
+                                        break;
+                                    }
+                                }
+                            }
+                        };
 
                         let stream: BoxStream<crate::Result<ResolvedEvent>> = Box::pin(stream);
 
@@ -586,20 +600,34 @@ pub async fn read_all<'a>(
 
     connection
         .execute(|channel| async {
-            let mut client = StreamsClient::new(channel);
-            let stream = client.read(req).await?.into_inner();
-            let stream = stream
-                .try_filter_map(|resp| {
-                    let value = match resp.content.unwrap() {
-                        streams::read_resp::Content::Event(event) => {
-                            Some(convert_proto_read_event(event))
-                        }
-                        _ => None,
-                    };
+            let mut client = StreamsClient::new(channel.channel.clone());
+            let mut stream = client.read(req).await?.into_inner();
 
-                    futures::future::ok(value)
-                })
-                .map_err(crate::Error::from_grpc);
+            let stream = stream! {
+                loop {
+                    match stream.try_next().await {
+                        Err(e) => {
+                            let e = crate::Error::from_grpc(e);
+
+                            channel.report_error(e.clone()).await;
+                            yield Err(e);
+                            break;
+                        }
+
+                        Ok(resp) => {
+                            if let Some(resp) = resp {
+                                if let streams::read_resp::Content::Event(event) = resp.content.expect("content is defined") {
+                                    yield Ok(convert_proto_read_event(event));
+                                }
+
+                                continue;
+                            }
+
+                            break;
+                        }
+                    }
+                }
+            };
 
             let stream: BoxStream<crate::Result<ResolvedEvent>> = Box::pin(stream);
 
@@ -648,7 +676,7 @@ pub async fn delete_stream<S: AsRef<str>>(
 
         connection
             .execute(|channel| async {
-                let mut client = StreamsClient::new(channel);
+                let mut client = StreamsClient::new(channel.channel);
                 let result = client.tombstone(req).await?.into_inner();
 
                 if let Some(opts) = result.position_option {
@@ -698,7 +726,7 @@ pub async fn delete_stream<S: AsRef<str>>(
 
         connection
             .execute(|channel| async {
-                let mut client = StreamsClient::new(channel);
+                let mut client = StreamsClient::new(channel.channel);
                 let result = client.delete(req).await?.into_inner();
 
                 if let Some(opts) = result.position_option {
@@ -728,7 +756,6 @@ pub async fn subscribe_to_stream<'a, S: AsRef<str>>(
     stream_id: S,
     options: &SubscribeToStreamOptions,
 ) -> crate::Result<BoxStream<'a, crate::Result<SubEvent>>> {
-    use futures::future;
     use streams::read_req::options::stream_options::RevisionOption;
     use streams::read_req::options::{self, StreamOption, StreamOptions, SubscriptionOptions};
     use streams::read_req::Options;
@@ -777,22 +804,41 @@ pub async fn subscribe_to_stream<'a, S: AsRef<str>>(
 
     connection
         .execute(|channel| async {
-            let mut client = StreamsClient::new(channel);
-            let stream = client.read(req).await?.into_inner();
-            let stream = stream
-                .try_filter_map(|resp| match resp.content.unwrap() {
-                    streams::read_resp::Content::Event(event) => future::ok(Some(
-                        SubEvent::EventAppeared(convert_proto_read_event(event)),
-                    )),
+            let mut client = StreamsClient::new(channel.channel.clone());
+            let mut stream = client.read(req).await?.into_inner();
 
-                    streams::read_resp::Content::Confirmation(sub) => {
-                        future::ok(Some(SubEvent::Confirmed(sub.subscription_id)))
+            let stream = stream! {
+                loop {
+                    match stream.try_next().await {
+                        Err(e) => {
+                            let e = crate::Error::from_grpc(e);
+
+                            channel.report_error(e.clone()).await;
+                            yield Err(e);
+                            break;
+                        }
+
+                        Ok(resp) => {
+                            if let Some(resp) = resp {
+                                match resp.content.expect("content is defined") {
+                                    streams::read_resp::Content::Event(event) => {
+                                        yield Ok(SubEvent::EventAppeared(convert_proto_read_event(event)));
+                                    }
+
+                                    streams::read_resp::Content::Confirmation(sub) => {
+                                        yield Ok(SubEvent::Confirmed(sub.subscription_id));
+                                    }
+
+                                    _ => {}
+                                }
+                                continue;
+                            }
+
+                            break;
+                        }
                     }
-
-                    // Checkpoints will not ever happen in this case.
-                    _ => future::ok(None),
-                })
-                .map_err(crate::Error::from_grpc);
+                }
+            };
 
             let stream: BoxStream<crate::Result<SubEvent>> = Box::pin(stream);
 
@@ -805,7 +851,6 @@ pub async fn subscribe_to_all<'a>(
     connection: &GrpcClient,
     options: &SubscribeToAllOptions,
 ) -> crate::Result<BoxStream<'a, crate::Result<SubEvent>>> {
-    use futures::future;
     use streams::read_req::options::all_options::AllOption;
     use streams::read_req::options::{self, AllOptions, StreamOption, SubscriptionOptions};
     use streams::read_req::Options;
@@ -858,30 +903,50 @@ pub async fn subscribe_to_all<'a>(
 
     connection
         .execute(|channel| async {
-            let mut client = StreamsClient::new(channel);
-            let stream = client.read(req).await?.into_inner();
-            let stream = stream
-                .try_filter_map(|resp| match resp.content.unwrap() {
-                    streams::read_resp::Content::Event(event) => future::ok(Some(
-                        SubEvent::EventAppeared(convert_proto_read_event(event)),
-                    )),
+            let mut client = StreamsClient::new(channel.channel.clone());
+            let mut stream = client.read(req).await?.into_inner();
 
-                    streams::read_resp::Content::Confirmation(sub) => {
-                        future::ok(Some(SubEvent::Confirmed(sub.subscription_id)))
+            let stream = stream! {
+                loop {
+                    match stream.try_next().await {
+                        Err(e) => {
+                            let e = crate::Error::from_grpc(e);
+
+                            channel.report_error(e.clone()).await;
+                            yield Err(e);
+                            break;
+                        }
+
+                        Ok(resp) => {
+                            if let Some(resp) = resp {
+                                match resp.content.expect("content is defined") {
+                                    streams::read_resp::Content::Event(event) => {
+                                        yield Ok(SubEvent::EventAppeared(convert_proto_read_event(event)));
+                                    }
+
+                                    streams::read_resp::Content::Confirmation(sub) => {
+                                        yield Ok(SubEvent::Confirmed(sub.subscription_id));
+                                    }
+
+                                    streams::read_resp::Content::Checkpoint(chk) => {
+                                        let position = Position {
+                                            commit: chk.commit_position,
+                                            prepare: chk.prepare_position,
+                                        };
+
+                                        yield Ok(SubEvent::Checkpoint(position));
+                                    }
+
+                                    _ => {}
+                                }
+                                continue;
+                            }
+
+                            break;
+                        }
                     }
-
-                    streams::read_resp::Content::Checkpoint(chk) => {
-                        let position = Position {
-                            commit: chk.commit_position,
-                            prepare: chk.prepare_position,
-                        };
-
-                        future::ok(Some(SubEvent::Checkpoint(position)))
-                    }
-
-                    _ => future::ok(None),
-                })
-                .map_err(crate::Error::from_grpc);
+                }
+            };
 
             let stream: BoxStream<'a, crate::Result<SubEvent>> = Box::pin(stream);
 
@@ -925,7 +990,7 @@ pub async fn create_persistent_subscription<S: AsRef<str>>(
 
     connection
         .execute(|channel| async {
-            let mut client = PersistentSubscriptionsClient::new(channel);
+            let mut client = PersistentSubscriptionsClient::new(channel.channel);
             client.create(req).await?;
 
             Ok(())
@@ -968,7 +1033,7 @@ pub async fn update_persistent_subscription<S: AsRef<str>>(
 
     connection
         .execute(|channel| async {
-            let mut client = PersistentSubscriptionsClient::new(channel);
+            let mut client = PersistentSubscriptionsClient::new(channel.channel);
             client.update(req).await?;
 
             Ok(())
@@ -1008,7 +1073,7 @@ pub async fn delete_persistent_subscription<S: AsRef<str>>(
 
     connection
         .execute(|channel| async {
-            let mut client = PersistentSubscriptionsClient::new(channel);
+            let mut client = PersistentSubscriptionsClient::new(channel.channel);
             client.delete(req).await?;
 
             Ok(())
@@ -1065,30 +1130,42 @@ pub async fn connect_persistent_subscription<S: AsRef<str>>(
 
     connection
         .execute(|channel| async {
-            let mut client = PersistentSubscriptionsClient::new(channel);
-            let stream = client.read(req).await?.into_inner();
+            let mut client = PersistentSubscriptionsClient::new(channel.channel.clone());
+            let mut stream = client.read(req).await?.into_inner();
 
-            let stream = stream
-                .try_filter_map(|resp| {
-                    let ret = match resp
-                        .content
-                        .expect("Why response content wouldn't be defined?")
-                    {
-                        read_resp::Content::Event(evt) => Some(SubEvent::EventAppeared(
-                            convert_persistent_proto_read_event(evt),
-                        )),
+            let stream = stream! {
+                loop {
+                    match stream.try_next().await {
+                        Err(e) => {
+                            let e = crate::Error::from_grpc(e);
 
-                        read_resp::Content::SubscriptionConfirmation(sub) => {
-                            Some(SubEvent::Confirmed(sub.subscription_id))
+                            channel.report_error(e.clone()).await;
+                            yield Err(e);
+                            break;
                         }
-                    };
 
-                    futures::future::ready(Ok(ret))
-                })
-                .map_err(crate::Error::from_grpc);
+                        Ok(resp) => {
+                            if let Some(resp) = resp {
+                                match resp.content.expect("content is defined") {
+                                    read_resp::Content::Event(event) => {
+                                        yield Ok(SubEvent::EventAppeared(convert_persistent_proto_read_event(event)));
+                                    }
+
+                                    read_resp::Content::SubscriptionConfirmation(sub) => {
+                                        yield Ok(SubEvent::Confirmed(sub.subscription_id));
+                                    }
+                                }
+                                continue;
+                            }
+
+                            break;
+                        }
+                    }
+                }
+            };
 
             let read = SubscriptionRead {
-                inner: Box::new(stream),
+                inner: Box::pin(stream),
             };
             let write = SubscriptionWrite { sender };
 
@@ -1098,7 +1175,7 @@ pub async fn connect_persistent_subscription<S: AsRef<str>>(
 }
 
 pub struct SubscriptionRead {
-    inner: Box<dyn Stream<Item = crate::Result<SubEvent>> + Send + Unpin>,
+    inner: BoxStream<'static, crate::Result<SubEvent>>,
 }
 
 impl SubscriptionRead {
