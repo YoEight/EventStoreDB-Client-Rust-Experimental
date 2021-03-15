@@ -1,3 +1,4 @@
+use crate::options::retry::RetryOptions;
 use crate::{Credentials, StreamPosition};
 
 #[derive(Clone)]
@@ -5,6 +6,7 @@ pub struct SubscribeToStreamOptions {
     pub(crate) credentials: Option<Credentials>,
     pub(crate) position: StreamPosition<u64>,
     pub(crate) resolve_link_tos: bool,
+    pub(crate) retry: Option<RetryOptions>,
 }
 
 impl Default for SubscribeToStreamOptions {
@@ -13,6 +15,7 @@ impl Default for SubscribeToStreamOptions {
             credentials: None,
             position: StreamPosition::Start,
             resolve_link_tos: false,
+            retry: None,
         }
     }
 }
@@ -42,6 +45,15 @@ impl SubscribeToStreamOptions {
     pub fn resolve_link_tos(self) -> Self {
         Self {
             resolve_link_tos: true,
+            ..self
+        }
+    }
+
+    /// When a disconnection happens, automatically resubscribe to stream changes. When enabled,
+    /// The client will keep track of the current subscription offset.
+    pub fn retry_options(self, options: RetryOptions) -> Self {
+        Self {
+            retry: Some(options),
             ..self
         }
     }

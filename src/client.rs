@@ -10,6 +10,7 @@ use crate::{
     SubscriptionWrite, ToCount, WriteResult, WrongExpectedVersion,
 };
 use futures::stream::BoxStream;
+use futures::TryStreamExt;
 
 /// Represents a client to a single node. `Client` maintains a full duplex
 /// communication to EventStoreDB.
@@ -119,7 +120,62 @@ impl Client {
     where
         StreamName: AsRef<str>,
     {
-        commands::subscribe_to_stream(&self.client, stream_name, options).await
+        match options.retry.as_ref().cloned() {
+            None => commands::subscribe_to_stream(&self.client, stream_name, options).await,
+            Some(retry) => {
+                let stream_name = stream_name.as_ref().to_string();
+                let mut attempt_count = 1usize;
+                let mut offset = options.position;
+                let client = self.client.clone();
+                let mut options = options.clone();
+                let result = async_stream::stream! {
+                    loop {
+                        match commands::subscribe_to_stream(&client, stream_name.as_str(), &options).await {
+                            Err(e) => {
+                                if attempt_count == retry.limit {
+                                    error!("Subscription: maximum retry threshold reached, cause: {}", e);
+
+                                    yield Err(e);
+                                    break;
+                                }
+
+                                error!("Subscription: attempt ({}/{}) failure, cause: {}", attempt_count, retry.limit, e);
+                                attempt_count += 1;
+                                tokio::time::sleep(retry.delay).await;
+                            }
+                            Ok(mut stream) => {
+                                loop {
+                                    match stream.try_next().await {
+                                        Ok(sub_event) => {
+                                            let sub_event = sub_event.expect("to be defined");
+                                            match sub_event {
+                                                crate::types::SubEvent::EventAppeared(event) => {
+                                                    offset = crate::types::StreamPosition::Point(event.get_original_event().revision);
+                                                    yield Ok(crate::types::SubEvent::EventAppeared(event));
+                                                }
+
+                                                ignored => yield Ok(ignored),
+                                            }
+                                        }
+                                        Err(e) => {
+                                            attempt_count = 1;
+                                            options = options.position(offset);
+
+                                            error!("Subscription dropped cause: {}. Reconnecting", e);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+
+                let result: BoxStream<crate::Result<SubEvent>> = Box::pin(result);
+
+                Ok(result)
+            }
+        }
     }
 
     /// Like [`subscribe_to_stream`] but specific to system `$all` stream.
@@ -129,7 +185,61 @@ impl Client {
         &self,
         options: &SubscribeToAllOptions,
     ) -> crate::Result<BoxStream<'a, crate::Result<SubEvent>>> {
-        commands::subscribe_to_all(&self.client, options).await
+        match options.retry.as_ref().cloned() {
+            None => commands::subscribe_to_all(&self.client, options).await,
+            Some(retry) => {
+                let mut attempt_count = 1usize;
+                let mut offset = options.position;
+                let client = self.client.clone();
+                let mut options = options.clone();
+                let result = async_stream::stream! {
+                    loop {
+                        match commands::subscribe_to_all(&client, &options).await {
+                            Err(e) => {
+                                if attempt_count == retry.limit {
+                                    error!("Subscription: maximum retry threshold reached, cause: {}", e);
+
+                                    yield Err(e);
+                                    break;
+                                }
+
+                                error!("Subscription: attempt ({}/{}) failure, cause: {}", attempt_count, retry.limit, e);
+                                attempt_count += 1;
+                                tokio::time::sleep(retry.delay).await;
+                            }
+                            Ok(mut stream) => {
+                                loop {
+                                    match stream.try_next().await {
+                                        Ok(sub_event) => {
+                                            let sub_event = sub_event.expect("to be defined");
+                                            match sub_event {
+                                                crate::types::SubEvent::EventAppeared(event) => {
+                                                    offset = crate::types::StreamPosition::Point(event.get_original_event().position);
+                                                    yield Ok(crate::types::SubEvent::EventAppeared(event));
+                                                }
+
+                                                ignored => yield Ok(ignored),
+                                            }
+                                        }
+                                        Err(e) => {
+                                            attempt_count = 1;
+                                            options = options.position(offset);
+
+                                            error!("Subscription dropped cause: {}. Reconnecting", e);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+
+                let result: BoxStream<crate::Result<SubEvent>> = Box::pin(result);
+
+                Ok(result)
+            }
+        }
     }
 
     /// Creates a persistent subscription group on a stream.

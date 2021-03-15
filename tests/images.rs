@@ -16,11 +16,12 @@ impl IntoIterator for ESDBArgs {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ESDB {
     tag: String,
     arguments: ESDBArgs,
     env_vars: HashMap<String, String>,
+    vol_vars: HashMap<String, String>,
 }
 
 impl ESDB {
@@ -42,6 +43,13 @@ impl ESDB {
             "EVENTSTORE_START_STANDARD_PROJECTIONS".to_string(),
             "true".to_string(),
         );
+
+        self
+    }
+
+    pub fn attach_volume_to_db_directory(mut self, volume: String) -> Self {
+        self.vol_vars
+            .insert(volume, "/var/lib/eventstore".to_string());
 
         self
     }
@@ -70,7 +78,7 @@ impl Image for ESDB {
     }
 
     fn volumes(&self) -> Self::Volumes {
-        HashMap::new()
+        self.vol_vars.clone()
     }
 
     fn with_args(self, arguments: Self::Args) -> Self {
@@ -84,6 +92,7 @@ impl Default for ESDB {
             tag: DEFAULT_TAG.to_string(),
             arguments: ESDBArgs::default(),
             env_vars: HashMap::new(),
+            vol_vars: HashMap::new(),
         }
     }
 }
