@@ -3,6 +3,8 @@ extern crate log;
 #[macro_use]
 extern crate serde_json;
 
+mod images;
+
 use eventstore::{
     Client, ClientSettings, EventData, PersistentSubscriptionOptions,
     PersistentSubscriptionSettings, Single,
@@ -11,6 +13,9 @@ use futures::channel::oneshot;
 use futures::stream::TryStreamExt;
 use std::collections::HashMap;
 use std::error::Error;
+use testcontainers::clients::Cli;
+use testcontainers::{Docker, RunArgs};
+use tokio::task::block_in_place;
 
 fn fresh_stream_id(prefix: &str) -> String {
     let uuid = uuid::Uuid::new_v4();
@@ -272,13 +277,39 @@ async fn test_persistent_subscription(client: &Client) -> Result<(), Box<dyn Err
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn es6_20_6_test() -> Result<(), Box<dyn std::error::Error>> {
+async fn cluster() -> Result<(), Box<dyn std::error::Error>> {
     let _ = pretty_env_logger::try_init();
     let settings = "esdb://admin:changeit@localhost:2111,localhost:2112,localhost:2113?tlsVerifyCert=false&nodePreference=leader"
         .parse::<ClientSettings>()?;
 
     let client = Client::create(settings).await?;
 
+    all_around_tests(client).await?;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn single_node() -> Result<(), Box<dyn std::error::Error>> {
+    let _ = pretty_env_logger::try_init();
+    let docker = Cli::default();
+    let image = images::ESDB::default().insecure_mode();
+    let container = docker.run_with_args(image, RunArgs::default());
+
+    let settings = format!(
+        "esdb://localhost:{}?tls=false",
+        container.get_host_port(2_113).unwrap()
+    )
+    .parse::<ClientSettings>()?;
+
+    let client = Client::create(settings).await?;
+
+    all_around_tests(client).await?;
+
+    Ok(())
+}
+
+async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Error>> {
     debug!("Before test_write_events…");
     test_write_events(&client).await?;
     debug!("Complete");
