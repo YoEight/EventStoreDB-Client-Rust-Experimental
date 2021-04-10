@@ -25,7 +25,7 @@
 //!
 //!     // Creates a client settings for a single node configuration.
 //!     let settings = "esdb://admin:changeit@localhost:2113".parse()?;
-//!     let client = Client::create(settings).await?;
+//!     let client = Client::new(settings).await?;
 //!
 //!     let payload = Foo {
 //!         is_rust_a_nice_language: true,
@@ -68,6 +68,7 @@ mod gossip;
 mod grpc;
 mod options;
 mod private;
+mod projection_client;
 mod types;
 
 pub use client::Client;
@@ -81,6 +82,7 @@ pub use options::read_stream::*;
 pub use options::retry::*;
 pub use options::subscribe_to_all::*;
 pub use options::subscribe_to_stream::*;
+pub use projection_client::*;
 pub use types::*;
 
 pub mod prelude {
@@ -95,5 +97,6 @@ pub mod prelude {
     pub use crate::options::retry::*;
     pub use crate::options::subscribe_to_all::*;
     pub use crate::options::subscribe_to_stream::*;
+    pub use crate::projection_client::*;
     pub use crate::types::*;
 }

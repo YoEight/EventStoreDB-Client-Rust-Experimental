@@ -5,6 +5,7 @@ pub fn generate() {
         "protos/streams.proto",
         "protos/shared.proto",
         "protos/gossip.proto",
+        "protos/projections.proto",
     ];
 
     tonic_build::configure()

@@ -6,8 +6,8 @@ extern crate serde_json;
 mod images;
 
 use eventstore::{
-    Acl, Client, ClientSettings, EventData, GrpcConnectionError, PersistentSubscriptionOptions,
-    PersistentSubscriptionSettings, Single, StreamAclBuilder, StreamMetadata,
+    Acl, Client, ClientSettings, EventData, PersistentSubscriptionOptions,
+    PersistentSubscriptionSettings, ProjectionClient, Single, StreamAclBuilder, StreamMetadata,
     StreamMetadataBuilder,
 };
 use futures::channel::oneshot;
@@ -23,7 +23,7 @@ fn fresh_stream_id(prefix: &str) -> String {
     format!("{}-{}", prefix, uuid)
 }
 
-fn generate_events(event_type: String, cnt: usize) -> Vec<EventData> {
+fn generate_events<Type: AsRef<str>>(event_type: Type, cnt: usize) -> Vec<EventData> {
     let mut events = Vec::with_capacity(cnt);
 
     for idx in 1..cnt + 1 {
@@ -31,7 +31,7 @@ fn generate_events(event_type: String, cnt: usize) -> Vec<EventData> {
             "event_index": idx,
         });
 
-        let data = EventData::json(event_type.clone(), payload).unwrap();
+        let data = EventData::json(event_type.as_ref(), payload).unwrap();
         events.push(data);
     }
 
@@ -328,7 +328,7 @@ async fn test_error_on_failure_to_discover_single_node() -> Result<(), Box<dyn E
     let _ = pretty_env_logger::try_init();
 
     let settings = format!("esdb://noserver:{}", 2_113).parse()?;
-    let client = Client::create(settings).await?;
+    let client = Client::new(settings).await?;
     let stream_id = fresh_stream_id("wont-be-created");
     let events = generate_events("wont-be-written".to_string(), 5);
 
@@ -360,15 +360,29 @@ fn create_unique_volume() -> Result<VolumeName, Box<dyn std::error::Error>> {
 
 async fn wait_node_is_alive(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     loop {
-        let resp = reqwest::get(format!("http://localhost:{}/health/live", port)).await;
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            reqwest::get(format!("http://localhost:{}/health/live", port)),
+        )
+        .await
+        {
+            Err(_) => error!("Healthcheck timed out! retrying..."),
 
-        if let Ok(resp) = resp {
-            if resp.status().is_success() {
-                break;
-            }
+            Ok(resp) => match resp {
+                Err(e) => error!("Node localhost:{} is not up yet: {}", port, e),
+
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        break;
+                    }
+
+                    error!(
+                        "Healthcheck response was not successful: {}, retrying...",
+                        resp.status()
+                    );
+                }
+            },
         }
-
-        warn!("Node localhost:{} is not up yet!", port);
 
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
@@ -382,7 +396,7 @@ async fn cluster() -> Result<(), Box<dyn std::error::Error>> {
     let settings = "esdb://admin:changeit@localhost:2111,localhost:2112,localhost:2113?tlsVerifyCert=false&nodePreference=leader"
         .parse::<ClientSettings>()?;
 
-    let client = Client::create(settings).await?;
+    let client = Client::new(settings).await?;
 
     all_around_tests(client).await?;
 
@@ -404,7 +418,7 @@ async fn single_node() -> Result<(), Box<dyn std::error::Error>> {
     )
     .parse::<ClientSettings>()?;
 
-    let client = Client::create(settings).await?;
+    let client = Client::new(settings).await?;
 
     all_around_tests(client).await?;
 
@@ -428,7 +442,7 @@ async fn test_auto_resub_on_connection_drop() -> Result<(), Box<dyn std::error::
 
     let settings = format!("esdb://localhost:{}?tls=false", 3_113).parse::<ClientSettings>()?;
 
-    let client = Client::create(settings).await?;
+    let client = Client::new(settings).await?;
     let stream_name = fresh_stream_id("auto-reconnect");
     let retry = eventstore::RetryOptions::default().retry_forever();
     let options = eventstore::SubscribeToStreamOptions::default().retry_options(retry);
@@ -521,5 +535,319 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
     test_persistent_subscription(&client).await?;
     debug!("Complete");
 
+    Ok(())
+}
+
+static PROJECTION_FILE: &'static str = include_str!("fixtures/projection.js");
+static PROJECTION_UPDATED_FILE: &'static str = include_str!("fixtures/projection-updated.js");
+
+async fn create_projection(
+    client: &ProjectionClient,
+    gen_name: &mut names::Generator<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let name = gen_name.next().unwrap();
+    client
+        .create(
+            name.as_str(),
+            PROJECTION_FILE.to_string(),
+            &Default::default(),
+        )
+        .await?;
+
+    let stats = client.get_status(name.as_str(), None).await?;
+
+    assert!(stats.is_some());
+
+    let stats = stats.unwrap();
+
+    assert_eq!(stats.name, name);
+
+    Ok(())
+}
+
+// TODO - A projection must be stopped to be able to delete it. But Stop projection gRPC call doesn't exist yet.
+async fn delete_projection(
+    client: &ProjectionClient,
+    gen_name: &mut names::Generator<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let name = gen_name.next().unwrap();
+    client
+        .create(
+            name.as_str(),
+            PROJECTION_FILE.to_string(),
+            &Default::default(),
+        )
+        .await?;
+
+    debug!("delete_projection: create_projection succeeded: {}", name);
+
+    let stats = client.get_status(name.as_str(), None).await?;
+
+    assert!(stats.is_some());
+
+    let stats = stats.unwrap();
+
+    client.abort(name.as_str(), None).await?;
+
+    assert_eq!(stats.name, name);
+    debug!("delete_projection: reading newly-created projection statistic succeeded");
+
+    client.delete(name.as_str(), &Default::default()).await?;
+
+    debug!("delete_projection: delete projection succeeded");
+
+    Ok(())
+}
+async fn update_projection(
+    client: &ProjectionClient,
+    gen_name: &mut names::Generator<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let name = gen_name.next().unwrap();
+
+    client
+        .create(
+            name.as_str(),
+            PROJECTION_FILE.to_string(),
+            &Default::default(),
+        )
+        .await?;
+
+    client
+        .update(
+            name.as_str(),
+            PROJECTION_UPDATED_FILE.to_string(),
+            &Default::default(),
+        )
+        .await?;
+
+    let stats = client.get_status(name.as_str(), None).await?;
+
+    assert!(stats.is_some());
+
+    let stats = stats.unwrap();
+
+    assert_eq!(stats.name, name);
+    assert_eq!(stats.version, 1);
+
+    Ok(())
+}
+
+async fn enable_projection(
+    client: &ProjectionClient,
+    gen_name: &mut names::Generator<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let name = gen_name.next().unwrap();
+    client
+        .create(
+            name.as_str(),
+            PROJECTION_FILE.to_string(),
+            &Default::default(),
+        )
+        .await?;
+
+    client.enable(name.as_str(), None).await?;
+
+    let status = client.get_status(name, None).await?;
+
+    assert!(status.is_some());
+
+    let status = status.unwrap();
+
+    assert_eq!(status.status.as_str(), "Running");
+
+    Ok(())
+}
+
+async fn disable_projection(
+    client: &ProjectionClient,
+    gen_name: &mut names::Generator<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let name = gen_name.next().unwrap();
+    client
+        .create(
+            name.as_str(),
+            PROJECTION_FILE.to_string(),
+            &Default::default(),
+        )
+        .await?;
+
+    client.enable(name.as_str(), None).await?;
+    client.disable(name.as_str(), None).await?;
+
+    let status = client.get_status(name, None).await?;
+
+    assert!(status.is_some());
+
+    let status = status.unwrap();
+
+    assert_eq!(status.status.as_str(), "Aborted/Stopped");
+
+    Ok(())
+}
+
+async fn reset_projection(
+    client: &ProjectionClient,
+    gen_name: &mut names::Generator<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let name = gen_name.next().unwrap();
+    client
+        .create(
+            name.as_str(),
+            PROJECTION_FILE.to_string(),
+            &Default::default(),
+        )
+        .await?;
+
+    client.enable(name.as_str(), None).await?;
+    client.reset(name.as_str(), None).await?;
+
+    Ok(())
+}
+
+async fn projection_state(
+    stream_client: &Client,
+    client: &ProjectionClient,
+    gen_name: &mut names::Generator<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use serde::Deserialize;
+
+    let events = generate_events("testing", 10);
+    let stream_name = gen_name.next().unwrap();
+
+    let write_result = stream_client
+        .append_to_stream(stream_name, &Default::default(), events)
+        .await?;
+
+    assert!(write_result.is_ok());
+
+    // This is the state of the projection, see tests/fixtures/projection.js.
+    #[derive(Deserialize, Debug)]
+    struct State {
+        foo: Foo,
+    }
+
+    #[derive(Deserialize, Debug)]
+    struct Foo {
+        baz: Baz,
+    }
+
+    #[derive(Deserialize, Debug)]
+    struct Baz {
+        count: f64,
+    }
+
+    let name = gen_name.next().unwrap();
+    client
+        .create(
+            name.as_str(),
+            PROJECTION_FILE.to_string(),
+            &Default::default(),
+        )
+        .await?;
+
+    client.enable(name.as_str(), None).await?;
+
+    let state: serde_json::Result<State> =
+        client.get_state(name.as_str(), &Default::default()).await?;
+
+    debug!("{:?}", state);
+    assert!(state.is_ok());
+
+    Ok(())
+}
+
+async fn projection_result(
+    stream_client: &Client,
+    client: &ProjectionClient,
+    gen_name: &mut names::Generator<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use serde::Deserialize;
+
+    let events = generate_events("testing", 10);
+    let stream_name = gen_name.next().unwrap();
+
+    let write_result = stream_client
+        .append_to_stream(stream_name, &Default::default(), events)
+        .await?;
+
+    assert!(write_result.is_ok());
+
+    // This is the state of the projection, see tests/fixtures/projection.js.
+    #[derive(Deserialize, Debug)]
+    struct State {
+        foo: Foo,
+    }
+
+    #[derive(Deserialize, Debug)]
+    struct Foo {
+        baz: Baz,
+    }
+
+    #[derive(Deserialize, Debug)]
+    struct Baz {
+        count: f64,
+    }
+
+    let name = gen_name.next().unwrap();
+    client
+        .create(
+            name.as_str(),
+            PROJECTION_FILE.to_string(),
+            &Default::default(),
+        )
+        .await?;
+
+    client.enable(name.as_str(), None).await?;
+
+    let state: serde_json::Result<State> = client
+        .get_result(name.as_str(), &Default::default())
+        .await?;
+
+    debug!("{:?}", state);
+    assert!(state.is_ok());
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn projection_tests() -> Result<(), Box<dyn std::error::Error>> {
+    let _ = pretty_env_logger::try_init();
+    let docker = Cli::default();
+    let image = images::ESDB::default().insecure_mode().enable_projections();
+    let container = docker.run_with_args(image, RunArgs::default());
+
+    wait_node_is_alive(container.get_host_port(2_113).unwrap()).await?;
+
+    debug!("Docker container is ready and alive!");
+
+    let settings = format!(
+        "esdb://localhost:{}?tls=false",
+        container.get_host_port(2_113).unwrap()
+    )
+    .parse::<ClientSettings>()?;
+
+    let client = ProjectionClient::new(settings.clone()).await?;
+    let stream_client = Client::new(settings).await?;
+    let mut name_gen = names::Generator::default();
+
+    create_projection(&client, &mut name_gen).await?;
+    debug!("create_projection passed");
+    delete_projection(&client, &mut name_gen).await?;
+    debug!("delete_projection passed");
+    // There is a race condition in the projection manager that leads to wrong expected version
+    // in the system projections stream.
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    update_projection(&client, &mut name_gen).await?;
+    debug!("update_projection passed");
+    enable_projection(&client, &mut name_gen).await?;
+    debug!("enable_projection passed");
+    disable_projection(&client, &mut name_gen).await?;
+    debug!("disable_projection passed");
+    reset_projection(&client, &mut name_gen).await?;
+    debug!("reset_projection passed");
+    projection_state(&stream_client, &client, &mut name_gen).await?;
+    debug!("projection_state passed");
+    projection_result(&stream_client, &client, &mut name_gen).await?;
+    debug!("projection_result passed");
     Ok(())
 }
