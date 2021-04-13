@@ -15,7 +15,6 @@ use std::collections::HashMap;
 use std::error::Error;
 use testcontainers::clients::Cli;
 use testcontainers::{Docker, RunArgs};
-use tokio::task::block_in_place;
 
 fn fresh_stream_id(prefix: &str) -> String {
     let uuid = uuid::Uuid::new_v4();
@@ -276,6 +275,39 @@ async fn test_persistent_subscription(client: &Client) -> Result<(), Box<dyn Err
     Ok(())
 }
 
+type VolumeName = String;
+
+fn create_unique_volume() -> Result<VolumeName, Box<dyn std::error::Error>> {
+    let dir_name = uuid::Uuid::new_v4();
+    let dir_name = format!("dir-{}", dir_name);
+
+    std::process::Command::new("docker")
+        .arg("volume")
+        .arg("create")
+        .arg(format!("--name {}", dir_name))
+        .output()?;
+
+    Ok(dir_name)
+}
+
+async fn wait_node_is_alive(port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    loop {
+        let resp = reqwest::get(format!("http://localhost:{}/health/live", port)).await;
+
+        if let Ok(resp) = resp {
+            if resp.status().is_success() {
+                break;
+            }
+        }
+
+        warn!("Node localhost:{} is not up yet!", port);
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn cluster() -> Result<(), Box<dyn std::error::Error>> {
     let _ = pretty_env_logger::try_init();
@@ -296,6 +328,8 @@ async fn single_node() -> Result<(), Box<dyn std::error::Error>> {
     let image = images::ESDB::default().insecure_mode();
     let container = docker.run_with_args(image, RunArgs::default());
 
+    wait_node_is_alive(container.get_host_port(2_113).unwrap()).await?;
+
     let settings = format!(
         "esdb://localhost:{}?tls=false",
         container.get_host_port(2_113).unwrap()
@@ -305,6 +339,78 @@ async fn single_node() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::create(settings).await?;
 
     all_around_tests(client).await?;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_auto_resub_on_connection_drop() -> Result<(), Box<dyn std::error::Error>> {
+    let volume = create_unique_volume()?;
+    let _ = pretty_env_logger::try_init();
+    let docker = Cli::default();
+    let image = images::ESDB::default()
+        .insecure_mode()
+        .attach_volume_to_db_directory(volume);
+    let container = docker.run_with_args(
+        image.clone(),
+        RunArgs::default().with_mapped_port((3_113, 2_113)),
+    );
+
+    wait_node_is_alive(3_113).await?;
+
+    let settings = format!("esdb://localhost:{}?tls=false", 3_113).parse::<ClientSettings>()?;
+
+    let client = Client::create(settings).await?;
+    let stream_name = fresh_stream_id("auto-reconnect");
+    let retry = eventstore::RetryOptions::default().retry_forever();
+    let options = eventstore::SubscribeToStreamOptions::default().retry_options(retry);
+    let mut stream = client
+        .subscribe_to_stream(stream_name.as_str(), &options)
+        .await?;
+    let max = 6usize;
+    let (tx, recv) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let mut count = 0usize;
+
+        while let Some(_) = stream.try_next().await? {
+            count += 1;
+
+            if count == max {
+                break;
+            }
+        }
+
+        tx.send(count).unwrap();
+        Ok(()) as eventstore::Result<()>
+    });
+
+    let events = generate_events("reconnect".to_string(), 3);
+
+    let _ = client
+        .append_to_stream(stream_name.as_str(), &Default::default(), events)
+        .await?;
+
+    container.stop();
+    let _container = docker.run_with_args(
+        image.clone(),
+        RunArgs::default().with_mapped_port((3_113, 2_113)),
+    );
+
+    wait_node_is_alive(3_113).await?;
+
+    let events = generate_events("reconnect".to_string(), 3);
+
+    let _ = client
+        .append_to_stream(stream_name.as_str(), &Default::default(), events)
+        .await?;
+    let test_count = recv.await?;
+
+    assert_eq!(
+        test_count, 6,
+        "We are testing proper state after subscription upon reconnection: got {} expected {}.",
+        test_count, 6
+    );
 
     Ok(())
 }

@@ -804,20 +804,6 @@ pub(crate) struct DnsClusterSettings {
     pub(crate) endpoint: Endpoint,
 }
 
-#[derive(PartialEq, Eq, Serialize, Deserialize, Debug, Clone, Copy)]
-pub(crate) enum LookupType {
-    #[serde(rename = "a")]
-    LookupA,
-    #[serde(rename = "srv")]
-    LookupSRV,
-}
-
-impl Default for LookupType {
-    fn default() -> Self {
-        LookupType::LookupA
-    }
-}
-
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 /// Actual revision of a stream.
 pub enum CurrentRevision {

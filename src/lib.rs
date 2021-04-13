@@ -78,6 +78,7 @@ pub use options::delete_stream::*;
 pub use options::persistent_subscription::*;
 pub use options::read_all::*;
 pub use options::read_stream::*;
+pub use options::retry::*;
 pub use options::subscribe_to_all::*;
 pub use options::subscribe_to_stream::*;
 pub use types::*;
@@ -91,6 +92,7 @@ pub mod prelude {
     pub use crate::options::persistent_subscription::*;
     pub use crate::options::read_all::*;
     pub use crate::options::read_stream::*;
+    pub use crate::options::retry::*;
     pub use crate::options::subscribe_to_all::*;
     pub use crate::options::subscribe_to_stream::*;
     pub use crate::types::*;

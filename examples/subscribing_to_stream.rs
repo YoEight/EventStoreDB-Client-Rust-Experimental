@@ -1,6 +1,6 @@
 use eventstore::{
-    Client, Credentials, EventData, ExpectedRevision, Position, ReadResult, StreamPosition,
-    SubEvent, SubscribeToAllOptions, SubscribeToStreamOptions, SubscriptionFilter,
+    Client, Credentials, EventData, ExpectedRevision, Position, ReadResult, RetryOptions,
+    StreamPosition, SubEvent, SubscribeToAllOptions, SubscribeToStreamOptions, SubscriptionFilter,
 };
 use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
@@ -44,17 +44,13 @@ pub async fn subscribe_to_stream(client: &Client) -> Result<()> {
     // endregion subscribe-to-stream-resolving-linktos
 
     // region subscribe-to-stream-subscription-dropped
-    let mut stream = client
-        .subscribe_to_stream("some-stream", &Default::default())
-        .await?;
+    let retry = RetryOptions::default().retry_forever();
+    let options = SubscribeToStreamOptions::default().retry_options(retry);
+    let mut stream = client.subscribe_to_stream("some-stream", &options).await?;
 
-    loop {
-        if let Some(event) = stream.try_next().await? {
-            if let SubEvent::EventAppeared(event) = event {
-                // Handles the event...
-            }
-        } else {
-            stream = client.subscribe_to_stream("some-stream", &options).await?;
+    while let Some(event) = stream.try_next().await? {
+        if let SubEvent::EventAppeared(event) = event {
+            // Handles the event...
         }
     }
     // endregion subscribe-to-stream-subscription-dropped
@@ -88,16 +84,13 @@ pub async fn subscribe_to_all(client: &Client) -> Result<()> {
     // endregion subscribe-to-all-live
 
     // region subscribe-to-all-subscription-dropped
-    let mut stream = client.subscribe_to_all(&Default::default()).await?;
+    let retry = RetryOptions::default().retry_forever();
+    let options = SubscribeToAllOptions::default().retry_options(retry);
+    let mut stream = client.subscribe_to_all(&options).await?;
 
-    loop {
-        if let Some(event) = stream.try_next().await? {
-            if let SubEvent::EventAppeared(event) = event {
-                // Handles the event...
-            }
-        } else {
-            // re-subscription.
-            stream = client.subscribe_to_all(&options).await?;
+    while let Some(event) = stream.try_next().await? {
+        if let SubEvent::EventAppeared(event) = event {
+            // Handles the event...
         }
     }
     // endregion subscribe-to-all-subscription-dropped
