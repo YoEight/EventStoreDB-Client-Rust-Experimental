@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
 use futures::Stream;
-use serde::de::Visitor;
+use serde::{de::Visitor, ser::SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 use tonic::Status;
@@ -415,7 +415,7 @@ pub struct StreamMetadataBuilder {
     max_age: Option<Duration>,
     truncate_before: Option<u64>,
     cache_control: Option<Duration>,
-    acl: Option<StreamAcl>,
+    acl: Option<Acl>,
     properties: HashMap<String, serde_json::Value>,
 }
 
@@ -465,7 +465,7 @@ impl StreamMetadataBuilder {
     }
 
     /// Sets the ACL of a stream.
-    pub fn acl(self, value: StreamAcl) -> StreamMetadataBuilder {
+    pub fn acl(self, value: Acl) -> StreamMetadataBuilder {
         StreamMetadataBuilder {
             acl: Some(value),
             ..self
@@ -473,12 +473,16 @@ impl StreamMetadataBuilder {
     }
 
     /// Adds user-defined property in the stream metadata.
-    pub fn insert_custom_property<V>(mut self, key: String, value: V) -> StreamMetadataBuilder
+    pub fn insert_custom_property<V>(
+        mut self,
+        key: impl AsRef<str>,
+        value: V,
+    ) -> StreamMetadataBuilder
     where
         V: Serialize,
     {
         let serialized = serde_json::to_value(value).unwrap();
-        let _ = self.properties.insert(key, serialized);
+        let _ = self.properties.insert(key.as_ref().to_string(), serialized);
 
         self
     }
@@ -490,7 +494,7 @@ impl StreamMetadataBuilder {
             max_age: self.max_age,
             truncate_before: self.truncate_before,
             cache_control: self.cache_control,
-            acl: self.acl.unwrap_or_default(),
+            acl: self.acl,
             custom_properties: self.properties,
         }
     }
@@ -498,59 +502,479 @@ impl StreamMetadataBuilder {
 
 /// Represents stream metadata with strongly types properties for system values
 /// and a dictionary-like interface for custom values.
-#[derive(Debug, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct StreamMetadata {
     /// A sliding window based on the number of items in the stream. When data reaches
     /// a certain length it disappears automatically from the stream and is considered
     /// eligible for scavenging.
+    #[serde(rename = "$maxCount", skip_serializing_if = "Option::is_none", default)]
     pub max_count: Option<u64>,
 
     /// A sliding window based on dates. When data reaches a certain age it disappears
     /// automatically from the stream and is considered eligible for scavenging.
+    #[serde(
+        rename = "$maxAge",
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_duration",
+        deserialize_with = "deserialize_duration",
+        default
+    )]
     pub max_age: Option<Duration>,
 
     /// The event number from which previous events can be scavenged. This is
     /// used to implement soft-deletion of streams.
+    #[serde(rename = "$tb", skip_serializing_if = "Option::is_none", default)]
     pub truncate_before: Option<u64>,
 
     /// Controls the cache of the head of a stream. Most URIs in a stream are infinitely
     /// cacheable but the head by default will not cache. It may be preferable
     /// in some situations to set a small amount of caching on the head to allow
     /// intermediaries to handle polls (say 10 seconds).
+    #[serde(
+        rename = "$cacheControl",
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_duration",
+        deserialize_with = "deserialize_duration",
+        default
+    )]
     pub cache_control: Option<Duration>,
 
     /// The access control list for the stream.
-    pub acl: StreamAcl,
+    #[serde(
+        rename = "$acl",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_acl",
+        serialize_with = "serialize_acl",
+        default
+    )]
+    pub acl: Option<Acl>,
 
     /// An enumerable of key-value pairs of keys to JSON value for
     /// user-provided metadata.
+    #[serde(flatten, skip_serializing_if = "HashMap::is_empty", default)]
     pub custom_properties: HashMap<String, serde_json::Value>,
 }
 
+fn serialize_duration<S>(
+    src: &Option<Duration>,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    if let Some(ref duration) = src.as_ref() {
+        serializer.serialize_u64(duration.as_millis() as u64)
+    } else {
+        serializer.serialize_none()
+    }
+}
+
+fn deserialize_duration<'de, D>(deserializer: D) -> std::result::Result<Option<Duration>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_u64(DurationVisitor)
+}
+
+fn serialize_acl<S>(src: &Option<Acl>, serializer: S) -> std::result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    if let Some(ref acl) = src.as_ref() {
+        match acl {
+            Acl::UserStream => serializer.serialize_str("$userStreamAcl"),
+            Acl::SystemStream => serializer.serialize_str("$systemStreamAcl"),
+            Acl::Stream(acl) => serializer.serialize_some(acl),
+        }
+    } else {
+        serializer.serialize_none()
+    }
+}
+
+fn deserialize_acl<'de, D>(deserializer: D) -> std::result::Result<Option<Acl>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_any(AclVisitor)
+}
+
+struct DurationVisitor;
+
+impl<'de> Visitor<'de> for DurationVisitor {
+    type Value = Option<Duration>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "a time duration in milliseconds")
+    }
+
+    fn visit_none<E>(self) -> std::result::Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_u64<E>(self, value: u64) -> std::result::Result<Self::Value, E> {
+        Ok(Some(Duration::from_millis(value)))
+    }
+}
+
+struct AclVisitor;
+
+impl<'de> Visitor<'de> for AclVisitor {
+    type Value = Option<Acl>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "a EventStoreDB ACL")
+    }
+
+    fn visit_none<E>(self) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(None)
+    }
+
+    fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        match value {
+            "$userStreamAcl" => Ok(Some(Acl::UserStream)),
+            "$systemStreamAcl" => Ok(Some(Acl::SystemStream)),
+            unknown => Err(serde::de::Error::invalid_value(
+                serde::de::Unexpected::Str(unknown),
+                &self,
+            )),
+        }
+    }
+
+    fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
+    where
+        M: serde::de::MapAccess<'de>,
+    {
+        let stream_acl =
+            Deserialize::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+
+        Ok(Some(Acl::Stream(stream_acl)))
+    }
+}
+
 impl StreamMetadata {
+    pub fn new() -> Self {
+        StreamMetadata::default()
+    }
+
     /// Initializes a fresh stream metadata builder.
     pub fn builder() -> StreamMetadataBuilder {
         StreamMetadataBuilder::new()
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Acl {
+    UserStream,
+    SystemStream,
+    Stream(StreamAcl),
+}
+
+#[derive(Default)]
+pub struct StreamAclBuilder {
+    read_roles: Option<Vec<String>>,
+    write_roles: Option<Vec<String>>,
+    delete_roles: Option<Vec<String>>,
+    meta_read_roles: Option<Vec<String>>,
+    meta_write_roles: Option<Vec<String>>,
+}
+
+impl StreamAclBuilder {
+    pub fn new() -> Self {
+        StreamAclBuilder::default()
+    }
+
+    pub fn add_read_roles(mut self, role: impl AsRef<str>) -> Self {
+        self.read_roles
+            .get_or_insert_with(Vec::new)
+            .push(role.as_ref().to_string());
+
+        self
+    }
+
+    pub fn add_write_roles(mut self, role: impl AsRef<str>) -> Self {
+        self.write_roles
+            .get_or_insert_with(Vec::new)
+            .push(role.as_ref().to_string());
+
+        self
+    }
+
+    pub fn add_delete_roles(mut self, role: impl AsRef<str>) -> Self {
+        self.delete_roles
+            .get_or_insert_with(Vec::new)
+            .push(role.as_ref().to_string());
+
+        self
+    }
+
+    pub fn add_meta_read_roles(mut self, role: impl AsRef<str>) -> Self {
+        self.meta_read_roles
+            .get_or_insert_with(Vec::new)
+            .push(role.as_ref().to_string());
+
+        self
+    }
+
+    pub fn add_meta_write_roles(mut self, role: impl AsRef<str>) -> Self {
+        self.meta_write_roles
+            .get_or_insert_with(Vec::new)
+            .push(role.as_ref().to_string());
+
+        self
+    }
+
+    pub fn build(self) -> StreamAcl {
+        StreamAcl {
+            read_roles: self.read_roles,
+            write_roles: self.write_roles,
+            delete_roles: self.delete_roles,
+            meta_read_roles: self.meta_read_roles,
+            meta_write_roles: self.meta_write_roles,
+        }
+    }
+}
+
 /// Represents an access control list for a stream.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StreamAcl {
     /// Roles and users permitted to read the stream.
+    #[serde(
+        rename = "$r",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_roles",
+        serialize_with = "serialize_roles",
+        default
+    )]
     pub read_roles: Option<Vec<String>>,
 
     /// Roles and users permitted to write to the stream.
+    #[serde(
+        rename = "$w",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_roles",
+        serialize_with = "serialize_roles",
+        default
+    )]
     pub write_roles: Option<Vec<String>>,
 
     /// Roles and users permitted to delete to the stream.
+    #[serde(
+        rename = "$d",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_roles",
+        serialize_with = "serialize_roles",
+        default
+    )]
     pub delete_roles: Option<Vec<String>>,
 
     /// Roles and users permitted to read stream metadata.
+    #[serde(
+        rename = "$mr",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_roles",
+        serialize_with = "serialize_roles",
+        default
+    )]
     pub meta_read_roles: Option<Vec<String>>,
 
     /// Roles and users permitted to write stream metadata.
+    #[serde(
+        rename = "$mw",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_roles",
+        serialize_with = "serialize_roles",
+        default
+    )]
     pub meta_write_roles: Option<Vec<String>>,
+}
+
+fn serialize_roles<S>(
+    src: &Option<Vec<String>>,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    if let Some(ref roles) = src.as_ref() {
+        if roles.len() == 1 {
+            serializer.serialize_str(roles.first().unwrap().as_str())
+        } else {
+            let mut seq = serializer.serialize_seq(Some(roles.len()))?;
+
+            for role in roles.iter() {
+                seq.serialize_element(role.as_str())?;
+            }
+
+            seq.end()
+        }
+    } else {
+        serializer.serialize_none()
+    }
+}
+
+struct RolesVisitor;
+
+impl<'de> Visitor<'de> for RolesVisitor {
+    type Value = Option<Vec<String>>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "a EventStoreDB role or role list")
+    }
+
+    fn visit_none<E>(self) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(None)
+    }
+
+    fn visit_str<E>(self, value: &str) -> std::result::Result<Option<Vec<String>>, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(Some(vec![value.to_string()]))
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> std::result::Result<Option<Vec<String>>, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        let mut roles = Vec::new();
+
+        while let Some(role) = seq.next_element::<String>()? {
+            roles.push(role);
+        }
+
+        Ok(Some(roles))
+    }
+}
+
+fn deserialize_roles<'de, D>(deserializer: D) -> std::result::Result<Option<Vec<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_any(RolesVisitor)
+}
+
+#[cfg(test)]
+mod metadata_tests {
+    use std::time::Duration;
+
+    use super::{Acl, StreamAclBuilder, StreamMetadata, StreamMetadataBuilder};
+
+    #[test]
+    fn isomorphic_1() -> Result<(), Box<dyn std::error::Error>> {
+        let acl = StreamAclBuilder::new()
+            .add_read_roles("admin")
+            .add_write_roles("admin")
+            .add_delete_roles("admin")
+            .add_meta_read_roles("admin")
+            .add_meta_write_roles("admin")
+            .build();
+
+        let expected = StreamMetadataBuilder::new()
+            .max_age(Duration::from_secs(2))
+            .cache_control(Duration::from_secs(15))
+            .truncate_before(1)
+            .max_count(12)
+            .acl(Acl::Stream(acl))
+            .insert_custom_property("foo", "bar")
+            .build();
+
+        let actual: StreamMetadata =
+            serde_json::from_slice(serde_json::to_vec(&expected)?.as_slice())?;
+
+        assert_eq!(expected, actual);
+
+        Ok(())
+    }
+
+    #[test]
+    fn isomorphic_2() -> Result<(), Box<dyn std::error::Error>> {
+        let expected = StreamMetadataBuilder::new()
+            .max_age(Duration::from_secs(2))
+            .cache_control(Duration::from_secs(15))
+            .truncate_before(1)
+            .max_count(12)
+            .acl(Acl::UserStream)
+            .insert_custom_property("foo", "bar")
+            .build();
+
+        let actual: StreamMetadata =
+            serde_json::from_slice(serde_json::to_vec(&expected)?.as_slice())?;
+
+        assert_eq!(expected, actual);
+
+        Ok(())
+    }
+
+    #[test]
+    fn isomorphic_3() -> Result<(), Box<dyn std::error::Error>> {
+        let expected = StreamMetadataBuilder::new()
+            .max_age(Duration::from_secs(2))
+            .cache_control(Duration::from_secs(15))
+            .truncate_before(1)
+            .max_count(12)
+            .acl(Acl::SystemStream)
+            .insert_custom_property("foo", "bar")
+            .build();
+
+        let actual: StreamMetadata =
+            serde_json::from_slice(serde_json::to_vec(&expected)?.as_slice())?;
+
+        assert_eq!(expected, actual);
+
+        Ok(())
+    }
+
+    #[test]
+    fn metadata_spec() -> Result<(), Box<dyn std::error::Error>> {
+        let content = r#"
+        {
+            "$maxCount": 12,
+            "$maxAge": 2000,
+            "$tb": 1,
+            "$cacheControl": 15000,
+            "$acl": {
+                "$r": "admin",
+                "$w": "admin",
+                "$d": "admin",
+                "$mr": "admin",
+                "$mw": "admin"
+            },
+            "foo": "bar"
+        }
+        "#;
+
+        let acl = StreamAclBuilder::new()
+            .add_read_roles("admin")
+            .add_write_roles("admin")
+            .add_delete_roles("admin")
+            .add_meta_read_roles("admin")
+            .add_meta_write_roles("admin")
+            .build();
+
+        let expected = StreamMetadataBuilder::new()
+            .max_age(Duration::from_secs(2))
+            .cache_control(Duration::from_secs(15))
+            .truncate_before(1)
+            .max_count(12)
+            .acl(Acl::Stream(acl))
+            .insert_custom_property("foo", "bar")
+            .build();
+
+        let actual = serde_json::from_str(content)?;
+
+        assert_eq!(expected, actual);
+
+        Ok(())
+    }
 }
 
 /// Read part of a persistent subscription, isomorphic to a stream of events.
@@ -851,6 +1275,8 @@ pub enum Error {
     Grpc(Status),
     #[error("gRPC connection error: {0}")]
     GrpcConnectionError(GrpcConnectionError),
+    #[error("Internal parsing error: {0}")]
+    InternalParsingError(String),
 }
 
 impl Error {

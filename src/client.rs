@@ -1,13 +1,19 @@
-use crate::grpc::{ClientSettings, GrpcClient};
-use crate::options::append_to_stream::{AppendToStreamOptions, ToEvents};
 use crate::options::persistent_subscription::PersistentSubscriptionOptions;
 use crate::options::read_all::ReadAllOptions;
 use crate::options::read_stream::ReadStreamOptions;
 use crate::options::subscribe_to_stream::SubscribeToStreamOptions;
 use crate::{
     commands, ConnectToPersistentSubscription, DeletePersistentSubscriptionOptions,
-    DeleteStreamOptions, Position, ReadResult, SubEvent, SubscribeToAllOptions, SubscriptionRead,
-    SubscriptionWrite, ToCount, WriteResult, WrongExpectedVersion,
+    DeleteStreamOptions, Position, ReadResult, StreamMetadata, SubEvent, SubscribeToAllOptions,
+    SubscriptionRead, SubscriptionWrite, ToCount, WriteResult, WrongExpectedVersion,
+};
+use crate::{
+    grpc::{ClientSettings, GrpcClient},
+    Single,
+};
+use crate::{
+    options::append_to_stream::{AppendToStreamOptions, ToEvents},
+    EventData,
 };
 use futures::stream::BoxStream;
 use futures::TryStreamExt;
@@ -42,6 +48,23 @@ impl Client {
         Events: ToEvents + 'static,
     {
         commands::append_to_stream(&self.client, stream_name, options, events.into_events()).await
+    }
+
+    // Sets a stream metadata.
+    pub async fn set_stream_metadata<StreamName>(
+        &self,
+        stream_name: StreamName,
+        options: &AppendToStreamOptions,
+        metadata: StreamMetadata,
+    ) -> crate::Result<Result<WriteResult, WrongExpectedVersion>>
+    where
+        StreamName: AsRef<str>,
+    {
+        let event = EventData::json("$metadata", metadata)
+            .map_err(|e| crate::Error::InternalParsingError(e.to_string()))?;
+
+        self.append_to_stream(format!("$${}", stream_name.as_ref()), options, event)
+            .await
     }
 
     /// Reads events from a given stream. The reading can be done forward and
@@ -84,6 +107,29 @@ impl Client {
         let stream = commands::read_all(&self.client, &options, count.to_count() as u64).await?;
 
         count.select(stream).await
+    }
+
+    /// Reads a stream metadata.
+    pub async fn get_stream_metadata<StreamName>(
+        &self,
+        stream_name: StreamName,
+        options: &ReadStreamOptions,
+    ) -> crate::Result<StreamMetadata>
+    where
+        StreamName: AsRef<str>,
+    {
+        let result = self
+            .read_stream(format!("$${}", stream_name.as_ref()), options, Single)
+            .await?;
+
+        match result {
+            ReadResult::StreamNotFound(_) => Ok(StreamMetadata::default()),
+            ReadResult::Ok(event) => event
+                .expect("to be defined")
+                .get_original_event()
+                .as_json::<StreamMetadata>()
+                .map_err(|e| crate::Error::InternalParsingError(e.to_string())),
+        }
     }
 
     /// Deletes a given stream. By default, the server performs a soft delete.

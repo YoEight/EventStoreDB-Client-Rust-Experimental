@@ -6,8 +6,9 @@ extern crate serde_json;
 mod images;
 
 use eventstore::{
-    Client, ClientSettings, EventData, PersistentSubscriptionOptions,
-    PersistentSubscriptionSettings, Single,
+    Acl, Client, ClientSettings, EventData, PersistentSubscriptionOptions,
+    PersistentSubscriptionSettings, Single, StreamAclBuilder, StreamMetadata,
+    StreamMetadataBuilder,
 };
 use futures::channel::oneshot;
 use futures::stream::TryStreamExt;
@@ -88,6 +89,53 @@ async fn test_read_stream_events(client: &Client) -> Result<(), Box<dyn Error>> 
 
     assert_eq!(pos, 10);
     assert_eq!(idx, 10);
+
+    Ok(())
+}
+
+async fn test_metadata(client: &Client) -> Result<(), Box<dyn Error>> {
+    let stream_id = fresh_stream_id("metadata");
+    let events = generate_events("metadata-test".to_string(), 5);
+
+    let _ = client
+        .append_to_stream(stream_id.as_str(), &Default::default(), events)
+        .await?;
+
+    let expected = StreamMetadataBuilder::new()
+        .max_age(std::time::Duration::from_secs(2))
+        .acl(Acl::Stream(
+            StreamAclBuilder::new().add_read_roles("admin").build(),
+        ))
+        .build();
+
+    let _ = client
+        .set_stream_metadata(stream_id.as_str(), &Default::default(), expected.clone())
+        .await?;
+
+    let actual = client
+        .get_stream_metadata(stream_id.as_str(), &Default::default())
+        .await?;
+
+    assert_eq!(expected, actual);
+
+    Ok(())
+}
+
+async fn test_metadata_not_exist(client: &Client) -> Result<(), Box<dyn Error>> {
+    let stream_id = fresh_stream_id("metadata_not_exist");
+    let events = generate_events("metadata-test-not-exist".to_string(), 5);
+
+    let _ = client
+        .append_to_stream(stream_id.as_str(), &Default::default(), events)
+        .await?;
+
+    let expected = StreamMetadata::default();
+
+    let actual = client
+        .get_stream_metadata(stream_id.as_str(), &Default::default())
+        .await?;
+
+    assert_eq!(expected, actual);
 
     Ok(())
 }
@@ -427,6 +475,12 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
     debug!("Complete");
     debug!("Before test_read_stream_events_non_existent");
     test_read_stream_events_non_existent(&client).await?;
+    debug!("Complete");
+    debug!("Before test test_metadata");
+    test_metadata(&client).await?;
+    debug!("Complete");
+    debug!("Before test test_metadata_not_exist");
+    test_metadata_not_exist(&client).await?;
     debug!("Complete");
     debug!("Before test_delete_stream…");
     test_delete_stream(&client).await?;
