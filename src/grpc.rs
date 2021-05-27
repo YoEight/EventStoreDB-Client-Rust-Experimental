@@ -755,6 +755,7 @@ fn single_node_mode(conn_setts: ClientSettings, endpoint: Endpoint) -> Unbounded
         let mut channel: Option<Channel> = None;
         let mut channel_id = Uuid::new_v4();
         let mut work_queue = Vec::new();
+        let mut discovery_att_count = 0usize;
 
         while let Some(item) = consumer.next().await {
             work_queue.push(item);
@@ -772,6 +773,13 @@ fn single_node_mode(conn_setts: ClientSettings, endpoint: Endpoint) -> Unbounded
                             };
 
                             let _ = resp.send(Ok(handle));
+                        } else if discovery_att_count >= conn_setts.max_discover_attempts() {
+                            let _ =
+                                resp.send(Err(GrpcConnectionError::MaxDiscoveryAttemptReached(
+                                    conn_setts.max_discover_attempts(),
+                                )));
+
+                            discovery_att_count = 0;
                         } else {
                             // It means we need to create a new channel.
                             work_queue.push(Msg::GetChannel(resp));
@@ -798,13 +806,24 @@ fn single_node_mode(conn_setts: ClientSettings, endpoint: Endpoint) -> Unbounded
 
                             Err(err) => {
                                 error!(
-                                    "Error when connecting to {}: {}",
+                                    "Error when connecting to {}: {}. Retrying...({}/{})",
                                     conn_setts.to_uri(&endpoint),
-                                    err
+                                    err,
+                                    discovery_att_count,
+                                    conn_setts.max_discover_attempts()
                                 );
 
-                                tokio::time::sleep(conn_setts.discovery_interval).await;
-                                work_queue.push(Msg::CreateChannel(id, seed_opt));
+                                if discovery_att_count < conn_setts.max_discover_attempts() {
+                                    tokio::time::sleep(conn_setts.discovery_interval).await;
+                                    work_queue.push(Msg::CreateChannel(id, seed_opt));
+                                    discovery_att_count += 1;
+                                    continue;
+                                }
+
+                                error!(
+                                    "Maximum discovery attempt count reached: {0}",
+                                    conn_setts.max_discover_attempts()
+                                );
                             }
                         }
                     }
