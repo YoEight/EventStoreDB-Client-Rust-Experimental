@@ -1,3 +1,9 @@
+#![allow(unused_attributes)]
+#![allow(unused_imports)]
+#![allow(unused_results)]
+#![allow(unused_variables)]
+#![allow(unused_must_use)]
+
 use eventstore::{
     AppendToStreamOptions, Client, Credentials, EventData, ExpectedRevision, ReadResult,
     ReadStreamOptions,

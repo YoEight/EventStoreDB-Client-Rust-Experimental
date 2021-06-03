@@ -66,7 +66,7 @@ fn test_connection_string() {
 
             Err(e) => {
                 if !mockup.expect_failure {
-                    panic!(format!("Failed parsing [{}]: {:?}", mockup.string, e));
+                    panic!("Failed parsing [{}]: {:?}", mockup.string, e);
                 }
             }
         }
