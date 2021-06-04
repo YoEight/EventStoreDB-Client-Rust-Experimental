@@ -6,7 +6,7 @@ extern crate serde_json;
 mod images;
 
 use eventstore::{
-    Acl, Client, ClientSettings, EventData, PersistentSubscriptionOptions,
+    Acl, Client, ClientSettings, EventData, GrpcConnectionError, PersistentSubscriptionOptions,
     PersistentSubscriptionSettings, Single, StreamAclBuilder, StreamMetadata,
     StreamMetadataBuilder,
 };
@@ -321,6 +321,26 @@ async fn test_persistent_subscription(client: &Client) -> Result<(), Box<dyn Err
     );
 
     Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_error_on_failure_to_discover_single_node() -> Result<(), Box<dyn Error>> {
+    let _ = pretty_env_logger::try_init();
+
+    let settings = format!("esdb://noserver:{}", 2_113).parse()?;
+    let client = Client::create(settings).await?;
+    let stream_id = fresh_stream_id("wont-be-created");
+    let events = generate_events("wont-be-written".to_string(), 5);
+
+    let result = client
+        .append_to_stream(stream_id, &Default::default(), events)
+        .await;
+
+    if let Err(eventstore::Error::GrpcConnectionError(_)) = result {
+        Ok(())
+    } else {
+        panic!("Expected gRPC connection error");
+    }
 }
 
 type VolumeName = String;
