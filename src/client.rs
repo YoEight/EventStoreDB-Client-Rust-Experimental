@@ -31,7 +31,7 @@ pub struct Client {
 
 impl Client {
     /// Creates a gRPC client to an EventStoreDB database.
-    pub async fn create(settings: ClientSettings) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(settings: ClientSettings) -> Result<Self, Box<dyn std::error::Error>> {
         let client = GrpcClient::create(settings.clone()).await?;
 
         Ok(Client { client, settings })

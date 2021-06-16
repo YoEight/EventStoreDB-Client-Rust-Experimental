@@ -939,12 +939,15 @@ impl GrpcClient {
     {
         let (sender, consumer) = futures::channel::oneshot::channel();
 
+        debug!("Sending channel handle request...");
         let _ = self.sender.clone().send(Msg::GetChannel(sender)).await;
 
         let handle = match consumer.await {
             Ok(handle) => handle.map_err(crate::Error::GrpcConnectionError),
             Err(_) => Err(crate::Error::ConnectionClosed),
         }?;
+
+        debug!("Handle received!");
 
         let id = handle.id;
         match action(handle).await {

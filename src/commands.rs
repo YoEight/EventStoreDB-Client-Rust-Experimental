@@ -292,7 +292,7 @@ fn convert_persistent_proto_read_event(event: persistent::read_resp::ReadEvent) 
     }
 }
 
-fn configure_auth_req<A>(req: &mut Request<A>, creds_opt: Option<Credentials>) {
+pub(crate) fn configure_auth_req<A>(req: &mut Request<A>, creds_opt: Option<Credentials>) {
     use tonic::metadata::MetadataValue;
 
     if let Some(creds) = creds_opt {
