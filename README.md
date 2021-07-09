@@ -5,7 +5,7 @@
 ![Discord](https://img.shields.io/discord/415421715385155584.svg)
 ![Crates.io](https://img.shields.io/crates/l/eventstore.svg)
 
-Official Rust [EventStoreDB] gRPC Client.
+Official Rust [EventStoreDB rust gRPC] gRPC Client.
 
 [EventStoreDB] is an open-source database built from the ground up for Event Sourcing, with Complex Event Processing in Javascript.
 
@@ -79,6 +79,7 @@ Bear in mind that this client is not yet properly documented. We are working har
 We have a community discussion space at [EventStoreDB Discuss].
 
 [EventStoreDB]: https://eventstore.com/
-[eventstoredb docs]: https://developers.eventstore.com/server/20.6/server/installation/
+[EventStoreDB rust gRPC]: https://developers.eventstore.com/clients/grpc/getting-started?codeLanguage=Rust
+[eventstoredb docs]: https://developers.eventstore.com/latest.html
 [eventstoredb discuss]: https://discuss.eventstore.com/
 [eventstoredb support]: https://eventstore.com/support/
