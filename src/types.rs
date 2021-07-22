@@ -12,7 +12,7 @@ use futures::Stream;
 use serde::{de::Visitor, ser::SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
-use tonic::Status;
+use tonic::{Code, Status};
 use uuid::Uuid;
 
 /// Represents a reconnection strategy when a connection has dropped or is
@@ -1277,6 +1277,12 @@ pub enum Error {
     GrpcConnectionError(GrpcConnectionError),
     #[error("Internal parsing error: {0}")]
     InternalParsingError(String),
+    #[error("Access denied error")]
+    AccessDenied,
+    #[error("The resource you tried to create already exists")]
+    ResourceAlreadyExists,
+    #[error("The resource you asked for doesn't exist")]
+    ResourceNotFound,
 }
 
 impl Error {
@@ -1300,7 +1306,26 @@ impl Error {
             }
         }
 
-        Error::ServerError(status)
+        if status.code() == Code::Unauthenticated || status.code() == Code::PermissionDenied {
+            return Error::AccessDenied;
+        }
+
+        if status.code() == Code::AlreadyExists {
+            return Error::ResourceAlreadyExists;
+        }
+
+        if status.code() == Code::NotFound {
+            return Error::ResourceNotFound;
+        }
+
+        if status.code() == Code::Unavailable
+            || status.code() == Code::Internal
+            || status.code() == Code::DataLoss
+        {
+            return Error::ServerError(status);
+        }
+
+        Error::Grpc(status)
     }
 }
 
