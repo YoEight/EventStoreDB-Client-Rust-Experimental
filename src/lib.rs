@@ -71,6 +71,12 @@ mod private;
 mod projection_client;
 mod types;
 
+pub(crate) mod google {
+    pub mod rpc {
+        pub use super::super::event_store::generated::google_rpc::*;
+    }
+}
+
 pub use client::Client;
 pub use commands::{SubscriptionRead, SubscriptionWrite};
 pub use grpc::{ClientSettings, ClientSettingsParseError};

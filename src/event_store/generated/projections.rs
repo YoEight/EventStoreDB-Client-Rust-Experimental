@@ -29,7 +29,7 @@ pub mod create_req {
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Mode {
             #[prost(message, tag = "1")]
-            OneTime(super::super::super::shared::Empty),
+            OneTime(super::super::super::Empty),
             #[prost(message, tag = "2")]
             Transient(Transient),
             #[prost(message, tag = "3")]
@@ -62,7 +62,7 @@ pub mod update_req {
             #[prost(bool, tag = "3")]
             EmitEnabled(bool),
             #[prost(message, tag = "4")]
-            NoEmitOptions(super::super::super::shared::Empty),
+            NoEmitOptions(super::super::super::Empty),
         }
     }
 }
@@ -108,13 +108,13 @@ pub mod statistics_req {
             #[prost(string, tag = "1")]
             Name(::prost::alloc::string::String),
             #[prost(message, tag = "2")]
-            All(super::super::super::shared::Empty),
+            All(super::super::super::Empty),
             #[prost(message, tag = "3")]
-            Transient(super::super::super::shared::Empty),
+            Transient(super::super::super::Empty),
             #[prost(message, tag = "4")]
-            Continuous(super::super::super::shared::Empty),
+            Continuous(super::super::super::Empty),
             #[prost(message, tag = "5")]
-            OneTime(super::super::super::shared::Empty),
+            OneTime(super::super::super::Empty),
         }
     }
 }
@@ -438,8 +438,8 @@ pub mod projections_client {
         }
         pub async fn restart_subsystem(
             &mut self,
-            request: impl tonic::IntoRequest<super::super::shared::Empty>,
-        ) -> Result<tonic::Response<super::super::shared::Empty>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::super::Empty>,
+        ) -> Result<tonic::Response<super::super::Empty>, tonic::Status> {
             self.inner.ready().await.map_err(|e| {
                 tonic::Status::new(
                     tonic::Code::Unknown,
