@@ -324,6 +324,39 @@ async fn test_persistent_subscription(client: &Client) -> Result<(), Box<dyn Err
     Ok(())
 }
 
+async fn test_batch_append(client: &Client) -> Result<(), Box<dyn Error>> {
+    let batch_client = client.batch_append(&Default::default()).await?;
+
+    for _ in 0..3 {
+        let stream_id = fresh_stream_id("batch-append");
+        let events = generate_events("batch-append-type", 3);
+        let _ = batch_client
+            .append_to_stream(
+                stream_id.as_str(),
+                eventstore::ExpectedRevision::Any,
+                events,
+            )
+            .await?;
+        let options = eventstore::ReadStreamOptions::default()
+            .forwards()
+            .position(eventstore::StreamPosition::Start);
+        let mut stream = client
+            .read_stream(stream_id.as_str(), &options, eventstore::All)
+            .await?
+            .unwrap();
+
+        let mut cpt = 0usize;
+
+        while let Some(_) = stream.try_next().await? {
+            cpt += 1;
+        }
+
+        assert_eq!(cpt, 3, "We expecting 3 events out of those streams");
+    }
+
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_error_on_failure_to_discover_single_node() -> Result<(), Box<dyn Error>> {
     let _ = pretty_env_logger::try_init();
@@ -415,7 +448,7 @@ async fn single_node() -> Result<(), Box<dyn std::error::Error>> {
 
     let settings = format!(
         "esdb://localhost:{}?tls=false",
-        container.get_host_port(2_113).unwrap()
+        container.get_host_port(2_113).unwrap(),
     )
     .parse::<ClientSettings>()?;
 
@@ -534,6 +567,9 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
     debug!("Complete");
     debug!("Before test_persistent_subscription…");
     test_persistent_subscription(&client).await?;
+    debug!("Complete");
+    debug!("Before test_batch_append");
+    test_batch_append(&client).await?;
     debug!("Complete");
 
     Ok(())

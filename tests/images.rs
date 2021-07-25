@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use testcontainers::{Container, Docker, Image, WaitForMessage};
 
 const CONTAINER_IDENTIFIER: &str = "eventstore/eventstore";
-const DEFAULT_TAG: &str = "20.10.0-bionic";
+const DEFAULT_TAG: &str = "21.6.0-bionic";
 
 #[derive(Debug, Default, Clone)]
 pub struct ESDBArgs;

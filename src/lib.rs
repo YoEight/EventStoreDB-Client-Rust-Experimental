@@ -61,6 +61,7 @@
 #[macro_use]
 extern crate log;
 
+mod batch;
 mod client;
 mod commands;
 mod event_store;

@@ -1,3 +1,5 @@
+use crate::batch::BatchAppendClient;
+use crate::options::batch_append::BatchAppendOptions;
 use crate::options::persistent_subscription::PersistentSubscriptionOptions;
 use crate::options::read_all::ReadAllOptions;
 use crate::options::read_stream::ReadStreamOptions;
@@ -36,6 +38,7 @@ impl Client {
 
         Ok(Client { client, settings })
     }
+
     /// Sends events to a given stream.
     pub async fn append_to_stream<StreamName, Events>(
         &self,
@@ -65,6 +68,14 @@ impl Client {
 
         self.append_to_stream(format!("$${}", stream_name.as_ref()), options, event)
             .await
+    }
+
+    // Creates a batch-append client.
+    pub async fn batch_append(
+        &self,
+        options: &BatchAppendOptions,
+    ) -> crate::Result<BatchAppendClient> {
+        commands::batch_append(&self.client, options).await
     }
 
     /// Reads events from a given stream. The reading can be done forward and
@@ -104,7 +115,7 @@ impl Client {
     where
         Count: ToCount<'static>,
     {
-        let stream = commands::read_all(&self.client, &options, count.to_count() as u64).await?;
+        let stream = commands::read_all(&self.client, options, count.to_count() as u64).await?;
 
         count.select(stream).await
     }
