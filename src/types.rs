@@ -180,7 +180,7 @@ pub struct WriteResult {
 pub enum StreamPosition<A> {
     Start,
     End,
-    Point(A),
+    Position(A),
 }
 
 /// Enumeration detailing the possible outcomes of reading a stream.

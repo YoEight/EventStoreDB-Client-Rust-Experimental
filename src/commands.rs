@@ -439,7 +439,7 @@ pub async fn read_stream<'a, S: AsRef<str>>(
     };
 
     let revision_option = match options.position {
-        StreamPosition::Point(rev) => RevisionOption::Revision(rev),
+        StreamPosition::Position(rev) => RevisionOption::Revision(rev),
         StreamPosition::Start => RevisionOption::Start(Empty {}),
         StreamPosition::End => RevisionOption::End(Empty {}),
     };
@@ -558,7 +558,7 @@ pub async fn read_all<'a>(
     };
 
     let all_option = match options.position {
-        StreamPosition::Point(pos) => {
+        StreamPosition::Position(pos) => {
             let pos = options::Position {
                 commit_position: pos.commit,
                 prepare_position: pos.prepare,
@@ -768,7 +768,7 @@ pub async fn subscribe_to_stream<'a, S: AsRef<str>>(
     let revision = match options.position {
         StreamPosition::Start => RevisionOption::Start(Empty {}),
         StreamPosition::End => RevisionOption::End(Empty {}),
-        StreamPosition::Point(revision) => RevisionOption::Revision(revision),
+        StreamPosition::Position(revision) => RevisionOption::Revision(revision),
     };
 
     let stream_identifier = Some(StreamIdentifier {
@@ -862,7 +862,7 @@ pub async fn subscribe_to_all<'a>(
 
     let revision = match options.position {
         StreamPosition::Start => AllOption::Start(Empty {}),
-        StreamPosition::Point(pos) => AllOption::Position(options::Position {
+        StreamPosition::Position(pos) => AllOption::Position(options::Position {
             prepare_position: pos.prepare,
             commit_position: pos.commit,
         }),
@@ -984,7 +984,7 @@ pub async fn create_persistent_subscription<S: AsRef<str>>(
     let revision_option = match options.revision {
         StreamPosition::Start => RevisionOption::Start(Empty {}),
         StreamPosition::End => RevisionOption::End(Empty {}),
-        StreamPosition::Point(rev) => RevisionOption::Revision(rev),
+        StreamPosition::Position(rev) => RevisionOption::Revision(rev),
     };
 
     let revision_option = Some(revision_option);
@@ -1049,7 +1049,7 @@ pub async fn update_persistent_subscription<S: AsRef<str>>(
     let revision_option = match options.revision {
         StreamPosition::Start => RevisionOption::Start(Empty {}),
         StreamPosition::End => RevisionOption::End(Empty {}),
-        StreamPosition::Point(rev) => RevisionOption::Revision(rev),
+        StreamPosition::Position(rev) => RevisionOption::Revision(rev),
     };
 
     let revision_option = Some(revision_option);
