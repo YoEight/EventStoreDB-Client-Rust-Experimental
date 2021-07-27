@@ -199,6 +199,7 @@ fn convert_settings_create(
         SystemConsumerStrategy::Pinned => 2,
     };
 
+    #[allow(deprecated)]
     persistent::create_req::Settings {
         resolve_links: settings.resolve_link_tos,
         revision: settings.revision,
@@ -233,6 +234,7 @@ fn convert_settings_update(
         SystemConsumerStrategy::Pinned => 2,
     };
 
+    #[allow(deprecated)]
     persistent::update_req::Settings {
         resolve_links: settings.resolve_link_tos,
         revision: settings.revision,
@@ -404,13 +406,14 @@ where
             streams::append_resp::Result::WrongExpectedVersion(error) => {
                 let current = match error.current_revision_option.unwrap() {
                     streams::append_resp::wrong_expected_version::CurrentRevisionOption::CurrentRevision(rev) => CurrentRevision::Current(rev),
-                    streams::append_resp::wrong_expected_version::CurrentRevisionOption::NoStream(_) => CurrentRevision::NoStream,
+                    streams::append_resp::wrong_expected_version::CurrentRevisionOption::CurrentNoStream(_) => CurrentRevision::NoStream,
                 };
 
                 let expected = match error.expected_revision_option.unwrap() {
                     streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedRevision(rev) => ExpectedRevision::Exact(rev),
-                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::Any(_) => ExpectedRevision::Any,
-                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::StreamExists(_) => ExpectedRevision::StreamExists,
+                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedAny(_) => ExpectedRevision::Any,
+                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedStreamExists(_) => ExpectedRevision::StreamExists,
+                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedNoStream(_) => ExpectedRevision::NoStream,
                 };
 
                 Ok(Err(WrongExpectedVersion { current, expected }))
@@ -961,7 +964,9 @@ pub async fn create_persistent_subscription<S: AsRef<str>>(
     group: S,
     options: &PersistentSubscriptionOptions,
 ) -> crate::Result<()> {
-    use persistent::create_req::Options;
+    use persistent::create_req::{
+        options::StreamOption, stream_options::RevisionOption, Options, StreamOptions,
+    };
     use persistent::CreateReq;
 
     let settings = convert_settings_create(options.setts);
@@ -969,15 +974,35 @@ pub async fn create_persistent_subscription<S: AsRef<str>>(
         stream_name: stream.as_ref().to_string().into_bytes(),
     });
 
+    let deprecated_stream_identifier = stream_identifier.clone();
+
     let credentials = options
         .credentials
         .clone()
         .or_else(|| connection.default_credentials());
 
-    let options = Options {
+    let revision_option = match options.revision {
+        StreamPosition::Start => RevisionOption::Start(Empty {}),
+        StreamPosition::End => RevisionOption::End(Empty {}),
+        StreamPosition::Point(rev) => RevisionOption::Revision(rev),
+    };
+
+    let revision_option = Some(revision_option);
+
+    let stream_option = StreamOptions {
         stream_identifier,
+        revision_option,
+    };
+
+    let stream_option = StreamOption::Stream(stream_option);
+    let stream_option = Some(stream_option);
+
+    #[allow(deprecated)]
+    let options = Options {
+        stream_identifier: deprecated_stream_identifier,
         group_name: group.as_ref().to_string(),
         settings: Some(settings),
+        stream_option,
     };
 
     let req = CreateReq {
@@ -1004,7 +1029,9 @@ pub async fn update_persistent_subscription<S: AsRef<str>>(
     group: S,
     options: &PersistentSubscriptionOptions,
 ) -> crate::Result<()> {
-    use persistent::update_req::Options;
+    use persistent::update_req::{
+        options::StreamOption, stream_options::RevisionOption, Options, StreamOptions,
+    };
     use persistent::UpdateReq;
 
     let settings = convert_settings_update(options.setts);
@@ -1012,15 +1039,35 @@ pub async fn update_persistent_subscription<S: AsRef<str>>(
         stream_name: stream.as_ref().to_string().into_bytes(),
     });
 
+    let deprecated_stream_identifier = stream_identifier.clone();
+
     let credentials = options
         .credentials
         .clone()
         .or_else(|| connection.default_credentials());
 
-    let options = Options {
+    let revision_option = match options.revision {
+        StreamPosition::Start => RevisionOption::Start(Empty {}),
+        StreamPosition::End => RevisionOption::End(Empty {}),
+        StreamPosition::Point(rev) => RevisionOption::Revision(rev),
+    };
+
+    let revision_option = Some(revision_option);
+
+    let stream_option = StreamOptions {
         stream_identifier,
+        revision_option,
+    };
+
+    let stream_option = StreamOption::Stream(stream_option);
+    let stream_option = Some(stream_option);
+
+    #[allow(deprecated)]
+    let options = Options {
+        stream_identifier: deprecated_stream_identifier,
         group_name: group.as_ref().to_string(),
         settings: Some(settings),
+        stream_option,
     };
 
     let req = UpdateReq {
@@ -1047,11 +1094,14 @@ pub async fn delete_persistent_subscription<S: AsRef<str>>(
     group_name: S,
     options: &DeletePersistentSubscriptionOptions,
 ) -> crate::Result<()> {
-    use persistent::delete_req::Options;
+    use persistent::delete_req::{options::StreamOption, Options};
 
-    let stream_identifier = Some(StreamIdentifier {
+    let stream_identifier = StreamIdentifier {
         stream_name: stream_id.as_ref().to_string().into_bytes(),
-    });
+    };
+
+    let stream_option = StreamOption::StreamIdentifier(stream_identifier);
+    let stream_option = Some(stream_option);
 
     let credentials = options
         .credentials
@@ -1059,7 +1109,7 @@ pub async fn delete_persistent_subscription<S: AsRef<str>>(
         .or_else(|| connection.default_credentials());
 
     let options = Options {
-        stream_identifier,
+        stream_option,
         group_name: group_name.as_ref().to_string(),
     };
 
@@ -1092,7 +1142,7 @@ pub async fn connect_persistent_subscription<S: AsRef<str>>(
     use futures::channel::mpsc;
     use futures::sink::SinkExt;
     use persistent::read_req::options::{self, UuidOption};
-    use persistent::read_req::{self, Options};
+    use persistent::read_req::{self, options::StreamOption, Options};
     use persistent::read_resp;
     use persistent::ReadReq;
 
@@ -1102,9 +1152,12 @@ pub async fn connect_persistent_subscription<S: AsRef<str>>(
         content: Some(options::uuid_option::Content::String(Empty {})),
     };
 
-    let stream_identifier = Some(StreamIdentifier {
+    let stream_identifier = StreamIdentifier {
         stream_name: stream_id.as_ref().to_string().into_bytes(),
-    });
+    };
+
+    let stream_option = StreamOption::StreamIdentifier(stream_identifier);
+    let stream_option = Some(stream_option);
 
     let credentials = options
         .credentials
@@ -1112,7 +1165,7 @@ pub async fn connect_persistent_subscription<S: AsRef<str>>(
         .or_else(|| connection.default_credentials());
 
     let options = Options {
-        stream_identifier,
+        stream_option,
         group_name: group_name.as_ref().to_string(),
         buffer_size: options.batch_size as i32,
         uuid_option: Some(uuid_option),

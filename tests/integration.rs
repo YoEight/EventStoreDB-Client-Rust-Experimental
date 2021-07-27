@@ -14,6 +14,7 @@ use futures::channel::oneshot;
 use futures::stream::TryStreamExt;
 use std::collections::HashMap;
 use std::error::Error;
+use std::time::Duration;
 use testcontainers::clients::Cli;
 use testcontainers::{Docker, RunArgs};
 
@@ -747,6 +748,10 @@ async fn projection_state(
 
     client.enable(name.as_str(), None).await?;
 
+    // It happens that during the CI we can't get back the state of the projection that fast.
+    // As the result, we introduce some timeout to decrease test flakiness.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
     let state: serde_json::Result<State> =
         client.get_state(name.as_str(), &Default::default()).await?;
 
@@ -798,6 +803,10 @@ async fn projection_result(
         .await?;
 
     client.enable(name.as_str(), None).await?;
+
+    // It happens that during the CI we can't get back the state of the projection that fast.
+    // As the result, we introduce some timeout to decrease test flakiness.
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     let state: serde_json::Result<State> = client
         .get_result(name.as_str(), &Default::default())
