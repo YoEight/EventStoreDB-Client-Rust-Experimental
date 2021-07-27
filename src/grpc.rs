@@ -954,33 +954,25 @@ impl GrpcClient {
             Err(status) => {
                 let err = crate::Error::from_grpc(status);
 
-                match &err {
-                    crate::Error::ServerError(status) => {
-                        error!(
+                if let crate::Error::ServerError(ref status) = err {
+                    error!(
                             "Current selected EventStoreDB node gone unavailable. Starting node selection process: {}", status
                         );
 
-                        let _ = self.sender.clone().send(Msg::CreateChannel(id, None)).await;
-                    }
+                    let _ = self.sender.clone().send(Msg::CreateChannel(id, None)).await;
+                } else if let crate::Error::NotLeaderException(ref leader) = err {
+                    let _ = self
+                        .sender
+                        .clone()
+                        .send(Msg::CreateChannel(id, Some(leader.clone())))
+                        .await;
 
-                    crate::Error::NotLeaderException(leader) => {
-                        let _ = self
-                            .sender
-                            .clone()
-                            .send(Msg::CreateChannel(id, Some(leader.clone())))
-                            .await;
-
-                        warn!(
-                            "NotLeaderException found. Start reconnection process on: {:?}",
-                            leader
-                        );
-                    }
-
-                    crate::Error::Grpc(status) => {
-                        debug!("Map: {:?}", status.metadata());
-                    }
-
-                    _ => unreachable!(),
+                    warn!(
+                        "NotLeaderException found. Start reconnection process on: {:?}",
+                        leader
+                    );
+                } else if let crate::Error::Grpc(ref status) = err {
+                    debug!("Map: {:?}", status.metadata());
                 }
 
                 Err(err)
