@@ -13,8 +13,10 @@ use persistent::persistent_subscriptions_client::PersistentSubscriptionsClient;
 use shared::{Empty, StreamIdentifier, Uuid};
 use streams::streams_client::StreamsClient;
 
+use crate::batch::BatchAppendClient;
 use crate::grpc::GrpcClient;
 use crate::options::append_to_stream::AppendToStreamOptions;
+use crate::options::batch_append::BatchAppendOptions;
 use crate::options::persistent_subscription::PersistentSubscriptionOptions;
 use crate::options::read_all::ReadAllOptions;
 use crate::options::read_stream::ReadStreamOptions;
@@ -36,13 +38,12 @@ fn raw_uuid_to_uuid(src: Uuid) -> uuid::Uuid {
 
     match value {
         shared::uuid::Value::Structured(s) => {
-            let mut buf = vec![];
+            let mut buf = [0u8; 16];
 
             BigEndian::write_i64(&mut buf, s.most_significant_bits);
-            BigEndian::write_i64(&mut buf, s.least_significant_bits);
+            BigEndian::write_i64(&mut buf[8..16], s.least_significant_bits);
 
-            uuid::Uuid::from_slice(buf.as_slice())
-                .expect("We expect a valid UUID out of byte buffer")
+            uuid::Uuid::from_bytes(buf)
         }
 
         shared::uuid::Value::String(s) => s
@@ -60,13 +61,12 @@ fn raw_persistent_uuid_to_uuid(src: Uuid) -> uuid::Uuid {
 
     match value {
         shared::uuid::Value::Structured(s) => {
-            let mut buf = vec![];
+            let mut buf = [0u8; 16];
 
             BigEndian::write_i64(&mut buf, s.most_significant_bits);
-            BigEndian::write_i64(&mut buf, s.least_significant_bits);
+            BigEndian::write_i64(&mut buf[8..16], s.least_significant_bits);
 
-            uuid::Uuid::from_slice(buf.as_slice())
-                .expect("We expect a valid UUID out of byte buffer")
+            uuid::Uuid::from_bytes(buf)
         }
 
         shared::uuid::Value::String(s) => s
@@ -187,6 +187,26 @@ fn convert_persistent_proto_recorded_event(
         metadata: event.metadata,
         custom_metadata: event.custom_metadata.into(),
         data: event.data.into(),
+    }
+}
+
+fn convert_event_data_to_batch_proposed_message(
+    event: EventData,
+) -> streams::batch_append_req::ProposedMessage {
+    use streams::batch_append_req;
+
+    let id = event.id_opt.unwrap_or_else(uuid::Uuid::new_v4);
+    let id = shared::uuid::Value::String(id.to_string());
+    let id = Uuid { value: Some(id) };
+    let custom_metadata = event
+        .custom_metadata
+        .map_or_else(Vec::new, |b| (&*b).into());
+
+    batch_append_req::ProposedMessage {
+        id: Some(id),
+        metadata: event.metadata,
+        custom_metadata,
+        data: (&*event.payload).into(),
     }
 }
 
@@ -420,6 +440,187 @@ where
             }
         }
     }).await
+}
+
+pub async fn batch_append<'a>(
+    connection: &GrpcClient,
+    options: &BatchAppendOptions,
+) -> crate::Result<BatchAppendClient> {
+    use futures::SinkExt;
+    use streams::{
+        batch_append_req::{options::ExpectedStreamPosition, Options, ProposedMessage},
+        batch_append_resp::{
+            self,
+            success::{CurrentRevisionOption, PositionOption},
+        },
+        BatchAppendReq,
+    };
+
+    let connection = connection.clone();
+    let (forward, receiver) = futures::channel::mpsc::unbounded::<crate::batch::Req>();
+    let (batch_sender, batch_receiver) = futures::channel::mpsc::unbounded();
+    let mut cloned_batch_sender = batch_sender.clone();
+
+    let batch_client = BatchAppendClient::new(batch_sender, batch_receiver, forward);
+
+    let credentials = options
+        .credentials
+        .as_ref()
+        .cloned()
+        .or_else(|| connection.default_credentials());
+
+    let receiver = receiver.map(|req| {
+        let correlation_id = shared::uuid::Value::String(req.id.to_string());
+        let correlation_id = Some(Uuid {
+            value: Some(correlation_id),
+        });
+        let stream_identifier = Some(StreamIdentifier {
+            stream_name: req.stream_name.into_bytes(),
+        });
+
+        let expected_stream_position = match req.expected_revision {
+            ExpectedRevision::Exact(rev) => ExpectedStreamPosition::StreamPosition(rev),
+            ExpectedRevision::NoStream => ExpectedStreamPosition::NoStream(()),
+            ExpectedRevision::StreamExists => ExpectedStreamPosition::StreamExists(()),
+            ExpectedRevision::Any => ExpectedStreamPosition::Any(()),
+        };
+
+        let expected_stream_position = Some(expected_stream_position);
+
+        let proposed_messages: Vec<ProposedMessage> = req
+            .events
+            .into_iter()
+            .map(convert_event_data_to_batch_proposed_message)
+            .collect();
+
+        let options = Some(Options {
+            stream_identifier,
+            deadline: None,
+            expected_stream_position,
+        });
+
+        BatchAppendReq {
+            correlation_id,
+            options,
+            proposed_messages,
+            is_final: true,
+        }
+    });
+
+    tokio::spawn(async move {
+        let (handle, resp_stream) = connection
+            .execute(move |handle| async move {
+                let mut req = Request::new(receiver);
+                configure_auth_req(&mut req, credentials);
+                let mut client = StreamsClient::new(handle.channel.clone());
+
+                let resp = client.batch_append(req).await?;
+
+                Ok((handle, resp.into_inner()))
+            })
+            .await?;
+
+        let mut resp_stream = resp_stream.map_ok(|resp| {
+            let stream_name = String::from_utf8(resp.stream_identifier.unwrap().stream_name)
+                .expect("valid UTF-8 string");
+
+            let correlation_id = raw_uuid_to_uuid(resp.correlation_id.unwrap());
+            let result = match resp.result.unwrap() {
+                batch_append_resp::Result::Success(success) => {
+                    let current_revision =
+                        success.current_revision_option.and_then(|rev| match rev {
+                            CurrentRevisionOption::CurrentRevision(rev) => Some(rev),
+                            CurrentRevisionOption::NoStream(()) => None,
+                        });
+
+                    let position = success.position_option.and_then(|pos| match pos {
+                        PositionOption::Position(pos) => Some(Position {
+                            commit: pos.commit_position,
+                            prepare: pos.prepare_position,
+                        }),
+                        PositionOption::NoPosition(_) => None,
+                    });
+
+                    let expected_version = resp.expected_stream_position.map(|exp| match exp {
+                        batch_append_resp::ExpectedStreamPosition::Any(_) => {
+                            crate::types::ExpectedRevision::Any
+                        }
+                        batch_append_resp::ExpectedStreamPosition::NoStream(_) => {
+                            crate::types::ExpectedRevision::NoStream
+                        }
+                        batch_append_resp::ExpectedStreamPosition::StreamExists(_) => {
+                            crate::types::ExpectedRevision::StreamExists
+                        }
+                        batch_append_resp::ExpectedStreamPosition::StreamPosition(rev) => {
+                            crate::types::ExpectedRevision::Exact(rev)
+                        }
+                    });
+
+                    Ok(crate::batch::BatchWriteResult::new(
+                        stream_name,
+                        current_revision,
+                        position,
+                        expected_version,
+                    ))
+                }
+                batch_append_resp::Result::Error(code) => {
+                    let message = code.message;
+                    let code = tonic::Code::from(code.code);
+                    let status = tonic::Status::new(code, message);
+                    let err = crate::Error::Grpc(status);
+
+                    Err(err)
+                }
+            };
+
+            crate::batch::Out {
+                correlation_id,
+                result,
+            }
+        });
+
+        tokio::spawn(async move {
+            loop {
+                match resp_stream.try_next().await {
+                    Err(e) => {
+                        let err = crate::Error::from_grpc(e);
+                        let _ = crate::grpc::handle_error::<()>(
+                            handle.sender(),
+                            handle.id(),
+                            err.clone(),
+                        )
+                        .await;
+
+                        // We notify the batch-append client that its session has been closed because of a gRPC error.
+                        let _ = cloned_batch_sender
+                            .send(crate::batch::BatchMsg::Error(err))
+                            .await;
+                        break;
+                    }
+
+                    Ok(out) => {
+                        if let Some(out) = out {
+                            if cloned_batch_sender
+                                .send(crate::batch::BatchMsg::Out(out))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+
+                            continue;
+                        }
+
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok::<(), crate::Error>(())
+    });
+
+    Ok(batch_client)
 }
 
 /// Sends asynchronously the read command to the server.

@@ -331,7 +331,7 @@ pub enum ReadStreamStatus<A> {
 }
 
 /// Holds data of event about to be sent to the server.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EventData {
     pub(crate) payload: Bytes,
     pub(crate) id_opt: Option<Uuid>,
@@ -562,7 +562,7 @@ fn serialize_duration<S>(
 where
     S: Serializer,
 {
-    if let Some(ref duration) = src.as_ref() {
+    if let Some(duration) = src.as_ref() {
         serializer.serialize_u64(duration.as_millis() as u64)
     } else {
         serializer.serialize_none()
@@ -801,7 +801,7 @@ fn serialize_roles<S>(
 where
     S: Serializer,
 {
-    if let Some(ref roles) = src.as_ref() {
+    if let Some(roles) = src.as_ref() {
         if roles.len() == 1 {
             serializer.serialize_str(roles.first().unwrap().as_str())
         } else {
@@ -1217,8 +1217,8 @@ pub(crate) enum Either<A, B> {
 impl<A, B> Either<A, B> {
     pub(crate) fn as_ref(&self) -> Either<&A, &B> {
         match self {
-            Either::Left(a) => Either::Left(&a),
-            Either::Right(b) => Either::Right(&b),
+            Either::Left(a) => Either::Left(a),
+            Either::Right(b) => Either::Right(b),
         }
     }
 }
@@ -1283,6 +1283,8 @@ pub enum Error {
     ResourceAlreadyExists,
     #[error("The resource you asked for doesn't exist")]
     ResourceNotFound,
+    #[error("Unexpected internal client error. Please fill an issue on GitHub")]
+    InternalClientError,
 }
 
 impl Error {

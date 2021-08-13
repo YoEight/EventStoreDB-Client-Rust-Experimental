@@ -26,7 +26,7 @@ jobs:
       run: cargo check
       continue-on-error: ${{ matrix.rust == 'nightly' }}
   tests:
-    name: Tests on 20.6.1 (gRPC)
+    name: Tests on 21.6.0 (gRPC)
     needs: build
     runs-on: ubuntu-18.04
 

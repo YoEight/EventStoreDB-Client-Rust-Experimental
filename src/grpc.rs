@@ -886,9 +886,17 @@ impl Handle {
         error!("Error occurred during operation execution: {:?}", e);
         let _ = self.sender.send(Msg::CreateChannel(self.id, None)).await;
     }
+
+    pub(crate) fn id(&self) -> Uuid {
+        self.id
+    }
+
+    pub(crate) fn sender(&self) -> &futures::channel::mpsc::UnboundedSender<Msg> {
+        &self.sender
+    }
 }
 
-enum Msg {
+pub(crate) enum Msg {
     GetChannel(oneshot::Sender<Result<Handle, GrpcConnectionError>>),
     CreateChannel(Uuid, Option<Endpoint>),
 }
@@ -951,32 +959,7 @@ impl GrpcClient {
 
         let id = handle.id;
         match action(handle).await {
-            Err(status) => {
-                let err = crate::Error::from_grpc(status);
-
-                if let crate::Error::ServerError(ref status) = err {
-                    error!(
-                            "Current selected EventStoreDB node gone unavailable. Starting node selection process: {}", status
-                        );
-
-                    let _ = self.sender.clone().send(Msg::CreateChannel(id, None)).await;
-                } else if let crate::Error::NotLeaderException(ref leader) = err {
-                    let _ = self
-                        .sender
-                        .clone()
-                        .send(Msg::CreateChannel(id, Some(leader.clone())))
-                        .await;
-
-                    warn!(
-                        "NotLeaderException found. Start reconnection process on: {:?}",
-                        leader
-                    );
-                } else if let crate::Error::Grpc(ref status) = err {
-                    debug!("Map: {:?}", status.metadata());
-                }
-
-                Err(err)
-            }
+            Err(status) => handle_error(&self.sender, id, crate::Error::from_grpc(status)).await,
 
             Ok(a) => Ok(a),
         }
@@ -985,6 +968,35 @@ impl GrpcClient {
     pub fn default_credentials(&self) -> Option<Credentials> {
         self.default_credentials.clone()
     }
+}
+
+pub(crate) async fn handle_error<A>(
+    sender: &UnboundedSender<Msg>,
+    connection_id: Uuid,
+    err: crate::Error,
+) -> crate::Result<A> {
+    if let crate::Error::ServerError(ref status) = err {
+        error!("Current selected EventStoreDB node gone unavailable. Starting node selection process: {}", status);
+
+        let _ = sender
+            .clone()
+            .send(Msg::CreateChannel(connection_id, None))
+            .await;
+    } else if let crate::Error::NotLeaderException(ref leader) = err {
+        let _ = sender
+            .clone()
+            .send(Msg::CreateChannel(connection_id, Some(leader.clone())))
+            .await;
+
+        warn!(
+            "NotLeaderException found. Start reconnection process on: {:?}",
+            leader
+        );
+    } else if let crate::Error::Grpc(ref status) = err {
+        debug!("Map: {:?}", status.metadata());
+    }
+
+    Err(err)
 }
 
 struct Member {
@@ -1001,7 +1013,7 @@ async fn node_selection(
 ) -> Option<Endpoint> {
     let candidates = match previous_candidates.take() {
         Some(old_candidates) => {
-            let mut new_candidates = candidates_from_old_gossip(&failed_endpoint, old_candidates);
+            let mut new_candidates = candidates_from_old_gossip(failed_endpoint, old_candidates);
 
             // Use case: when the cluster is only comprised of a single node and that node
             // previously failed. This can only happen if the user used a fixed set of seeds.

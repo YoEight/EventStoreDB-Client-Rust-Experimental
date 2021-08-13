@@ -1,4 +1,5 @@
 pub mod append_to_stream;
+pub mod batch_append;
 pub mod delete_stream;
 pub mod persistent_subscription;
 pub mod projections;

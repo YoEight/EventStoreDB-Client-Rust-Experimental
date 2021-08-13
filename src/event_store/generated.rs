@@ -1,4 +1,3 @@
-#![allow(clippy::large_enum_variant)]
 pub mod client;
 pub mod google_rpc;
 pub mod gossip;
