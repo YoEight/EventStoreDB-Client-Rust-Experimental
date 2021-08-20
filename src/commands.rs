@@ -24,7 +24,7 @@ use crate::options::subscribe_to_stream::SubscribeToStreamOptions;
 use crate::{
     ConnectToPersistentSubscription, Credentials, CurrentRevision,
     DeletePersistentSubscriptionOptions, DeleteStreamOptions, NakAction, ReadResult,
-    SubscribeToAllOptions, SubscriptionFilter, SystemConsumerStrategy,
+    SubscribeToAllOptions, SubscriptionFilter, SystemConsumerStrategy, TombstoneStreamOptions,
 };
 use futures::stream::BoxStream;
 use tonic::Request;
@@ -851,107 +851,117 @@ pub async fn delete_stream<S: AsRef<str>>(
         .clone()
         .or_else(|| connection.default_credentials());
 
-    if options.hard_delete {
-        use streams::tombstone_req::options::ExpectedStreamRevision;
-        use streams::tombstone_req::Options;
-        use streams::tombstone_resp::PositionOption;
+    use streams::delete_req::options::ExpectedStreamRevision;
+    use streams::delete_req::Options;
+    use streams::delete_resp::PositionOption;
 
-        let expected_stream_revision = match options.version {
-            ExpectedRevision::Any => ExpectedStreamRevision::Any(Empty {}),
-            ExpectedRevision::NoStream => ExpectedStreamRevision::NoStream(Empty {}),
-            ExpectedRevision::StreamExists => ExpectedStreamRevision::StreamExists(Empty {}),
-            ExpectedRevision::Exact(rev) => ExpectedStreamRevision::Revision(rev),
-        };
+    let expected_stream_revision = match options.version {
+        ExpectedRevision::Any => ExpectedStreamRevision::Any(Empty {}),
+        ExpectedRevision::NoStream => ExpectedStreamRevision::NoStream(Empty {}),
+        ExpectedRevision::StreamExists => ExpectedStreamRevision::StreamExists(Empty {}),
+        ExpectedRevision::Exact(rev) => ExpectedStreamRevision::Revision(rev),
+    };
 
-        let expected_stream_revision = Some(expected_stream_revision);
-        let stream_identifier = Some(StreamIdentifier {
-            stream_name: stream.as_ref().to_string().into_bytes(),
-        });
-        let options = Options {
-            stream_identifier,
-            expected_stream_revision,
-        };
+    let expected_stream_revision = Some(expected_stream_revision);
+    let stream_identifier = Some(StreamIdentifier {
+        stream_name: stream.as_ref().to_string().into_bytes(),
+    });
+    let options = Options {
+        stream_identifier,
+        expected_stream_revision,
+    };
 
-        let mut req = Request::new(streams::TombstoneReq {
-            options: Some(options),
-        });
+    let mut req = Request::new(streams::DeleteReq {
+        options: Some(options),
+    });
 
-        configure_auth_req(&mut req, credentials);
+    configure_auth_req(&mut req, credentials);
 
-        connection
-            .execute(|channel| async {
-                let mut client = StreamsClient::new(channel.channel);
-                let result = client.tombstone(req).await?.into_inner();
+    connection
+        .execute(|channel| async {
+            let mut client = StreamsClient::new(channel.channel);
+            let result = client.delete(req).await?.into_inner();
 
-                if let Some(opts) = result.position_option {
-                    match opts {
-                        PositionOption::Position(pos) => {
-                            let pos = Position {
-                                commit: pos.commit_position,
-                                prepare: pos.prepare_position,
-                            };
+            if let Some(opts) = result.position_option {
+                match opts {
+                    PositionOption::Position(pos) => {
+                        let pos = Position {
+                            commit: pos.commit_position,
+                            prepare: pos.prepare_position,
+                        };
 
-                            Ok(Some(pos))
-                        }
-
-                        PositionOption::NoPosition(_) => Ok(None),
+                        Ok(Some(pos))
                     }
-                } else {
-                    Ok(None)
+
+                    PositionOption::NoPosition(_) => Ok(None),
                 }
-            })
-            .await
-    } else {
-        use streams::delete_req::options::ExpectedStreamRevision;
-        use streams::delete_req::Options;
-        use streams::delete_resp::PositionOption;
+            } else {
+                Ok(None)
+            }
+        })
+        .await
+}
 
-        let expected_stream_revision = match options.version {
-            ExpectedRevision::Any => ExpectedStreamRevision::Any(Empty {}),
-            ExpectedRevision::NoStream => ExpectedStreamRevision::NoStream(Empty {}),
-            ExpectedRevision::StreamExists => ExpectedStreamRevision::StreamExists(Empty {}),
-            ExpectedRevision::Exact(rev) => ExpectedStreamRevision::Revision(rev),
-        };
+/// Sends asynchronously the tombstone command to the server.
+pub async fn tombstone_stream<S: AsRef<str>>(
+    connection: &GrpcClient,
+    stream: S,
+    options: &TombstoneStreamOptions,
+) -> crate::Result<Option<Position>> {
+    let credentials = options
+        .credentials
+        .clone()
+        .or_else(|| connection.default_credentials());
 
-        let expected_stream_revision = Some(expected_stream_revision);
-        let stream_identifier = Some(StreamIdentifier {
-            stream_name: stream.as_ref().to_string().into_bytes(),
-        });
-        let options = Options {
-            stream_identifier,
-            expected_stream_revision,
-        };
+    use streams::tombstone_req::options::ExpectedStreamRevision;
+    use streams::tombstone_req::Options;
+    use streams::tombstone_resp::PositionOption;
 
-        let mut req = Request::new(streams::DeleteReq {
-            options: Some(options),
-        });
+    let expected_stream_revision = match options.version {
+        ExpectedRevision::Any => ExpectedStreamRevision::Any(Empty {}),
+        ExpectedRevision::NoStream => ExpectedStreamRevision::NoStream(Empty {}),
+        ExpectedRevision::StreamExists => ExpectedStreamRevision::StreamExists(Empty {}),
+        ExpectedRevision::Exact(rev) => ExpectedStreamRevision::Revision(rev),
+    };
 
-        configure_auth_req(&mut req, credentials);
+    let expected_stream_revision = Some(expected_stream_revision);
+    let stream_identifier = Some(StreamIdentifier {
+        stream_name: stream.as_ref().to_string().into_bytes(),
+    });
+    let options = Options {
+        stream_identifier,
+        expected_stream_revision,
+    };
 
-        connection
-            .execute(|channel| async {
-                let mut client = StreamsClient::new(channel.channel);
-                let result = client.delete(req).await?.into_inner();
+    let mut req = Request::new(streams::TombstoneReq {
+        options: Some(options),
+    });
 
-                if let Some(opts) = result.position_option {
-                    match opts {
-                        PositionOption::Position(pos) => {
-                            let pos = Position {
-                                commit: pos.commit_position,
-                                prepare: pos.prepare_position,
-                            };
+    configure_auth_req(&mut req, credentials);
 
-                            Ok(Some(pos))
-                        }
+    connection
+        .execute(|channel| async {
+            let mut client = StreamsClient::new(channel.channel);
+            let result = client.tombstone(req).await?.into_inner();
 
-                        PositionOption::NoPosition(_) => Ok(None),
+            if let Some(opts) = result.position_option {
+                match opts {
+                    PositionOption::Position(pos) => {
+                        let pos = Position {
+                            commit: pos.commit_position,
+                            prepare: pos.prepare_position,
+                        };
+
+                        Ok(Some(pos))
                     }
-                } else {
-                    Ok(None)
+
+                    PositionOption::NoPosition(_) => Ok(None),
                 }
-            })
-            .await
-    }
+            } else {
+                Ok(None)
+            }
+        })
+        .await
 }
 
 /// Runs the subscription command.

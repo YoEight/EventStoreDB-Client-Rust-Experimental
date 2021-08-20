@@ -8,3 +8,4 @@ pub mod read_stream;
 pub mod retry;
 pub mod subscribe_to_all;
 pub mod subscribe_to_stream;
+pub mod tombstone_stream;
