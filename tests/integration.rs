@@ -157,7 +157,7 @@ async fn test_read_stream_events_non_existent(client: &Client) -> Result<(), Box
     panic!("We expected to have a stream not found result");
 }
 
-// We write an event into a stream then delete that stream.
+// We write an event into a stream then soft delete that stream.
 async fn test_delete_stream(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("delete");
     let events = generate_events("delete-test".to_string(), 1);
@@ -173,6 +173,31 @@ async fn test_delete_stream(client: &Client) -> Result<(), Box<dyn Error>> {
     debug!("Delete stream [{}] result: {:?}", stream_id, result);
 
     Ok(())
+}
+
+// We write an event into a stream then hard delete that stream.
+async fn test_tombstone_stream(client: &Client) -> Result<(), Box<dyn Error>> {
+    let _ = pretty_env_logger::try_init();
+    let stream_id = fresh_stream_id("tombstone");
+    let events = generate_events("tombstone-test".to_string(), 1);
+
+    let _ = client
+        .append_to_stream(stream_id.clone(), &Default::default(), events)
+        .await?;
+
+    let result = client
+        .tombstone_stream(stream_id.as_str(), &Default::default())
+        .await?;
+
+    debug!("Tombstone stream [{}] result: {:?}", stream_id, result);
+
+    let result = client.read_stream(stream_id, &Default::default(), 1).await;
+
+    if let Err(eventstore::Error::Grpc(_)) = result {
+        Ok(())
+    } else {
+        panic!("Expected stream deleted error");
+    }
 }
 
 // We write events into a stream. Then, we issue a catchup subscription. After,
@@ -551,6 +576,9 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
     debug!("Complete");
     debug!("Before test_delete_stream…");
     test_delete_stream(&client).await?;
+    debug!("Complete");
+    debug!("Before test_tombstone_stream…");
+    test_tombstone_stream(&client).await?;
     debug!("Complete");
     debug!("Before test_subscription…");
     test_subscription(&client).await?;
