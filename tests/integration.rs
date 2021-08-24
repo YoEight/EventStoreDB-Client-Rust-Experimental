@@ -14,7 +14,6 @@ use futures::channel::oneshot;
 use futures::stream::TryStreamExt;
 use std::collections::HashMap;
 use std::error::Error;
-use std::time::Duration;
 use testcontainers::clients::Cli;
 use testcontainers::{Docker, RunArgs};
 
@@ -578,6 +577,100 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
 static PROJECTION_FILE: &'static str = include_str!("fixtures/projection.js");
 static PROJECTION_UPDATED_FILE: &'static str = include_str!("fixtures/projection-updated.js");
 
+async fn wait_until_projection_status_cc(
+    client: &ProjectionClient,
+    name: &str,
+    last_status: &mut String,
+    status: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    loop {
+        let result = client.get_status(name, None).await?;
+
+        if let Some(stats) = result {
+            if stats.status.contains(status) {
+                break;
+            }
+
+            *last_status = stats.status.clone();
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    Ok(())
+}
+
+async fn wait_until_projection_status_is(
+    client: &ProjectionClient,
+    name: &str,
+    status: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut last_status = "".to_string();
+
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(FIVE_MINS_IN_SECS),
+        wait_until_projection_status_cc(client, name, &mut last_status, status),
+    )
+    .await;
+
+    if result.is_err() {
+        error!(
+            "Projection {} doesn't reach the expected status. Got {}, Expected {}",
+            name, last_status, status
+        );
+    }
+
+    result?
+}
+
+async fn wait_until_state_ready<A>(
+    client: &ProjectionClient,
+    name: &str,
+) -> Result<A, Box<dyn std::error::Error>>
+where
+    A: serde::de::DeserializeOwned + Send,
+{
+    tokio::time::timeout(
+        std::time::Duration::from_secs(FIVE_MINS_IN_SECS),
+        async move {
+            loop {
+                let result: serde_json::Result<A> =
+                    client.get_state(name, &Default::default()).await?;
+
+                if let Ok(a) = result {
+                    return Ok::<A, Box<dyn std::error::Error>>(a);
+                }
+            }
+        },
+    )
+    .await?
+}
+
+async fn wait_until_result_ready<A>(
+    client: &ProjectionClient,
+    name: &str,
+) -> Result<A, Box<dyn std::error::Error>>
+where
+    A: serde::de::DeserializeOwned + Send,
+{
+    tokio::time::timeout(
+        std::time::Duration::from_secs(FIVE_MINS_IN_SECS),
+        async move {
+            loop {
+                let result: serde_json::Result<A> =
+                    client.get_result(name, &Default::default()).await?;
+
+                if let Ok(a) = result {
+                    return Ok::<A, Box<dyn std::error::Error>>(a);
+                }
+            }
+        },
+    )
+    .await?
+}
+
+const FIVE_MINS_IN_SECS: u64 = 5 * 60;
+
 async fn create_projection(
     client: &ProjectionClient,
     gen_name: &mut names::Generator<'_>,
@@ -591,15 +684,7 @@ async fn create_projection(
         )
         .await?;
 
-    let stats = client.get_status(name.as_str(), None).await?;
-
-    assert!(stats.is_some());
-
-    let stats = stats.unwrap();
-
-    assert_eq!(stats.name, name);
-
-    Ok(())
+    wait_until_projection_status_is(client, name.as_str(), "Running").await
 }
 
 // TODO - A projection must be stopped to be able to delete it. But Stop projection gRPC call doesn't exist yet.
@@ -616,22 +701,37 @@ async fn delete_projection(
         )
         .await?;
 
+    wait_until_projection_status_is(client, name.as_str(), "Running").await?;
+
     debug!("delete_projection: create_projection succeeded: {}", name);
-
-    let stats = client.get_status(name.as_str(), None).await?;
-
-    assert!(stats.is_some());
-
-    let stats = stats.unwrap();
 
     client.abort(name.as_str(), None).await?;
 
-    assert_eq!(stats.name, name);
+    wait_until_projection_status_is(client, name.as_str(), "Aborted").await?;
+
     debug!("delete_projection: reading newly-created projection statistic succeeded");
 
-    client.delete(name.as_str(), &Default::default()).await?;
+    let cloned_name = name.clone();
+    // There is a race-condition in the projection manager: https://github.com/EventStore/EventStore/issues/2938
+    let result = tokio::time::timeout(std::time::Duration::from_secs(10), async move {
+        loop {
+            let result = client
+                .delete(cloned_name.as_str(), &Default::default())
+                .await;
 
-    debug!("delete_projection: delete projection succeeded");
+            if result.is_ok() {
+                break;
+            }
+
+            warn!("projection deletion failed with: {:?}. Retrying...", result);
+            let _ = tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+    })
+    .await;
+
+    if result.is_err() {
+        warn!("projection deletion didn't complete under test timeout. Not a big deal considering https://github.com/EventStore/EventStore/issues/2938");
+    }
 
     Ok(())
 }
@@ -648,6 +748,8 @@ async fn update_projection(
             &Default::default(),
         )
         .await?;
+
+    wait_until_projection_status_is(client, name.as_str(), "Running").await?;
 
     client
         .update(
@@ -682,15 +784,11 @@ async fn enable_projection(
         )
         .await?;
 
+    wait_until_projection_status_is(client, name.as_str(), "Running").await?;
+
     client.enable(name.as_str(), None).await?;
 
-    let status = client.get_status(name, None).await?;
-
-    assert!(status.is_some());
-
-    let status = status.unwrap();
-
-    assert_eq!(status.status.as_str(), "Running");
+    wait_until_projection_status_is(client, name.as_str(), "Running").await?;
 
     Ok(())
 }
@@ -708,16 +806,11 @@ async fn disable_projection(
         )
         .await?;
 
+    wait_until_projection_status_is(client, name.as_str(), "Running").await?;
     client.enable(name.as_str(), None).await?;
+    wait_until_projection_status_is(client, name.as_str(), "Running").await?;
     client.disable(name.as_str(), None).await?;
-
-    let status = client.get_status(name, None).await?;
-
-    assert!(status.is_some());
-
-    let status = status.unwrap();
-
-    assert_eq!(status.status.as_str(), "Aborted/Stopped");
+    wait_until_projection_status_is(client, name.as_str(), "Stopped").await?;
 
     Ok(())
 }
@@ -735,6 +828,7 @@ async fn reset_projection(
         )
         .await?;
 
+    wait_until_projection_status_is(client, name.as_str(), "Running").await?;
     client.enable(name.as_str(), None).await?;
     client.reset(name.as_str(), None).await?;
 
@@ -782,17 +876,12 @@ async fn projection_state(
         )
         .await?;
 
+    wait_until_projection_status_is(client, name.as_str(), "Running").await?;
     client.enable(name.as_str(), None).await?;
 
-    // It happens that during the CI we can't get back the state of the projection that fast.
-    // As the result, we introduce some timeout to decrease test flakiness.
-    tokio::time::sleep(Duration::from_secs(1)).await;
-
-    let state: serde_json::Result<State> =
-        client.get_state(name.as_str(), &Default::default()).await?;
+    let state = wait_until_state_ready::<State>(client, name.as_str()).await?;
 
     debug!("{:?}", state);
-    assert!(state.is_ok());
 
     Ok(())
 }
@@ -838,18 +927,12 @@ async fn projection_result(
         )
         .await?;
 
+    wait_until_projection_status_is(client, name.as_str(), "Running").await?;
     client.enable(name.as_str(), None).await?;
 
-    // It happens that during the CI we can't get back the state of the projection that fast.
-    // As the result, we introduce some timeout to decrease test flakiness.
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    let result = wait_until_result_ready::<State>(client, name.as_str()).await?;
 
-    let state: serde_json::Result<State> = client
-        .get_result(name.as_str(), &Default::default())
-        .await?;
-
-    debug!("{:?}", state);
-    assert!(state.is_ok());
+    debug!("{:?}", result);
 
     Ok(())
 }
@@ -867,7 +950,7 @@ async fn projection_tests() -> Result<(), Box<dyn std::error::Error>> {
 
     let settings = format!(
         "esdb://localhost:{}?tls=false",
-        container.get_host_port(2_113).unwrap()
+        container.get_host_port(2_113).unwrap(),
     )
     .parse::<ClientSettings>()?;
 
@@ -879,9 +962,6 @@ async fn projection_tests() -> Result<(), Box<dyn std::error::Error>> {
     debug!("create_projection passed");
     delete_projection(&client, &mut name_gen).await?;
     debug!("delete_projection passed");
-    // There is a race condition in the projection manager that leads to wrong expected version
-    // in the system projections stream.
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     update_projection(&client, &mut name_gen).await?;
     debug!("update_projection passed");
     enable_projection(&client, &mut name_gen).await?;
