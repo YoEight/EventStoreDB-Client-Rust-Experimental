@@ -7,7 +7,8 @@ use crate::options::subscribe_to_stream::SubscribeToStreamOptions;
 use crate::{
     commands, ConnectToPersistentSubscription, DeletePersistentSubscriptionOptions,
     DeleteStreamOptions, Position, ReadResult, StreamMetadata, SubEvent, SubscribeToAllOptions,
-    SubscriptionRead, SubscriptionWrite, ToCount, WriteResult, WrongExpectedVersion,
+    SubscriptionRead, SubscriptionWrite, ToCount, TombstoneStreamOptions, WriteResult,
+    WrongExpectedVersion,
 };
 use crate::{
     grpc::{ClientSettings, GrpcClient},
@@ -143,7 +144,12 @@ impl Client {
         }
     }
 
-    /// Deletes a given stream. By default, the server performs a soft delete.
+    /// Soft deletes a given stream.
+    /// Makes use of Truncate before. When a stream is deleted, its Truncate
+    /// before is set to the streams current last event number. When a soft
+    /// deleted stream is read, the read will return a StreamNotFound. After
+    /// deleting the stream, you are able to write to it again, continuing from
+    /// where it left off.
     pub async fn delete_stream<StreamName>(
         &self,
         stream_name: StreamName,
@@ -153,6 +159,22 @@ impl Client {
         StreamName: AsRef<str>,
     {
         commands::delete_stream(&self.client, stream_name, options).await
+    }
+
+    /// Hard deletes a given stream.
+    /// A hard delete writes a tombstone event to the stream, permanently
+    /// deleting it. The stream cannot be recreated or written to again.
+    /// Tombstone events are written with the event type '$streamDeleted'. When
+    /// a hard deleted stream is read, the read will return a StreamDeleted.
+    pub async fn tombstone_stream<StreamName>(
+        &self,
+        stream_name: StreamName,
+        options: &TombstoneStreamOptions,
+    ) -> crate::Result<Option<Position>>
+    where
+        StreamName: AsRef<str>,
+    {
+        commands::tombstone_stream(&self.client, stream_name, options).await
     }
 
     /// Subscribes to a given stream. This kind of subscription specifies a

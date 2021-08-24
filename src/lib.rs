@@ -89,6 +89,7 @@ pub use options::read_stream::*;
 pub use options::retry::*;
 pub use options::subscribe_to_all::*;
 pub use options::subscribe_to_stream::*;
+pub use options::tombstone_stream::*;
 pub use projection_client::*;
 pub use types::*;
 
@@ -104,6 +105,7 @@ pub mod prelude {
     pub use crate::options::retry::*;
     pub use crate::options::subscribe_to_all::*;
     pub use crate::options::subscribe_to_stream::*;
+    pub use crate::options::tombstone_stream::*;
     pub use crate::projection_client::*;
     pub use crate::types::*;
 }

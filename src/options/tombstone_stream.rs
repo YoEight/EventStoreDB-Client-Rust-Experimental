@@ -1,13 +1,13 @@
 use crate::{Credentials, ExpectedRevision};
 
 #[derive(Clone)]
-/// Options of the delete stream command.
-pub struct DeleteStreamOptions {
+/// Options of the tombstone stream command.
+pub struct TombstoneStreamOptions {
     pub(crate) version: ExpectedRevision,
     pub(crate) credentials: Option<Credentials>,
 }
 
-impl Default for DeleteStreamOptions {
+impl Default for TombstoneStreamOptions {
     fn default() -> Self {
         Self {
             version: ExpectedRevision::Any,
@@ -16,7 +16,7 @@ impl Default for DeleteStreamOptions {
     }
 }
 
-impl DeleteStreamOptions {
+impl TombstoneStreamOptions {
     /// Performs the command with the given credentials.
     pub fn authenticated(self, credentials: Credentials) -> Self {
         Self {
