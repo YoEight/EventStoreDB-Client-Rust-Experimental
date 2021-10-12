@@ -422,35 +422,51 @@ fn create_unique_volume() -> Result<VolumeName, Box<dyn std::error::Error>> {
 }
 
 async fn wait_node_is_alive(port: u16) -> Result<(), Box<dyn std::error::Error>> {
-    loop {
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(1),
-            reqwest::get(format!("http://localhost:{}/health/live", port)),
-        )
-        .await
-        {
-            Err(_) => error!("Healthcheck timed out! retrying..."),
+    match tokio::time::timeout(std::time::Duration::from_secs(60), async move {
+        loop {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                reqwest::get(format!("http://localhost:{}/health/live", port)),
+            )
+            .await
+            {
+                Err(_) => error!("Healthcheck timed out! retrying..."),
 
-            Ok(resp) => match resp {
-                Err(e) => error!("Node localhost:{} is not up yet: {}", port, e),
+                Ok(resp) => match resp {
+                    Err(e) => error!("Node localhost:{} is not up yet: {}", port, e),
 
-                Ok(resp) => {
-                    if resp.status().is_success() {
-                        break;
+                    Ok(resp) => {
+                        if resp.status().is_success() {
+                            break;
+                        }
+
+                        error!(
+                            "Healthcheck response was not successful: {}, retrying...",
+                            resp.status()
+                        );
                     }
+                },
+            }
 
-                    error!(
-                        "Healthcheck response was not successful: {}, retrying...",
-                        resp.status()
-                    );
-                }
-            },
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
+    })
+    .await
+    {
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "Docker container took too much time to start",
+        )
+        .into()),
+        Ok(_) => {
+            debug!(
+                "Docker container was started successfully on localhost:{}",
+                port
+            );
 
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            Ok(())
+        }
     }
-
-    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -979,8 +995,6 @@ async fn projection_tests() -> Result<(), Box<dyn std::error::Error>> {
 
     wait_node_is_alive(container.get_host_port(2_113).unwrap()).await?;
 
-    debug!("Docker container is ready and alive!");
-
     let settings = format!(
         "esdb://localhost:{}?tls=false",
         container.get_host_port(2_113).unwrap(),
@@ -991,21 +1005,29 @@ async fn projection_tests() -> Result<(), Box<dyn std::error::Error>> {
     let stream_client = Client::new(settings).await?;
     let mut name_gen = names::Generator::default();
 
-    create_projection(&client, &mut name_gen).await?;
-    debug!("create_projection passed");
-    delete_projection(&client, &mut name_gen).await?;
-    debug!("delete_projection passed");
-    update_projection(&client, &mut name_gen).await?;
-    debug!("update_projection passed");
-    enable_projection(&client, &mut name_gen).await?;
-    debug!("enable_projection passed");
-    disable_projection(&client, &mut name_gen).await?;
-    debug!("disable_projection passed");
-    reset_projection(&client, &mut name_gen).await?;
-    debug!("reset_projection passed");
-    projection_state(&stream_client, &client, &mut name_gen).await?;
-    debug!("projection_state passed");
-    projection_result(&stream_client, &client, &mut name_gen).await?;
-    debug!("projection_result passed");
-    Ok(())
+    match tokio::time::timeout(std::time::Duration::from_secs(15 * 60), async move {
+        create_projection(&client, &mut name_gen).await?;
+        debug!("create_projection passed");
+        delete_projection(&client, &mut name_gen).await?;
+        debug!("delete_projection passed");
+        update_projection(&client, &mut name_gen).await?;
+        debug!("update_projection passed");
+        enable_projection(&client, &mut name_gen).await?;
+        debug!("enable_projection passed");
+        disable_projection(&client, &mut name_gen).await?;
+        debug!("disable_projection passed");
+        reset_projection(&client, &mut name_gen).await?;
+        debug!("reset_projection passed");
+        projection_state(&stream_client, &client, &mut name_gen).await?;
+        debug!("projection_state passed");
+        projection_result(&stream_client, &client, &mut name_gen).await?;
+        debug!("projection_result passed");
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })
+    .await
+    {
+        Err(_) => panic!("Running projection tests took too much time!"),
+        Ok(outcome) => outcome,
+    }
 }
