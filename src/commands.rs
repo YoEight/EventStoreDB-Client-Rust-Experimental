@@ -461,6 +461,7 @@ pub async fn batch_append<'a>(
     let (batch_sender, batch_receiver) = futures::channel::mpsc::unbounded();
     let mut cloned_batch_sender = batch_sender.clone();
 
+    let mut early_error_reporting = batch_sender.clone();
     let batch_client = BatchAppendClient::new(batch_sender, batch_receiver, forward);
 
     let credentials = options
@@ -508,7 +509,7 @@ pub async fn batch_append<'a>(
     });
 
     tokio::spawn(async move {
-        let (handle, resp_stream) = connection
+        let result = connection
             .execute(move |handle| async move {
                 let mut req = Request::new(receiver);
                 configure_auth_req(&mut req, credentials);
@@ -518,7 +519,18 @@ pub async fn batch_append<'a>(
 
                 Ok((handle, resp.into_inner()))
             })
-            .await?;
+            .await;
+
+        let (handle, resp_stream) = match result {
+            Ok(value) => value,
+            Err(e) => {
+                let _ = early_error_reporting
+                    .send(crate::batch::BatchMsg::Error(e.clone()))
+                    .await;
+
+                return Err(e);
+            }
+        };
 
         let mut resp_stream = resp_stream.map_ok(|resp| {
             let stream_name = String::from_utf8(resp.stream_identifier.unwrap().stream_name)

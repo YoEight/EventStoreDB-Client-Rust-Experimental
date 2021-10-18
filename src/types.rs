@@ -1338,6 +1338,8 @@ pub enum Error {
     ResourceAlreadyExists,
     #[error("The resource you asked for doesn't exist")]
     ResourceNotFound,
+    #[error("The operation is unimplemented on the server")]
+    Unimplemented,
     #[error("Unexpected internal client error. Please fill an issue on GitHub")]
     InternalClientError,
 }
@@ -1380,6 +1382,10 @@ impl Error {
             || status.code() == Code::DataLoss
         {
             return Error::ServerError(status.to_string());
+        }
+
+        if status.code() == Code::Unimplemented {
+            return Error::Unimplemented;
         }
 
         Error::Grpc(status.to_string())

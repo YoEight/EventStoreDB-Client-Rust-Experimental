@@ -353,7 +353,7 @@ async fn test_persistent_subscription(client: &Client) -> Result<(), Box<dyn Err
     Ok(())
 }
 
-async fn test_batch_append(client: &Client) -> Result<(), Box<dyn Error>> {
+async fn test_batch_append(client: &Client) -> eventstore::Result<()> {
     let batch_client = client.batch_append(&Default::default()).await?;
 
     for _ in 0..3 {
@@ -617,7 +617,14 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
     test_persistent_subscription(&client).await?;
     debug!("Complete");
     debug!("Before test_batch_append");
-    test_batch_append(&client).await?;
+    if let Err(e) = test_batch_append(&client).await {
+        if let eventstore::Error::Unimplemented = e {
+            warn!("batch_append is not supported on the server we are targeting");
+            Ok(())
+        } else {
+            Err(e)
+        }?;
+    }
     debug!("Complete");
 
     Ok(())
