@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use testcontainers::{Container, Docker, Image, WaitForMessage};
 
-const CONTAINER_IDENTIFIER: &str = "eventstore/eventstore";
-const DEFAULT_TAG: &str = "21.6.0-bionic";
+const CONTAINER_IDENTIFIER: &str = "ghcr.io/eventstore/eventstore/eventstore";
+const DEFAULT_TAG: &str = "21.6.0-buster-slim";
 
 #[derive(Debug, Default, Clone)]
 pub struct ESDBArgs;
@@ -90,8 +90,9 @@ impl Image for ESDB {
 
 impl Default for ESDB {
     fn default() -> Self {
+        let tag = option_env!("CONTAINER_IMAGE_VERSION").unwrap_or(DEFAULT_TAG);
         ESDB {
-            tag: DEFAULT_TAG.to_string(),
+            tag: tag.to_string(),
             arguments: ESDBArgs::default(),
             env_vars: HashMap::new(),
             vol_vars: HashMap::new(),

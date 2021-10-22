@@ -27,7 +27,7 @@ services:
       - volumes-provisioner
 
   node1.eventstore: &template
-    image: eventstore/eventstore:21.6.0-buster-slim
+    image: ghcr.io/eventstore/eventstore/eventstore:${CONTAINER_IMAGE_VERSION:-21.6.0-buster-slim}
     container_name: node1.eventstore
     env_file:
       - vars.env

@@ -14,6 +14,7 @@ use futures::channel::oneshot;
 use futures::stream::TryStreamExt;
 use std::collections::HashMap;
 use std::error::Error;
+use std::time::Duration;
 use testcontainers::clients::Cli;
 use testcontainers::{Docker, RunArgs};
 
@@ -469,13 +470,102 @@ async fn wait_node_is_alive(port: u16) -> Result<(), Box<dyn std::error::Error>>
     }
 }
 
+// This function assumes that we are using the admin credentials. It's possible during CI that
+// the cluster hasn't created the admin user yet, leading to failing the tests.
+async fn wait_for_admin_to_be_available(client: &eventstore::Client) -> eventstore::Result<()> {
+    let mut count = 0;
+
+    while count < 50 {
+        count += 1;
+
+        debug!("Checking if admin user is available...{}/50", count);
+        match client.read_stream("$users", &Default::default(), 1).await {
+            Ok(result) => {
+                if result.is_not_found() {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    debug!("Not available retrying...");
+                    continue;
+                }
+
+                debug!("Completed.");
+                return Ok(());
+            }
+            Err(e) => {
+                if let eventstore::Error::AccessDenied = e {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    debug!("Not available retrying...");
+                    continue;
+                }
+
+                return Err(e);
+            }
+        };
+    }
+
+    Err(eventstore::Error::ServerError(
+        "Waiting for the admin user to be created took too much time".to_string(),
+    ))
+}
+
+// This function makes sure that we are connected to the leader node but also assumes that we are using
+// the admin credentials. This function is useful in the case where the environment where the cluster
+// is not powerful, which leads to executing commands when the cluster might not having elected
+// a leader yet.
+async fn wait_for_leader_to_be_elected(client: &eventstore::Client) -> eventstore::Result<()> {
+    let mut names = names::Generator::default();
+    let stream_name = names.next().unwrap();
+    let group_name = names.next().unwrap();
+    let mut count = 0;
+
+    while count < 50 {
+        count += 1;
+
+        debug!(
+            "Checking if we are connected to the leader node...{}/50",
+            count
+        );
+        if let Err(e) = client
+            .create_persistent_subscription(
+                stream_name.as_str(),
+                group_name.as_str(),
+                &Default::default(),
+            )
+            .await
+        {
+            // If that exception happens, it means next time we are using the connection, we will
+            // connected to the leader node.
+            if let eventstore::Error::NotLeaderException(_) = e {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                debug!("Not available retrying...");
+                continue;
+            }
+
+            // Probably useless considering we made sure to have the admin user ready is by now.
+            if let eventstore::Error::AccessDenied = e {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                debug!("Not available retrying...");
+                continue;
+            }
+        } else {
+            debug!("Completed.");
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn cluster() -> Result<(), Box<dyn std::error::Error>> {
     let _ = pretty_env_logger::try_init();
-    let settings = "esdb://admin:changeit@localhost:2111,localhost:2112,localhost:2113?tlsVerifyCert=false&nodePreference=leader"
+    let settings = "esdb://admin:changeit@localhost:2111,localhost:2112,localhost:2113?tlsVerifyCert=false&nodePreference=leader&maxdiscoverattempts=50"
         .parse::<ClientSettings>()?;
 
     let client = Client::new(settings).await?;
+
+    // Those pre-checks are put in place to avoid test flakiness. In essence, those functions use
+    // features we test later on.
+    wait_for_admin_to_be_available(&client).await?;
+    wait_for_leader_to_be_elected(&client).await?;
 
     all_around_tests(client).await?;
 
