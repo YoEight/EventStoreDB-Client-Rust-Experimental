@@ -21,7 +21,9 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: Install
-      run: rustup default ${{ matrix.rust }}
+      run: |
+        rustup update
+        rustup default ${{ matrix.rust }}
     - name: Build
       run: cargo check
       continue-on-error: ${{ matrix.rust == 'nightly' }}
@@ -32,6 +34,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
+    - name: Install
+      run: |
+        rustup update
+        rustup default stable
     - name: Run tests
       run: |
         docker-compose up -d
