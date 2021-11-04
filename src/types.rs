@@ -1035,13 +1035,13 @@ impl PersistentSubRead {
 
 /// Events related to a subscription.
 #[derive(Debug)]
-pub enum SubEvent {
+pub enum SubEvent<A> {
     /// Indicates the subscription has been confirmed by the server. The String value represents
     /// the subscription id.
     Confirmed(String),
 
     /// An event notification from the server.
-    EventAppeared(ResolvedEvent),
+    EventAppeared(A),
 
     /// Indicates a checkpoint has been created. Related to subscription to $all when
     /// filters are used.
@@ -1050,7 +1050,7 @@ pub enum SubEvent {
 
 #[derive(Debug)]
 pub struct PersistentSubEvent {
-    pub inner: ResolvedEvent,
+    pub event: ResolvedEvent,
     pub retry_count: usize,
 }
 
@@ -1063,7 +1063,7 @@ pub enum NakAction {
     /// Park message do not resend. Put on poison queue.
     Park,
 
-    /// Explicity retry the message.
+    /// Explicit retry the message.
     Retry,
 
     /// Skip this message do not resend do not put in poison queue.
@@ -1074,7 +1074,7 @@ pub enum NakAction {
 }
 
 /// System supported consumer strategies for use with persistent subscriptions.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum SystemConsumerStrategy {
     /// Distributes events to a single client until the bufferSize is reached.
     /// After which the next client is selected in a round robin style,
@@ -1101,17 +1101,17 @@ pub enum SystemConsumerStrategy {
 
 /// Gathers every persistent subscription property.
 #[derive(Debug, Clone, Copy)]
-pub struct PersistentSubscriptionSettings {
+pub struct PersistentSubscriptionSettings<A> {
     /// Whether or not the persistent subscription should resolve link
     /// events to their linked events.
     pub resolve_link_tos: bool,
 
     /// Where the subscription should start from (event number).
-    pub revision: u64,
+    pub start_from: StreamPosition<A>,
 
     /// Whether or not in depth latency statistics should be tracked on this
     /// subscription.
-    pub extra_stats: bool,
+    pub extra_statistics: bool,
 
     /// The amount of time after which a message should be considered to be
     /// timeout and retried.
@@ -1121,7 +1121,7 @@ pub struct PersistentSubscriptionSettings {
     /// considered to be parked.
     pub max_retry_count: i32,
 
-    /// The size of the buffer listenning to live messages as they happen.
+    /// The size of the buffer listening to live messages as they happen.
     pub live_buffer_size: i32,
 
     /// The number of events read at a time when paging in history.
@@ -1134,41 +1134,41 @@ pub struct PersistentSubscriptionSettings {
     pub checkpoint_after: Duration,
 
     /// The minimum number of messages to checkpoint.
-    pub min_checkpoint_count: i32,
+    pub checkpoint_lower_bound: i32,
 
     /// The maximum number of messages to checkpoint. If this number is reached
     /// , a checkpoint will be forced.
-    pub max_checkpoint_count: i32,
+    pub checkpoint_upper_bound: i32,
 
     /// The maximum number of subscribers allowed.
     pub max_subscriber_count: i32,
 
     /// The strategy to use for distributing events to client consumers.
-    pub named_consumer_strategy: SystemConsumerStrategy,
+    pub consumer_strategy_name: SystemConsumerStrategy,
 }
 
-impl PersistentSubscriptionSettings {
-    pub fn default() -> PersistentSubscriptionSettings {
+impl<A> PersistentSubscriptionSettings<A> {
+    pub fn default() -> PersistentSubscriptionSettings<A> {
         PersistentSubscriptionSettings {
             resolve_link_tos: false,
-            revision: 0,
-            extra_stats: false,
+            start_from: StreamPosition::End,
+            extra_statistics: false,
             message_timeout: Duration::from_secs(30),
             max_retry_count: 10,
             live_buffer_size: 500,
             read_batch_size: 20,
             history_buffer_size: 500,
             checkpoint_after: Duration::from_secs(2),
-            min_checkpoint_count: 10,
-            max_checkpoint_count: 1_000,
+            checkpoint_lower_bound: 10,
+            checkpoint_upper_bound: 1_000,
             max_subscriber_count: 0, // Means their is no limit.
-            named_consumer_strategy: SystemConsumerStrategy::RoundRobin,
+            consumer_strategy_name: SystemConsumerStrategy::RoundRobin,
         }
     }
 }
 
-impl Default for PersistentSubscriptionSettings {
-    fn default() -> PersistentSubscriptionSettings {
+impl<A> Default for PersistentSubscriptionSettings<A> {
+    fn default() -> PersistentSubscriptionSettings<A> {
         PersistentSubscriptionSettings::default()
     }
 }
@@ -1342,6 +1342,8 @@ pub enum Error {
     Unimplemented,
     #[error("Unexpected internal client error. Please fill an issue on GitHub")]
     InternalClientError,
+    #[error("Deadline exceeded")]
+    DeadlineExceeded,
 }
 
 impl Error {
@@ -1363,6 +1365,16 @@ impl Error {
             if let Some(leader) = endpoint {
                 return Error::NotLeaderException(leader);
             }
+        }
+
+        if status.code() == Code::Cancelled && status.message() == "Timeout expired"
+            || status.code() == Code::DeadlineExceeded
+        {
+            return Error::DeadlineExceeded;
+        }
+
+        if status.code() == Code::DeadlineExceeded {
+            return Error::DeadlineExceeded;
         }
 
         if status.code() == Code::Unauthenticated || status.code() == Code::PermissionDenied {
@@ -1574,4 +1586,52 @@ impl SubscriptionFilter {
         self.prefixes.push(prefix.as_ref().to_string());
         self
     }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum PersistentSubscriptionStatus {
+    NotReady,
+    Behind,
+    OutstandingPageRequest,
+    ReplayingParkedMessages,
+    Live,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistentSubscriptionInfo {
+    pub event_stream_id: String,
+    pub group_name: String,
+    pub status: PersistentSubscriptionStatus,
+    pub average_items_per_second: f64,
+    pub total_items_processed: usize,
+    pub last_processed_event_number: i64,
+    pub last_known_event_number: i64,
+    #[serde(default)]
+    pub connection_count: usize,
+    pub total_in_flight_messages: usize,
+    pub config: Option<PersistentSubscriptionConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistentSubscriptionConfig {
+    pub resolve_linktos: bool,
+    pub start_from: i64,
+    pub message_timeout_milliseconds: i64,
+    pub extra_statistics: bool,
+    pub max_retry_count: i64,
+    pub live_buffer_size: i64,
+    pub buffer_size: i64,
+    pub read_batch_size: i64,
+    pub prefer_round_robin: bool,
+    #[serde(rename = "checkPointAfterMilliseconds")]
+    pub checkpoint_after_milliseconds: i64,
+    #[serde(rename = "minCheckPointCount")]
+    pub min_checkpoint_count: i64,
+    #[serde(rename = "maxCheckPointCount")]
+    pub max_checkpoint_count: i64,
+    pub max_subscriber_count: i64,
+    pub named_consumer_strategy: SystemConsumerStrategy,
 }

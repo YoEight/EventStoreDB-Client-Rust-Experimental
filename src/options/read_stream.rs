@@ -45,7 +45,7 @@ impl ReadStreamOptions {
         }
     }
 
-    /// Starts the read at the given event number. Default `Origin::Start`
+    /// Starts the read at the given event number. Default `StreamPosition::Start`
     pub fn position(self, position: StreamPosition<u64>) -> Self {
         match position {
             StreamPosition::Start => Self {

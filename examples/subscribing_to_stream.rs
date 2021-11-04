@@ -28,19 +28,19 @@ pub async fn subscribe_to_stream(client: &Client) -> Result<()> {
     // endregion subscribe-to-stream
 
     // region subscribe-to-stream-from-position
-    let options = SubscribeToStreamOptions::default().position(StreamPosition::Position(20));
+    let options = SubscribeToStreamOptions::default().start_from(StreamPosition::Position(20));
 
     client.subscribe_to_stream("some-stream", &options).await?;
     // endregion subscribe-to-stream-from-position
 
     // region subscribe-to-stream-live
-    let options = SubscribeToStreamOptions::default().position(StreamPosition::End);
+    let options = SubscribeToStreamOptions::default().start_from(StreamPosition::End);
     client.subscribe_to_stream("some-stream", &options).await?;
     // endregion subscribe-to-stream-live
 
     // region subscribe-to-stream-resolving-linktos
     let options = SubscribeToStreamOptions::default()
-        .position(StreamPosition::Start)
+        .start_from(StreamPosition::Start)
         .resolve_link_tos();
 
     client
@@ -103,7 +103,7 @@ pub async fn subscribe_to_all(client: &Client) -> Result<()> {
     Ok(())
 }
 
-pub async fn subscribe_to_filtered(client: &Client) -> Result<()> {
+pub async fn subscribe_to_all_filtered(client: &Client) -> Result<()> {
     // region stream-prefix-filtered-subscription
     let filter = SubscriptionFilter::on_stream_name().add_prefix("test-");
     let options = SubscribeToAllOptions::default().filter(filter);

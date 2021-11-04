@@ -6,6 +6,7 @@ pub fn generate() -> Result<(), Box<dyn std::error::Error>> {
         "protos/shared.proto",
         "protos/gossip.proto",
         "protos/projections.proto",
+        "protos/serverfeatures.proto",
     ];
 
     std::fs::create_dir_all(out_dir)?;

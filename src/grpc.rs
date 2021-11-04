@@ -646,8 +646,8 @@ async fn cluster_mode(
     let dup_sender = sender.clone();
 
     tokio::spawn(async move {
-        let mut channel: Option<Channel> = None;
         let mut channel_id = Uuid::new_v4();
+        let mut handle_opt: Option<Handle> = None;
         let mut failed_endpoint: Option<Endpoint> = None;
         let mut previous_candidates: Option<Vec<Member>> = None;
         let mut work_queue = Vec::new();
@@ -661,14 +661,8 @@ async fn cluster_mode(
                 debug!("Current msg: {:?}, rest: [{:?}]", msg, work_queue);
                 match msg {
                     Msg::GetChannel(resp) => {
-                        if let Some(channel) = channel.as_ref() {
-                            let handle = Handle {
-                                id: channel_id,
-                                channel: channel.clone(),
-                                sender: dup_sender.clone(),
-                            };
-
-                            let _ = resp.send(Ok(handle));
+                        if let Some(handle) = handle_opt.as_ref() {
+                            let _ = resp.send(Ok(handle.clone()));
                         } else if discovery_att_count >= conn_setts.max_discover_attempts() {
                             let _ =
                                 resp.send(Err(GrpcConnectionError::MaxDiscoveryAttemptReached(
@@ -703,10 +697,16 @@ async fn cluster_mode(
 
                         if let Some(node) = node {
                             match create_channel(&conn_setts, &node).await {
-                                Ok(new_channel) => {
-                                    failed_endpoint = Some(node);
+                                Ok(channel) => {
+                                    failed_endpoint = Some(node.clone());
                                     channel_id = Uuid::new_v4();
-                                    channel = Some(new_channel);
+                                    handle_opt = Some(Handle {
+                                        id: channel_id,
+                                        endpoint: node,
+                                        secure: conn_setts.secure,
+                                        sender: sender.clone(),
+                                        channel,
+                                    });
                                     discovery_att_count = 0;
 
                                     continue;
@@ -744,7 +744,7 @@ async fn cluster_mode(
         }
     });
 
-    Ok(sender)
+    Ok(dup_sender)
 }
 
 fn single_node_mode(conn_setts: ClientSettings, endpoint: Endpoint) -> UnboundedSender<Msg> {
@@ -752,8 +752,8 @@ fn single_node_mode(conn_setts: ClientSettings, endpoint: Endpoint) -> Unbounded
     let dup_sender = sender.clone();
 
     tokio::spawn(async move {
-        let mut channel: Option<Channel> = None;
         let mut channel_id = Uuid::new_v4();
+        let mut handle_opt: Option<Handle> = None;
         let mut work_queue = Vec::new();
         let mut discovery_att_count = 0usize;
 
@@ -765,14 +765,8 @@ fn single_node_mode(conn_setts: ClientSettings, endpoint: Endpoint) -> Unbounded
 
                 match msg {
                     Msg::GetChannel(resp) => {
-                        if let Some(channel) = channel.as_ref() {
-                            let handle = Handle {
-                                id: channel_id,
-                                channel: channel.clone(),
-                                sender: dup_sender.clone(),
-                            };
-
-                            let _ = resp.send(Ok(handle));
+                        if let Some(handle) = handle_opt.as_ref() {
+                            let _ = resp.send(Ok(handle.clone()));
                         } else if discovery_att_count >= conn_setts.max_discover_attempts() {
                             let _ =
                                 resp.send(Err(GrpcConnectionError::MaxDiscoveryAttemptReached(
@@ -799,9 +793,15 @@ fn single_node_mode(conn_setts: ClientSettings, endpoint: Endpoint) -> Unbounded
                         };
 
                         match create_channel(&conn_setts, &node).await {
-                            Ok(new_channel) => {
+                            Ok(channel) => {
                                 channel_id = Uuid::new_v4();
-                                channel = Some(new_channel);
+                                handle_opt = Some(Handle {
+                                    id: channel_id,
+                                    endpoint: node.clone(),
+                                    sender: sender.clone(),
+                                    secure: conn_setts.secure,
+                                    channel,
+                                });
                             }
 
                             Err(err) => {
@@ -832,7 +832,7 @@ fn single_node_mode(conn_setts: ClientSettings, endpoint: Endpoint) -> Unbounded
         }
     });
 
-    sender
+    dup_sender
 }
 
 async fn create_channel(
@@ -878,6 +878,8 @@ async fn create_channel(
 pub(crate) struct Handle {
     id: Uuid,
     pub(crate) channel: Channel,
+    pub(crate) endpoint: Endpoint,
+    pub(crate) secure: bool,
     sender: futures::channel::mpsc::UnboundedSender<Msg>,
 }
 
@@ -893,6 +895,15 @@ impl Handle {
 
     pub(crate) fn sender(&self) -> &futures::channel::mpsc::UnboundedSender<Msg> {
         &self.sender
+    }
+
+    pub(crate) fn url(&self) -> String {
+        let protocol = if self.secure { "https" } else { "http" };
+
+        format!(
+            "{}://{}:{}",
+            protocol, self.endpoint.host, self.endpoint.port
+        )
     }
 }
 
@@ -963,6 +974,22 @@ impl GrpcClient {
 
             Ok(a) => Ok(a),
         }
+    }
+
+    pub(crate) async fn current_selected_node(&self) -> crate::Result<Handle> {
+        let (sender, consumer) = futures::channel::oneshot::channel();
+
+        debug!("Sending channel handle request...");
+
+        let _ = self.sender.clone().send(Msg::GetChannel(sender)).await;
+        let handle = match consumer.await {
+            Ok(handle) => handle.map_err(crate::Error::GrpcConnectionError),
+            Err(_) => Err(crate::Error::ConnectionClosed),
+        }?;
+
+        debug!("Handle received!");
+
+        Ok(handle)
     }
 
     pub fn default_credentials(&self) -> Option<Credentials> {

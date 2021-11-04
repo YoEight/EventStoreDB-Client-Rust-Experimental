@@ -13,6 +13,8 @@ pub mod read_req {
         pub resolve_links: bool,
         #[prost(message, optional, tag = "9")]
         pub uuid_option: ::core::option::Option<options::UuidOption>,
+        #[prost(message, optional, tag = "10")]
+        pub control_option: ::core::option::Option<options::ControlOption>,
         #[prost(oneof = "options::StreamOption", tags = "1, 2")]
         pub stream_option: ::core::option::Option<options::StreamOption>,
         #[prost(oneof = "options::CountOption", tags = "5, 6")]
@@ -115,6 +117,11 @@ pub mod read_req {
                 String(super::super::super::super::Empty),
             }
         }
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct ControlOption {
+            #[prost(uint32, tag = "1")]
+            pub compatibility: u32,
+        }
         #[derive(
             Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
         )]
@@ -148,7 +155,7 @@ pub mod read_req {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReadResp {
-    #[prost(oneof = "read_resp::Content", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "read_resp::Content", tags = "1, 2, 3, 4, 5, 6, 7")]
     pub content: ::core::option::Option<read_resp::Content>,
 }
 /// Nested message and enum types in `ReadResp`.
@@ -221,6 +228,12 @@ pub mod read_resp {
         Checkpoint(Checkpoint),
         #[prost(message, tag = "4")]
         StreamNotFound(StreamNotFound),
+        #[prost(uint64, tag = "5")]
+        FirstStreamPosition(u64),
+        #[prost(uint64, tag = "6")]
+        LastStreamPosition(u64),
+        #[prost(message, tag = "7")]
+        LastAllStreamPosition(super::super::AllStreamPosition),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -614,7 +627,7 @@ pub mod streams_client {
     impl<T> StreamsClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::ResponseBody: Body + Send + Sync + 'static,
+        T::ResponseBody: Body + Send + 'static,
         T::Error: Into<StdError>,
         <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {

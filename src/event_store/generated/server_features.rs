@@ -1,60 +1,28 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ClusterInfo {
+pub struct SupportedMethods {
     #[prost(message, repeated, tag = "1")]
-    pub members: ::prost::alloc::vec::Vec<MemberInfo>,
+    pub methods: ::prost::alloc::vec::Vec<SupportedMethod>,
+    #[prost(string, tag = "2")]
+    pub event_store_server_version: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct EndPoint {
+pub struct SupportedMethod {
     #[prost(string, tag = "1")]
-    pub address: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub port: u32,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MemberInfo {
-    #[prost(message, optional, tag = "1")]
-    pub instance_id: ::core::option::Option<super::Uuid>,
-    #[prost(int64, tag = "2")]
-    pub time_stamp: i64,
-    #[prost(enumeration = "member_info::VNodeState", tag = "3")]
-    pub state: i32,
-    #[prost(bool, tag = "4")]
-    pub is_alive: bool,
-    #[prost(message, optional, tag = "5")]
-    pub http_end_point: ::core::option::Option<EndPoint>,
-}
-/// Nested message and enum types in `MemberInfo`.
-pub mod member_info {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-    #[repr(i32)]
-    pub enum VNodeState {
-        Initializing = 0,
-        DiscoverLeader = 1,
-        Unknown = 2,
-        PreReplica = 3,
-        CatchingUp = 4,
-        Clone = 5,
-        Follower = 6,
-        PreLeader = 7,
-        Leader = 8,
-        Manager = 9,
-        ShuttingDown = 10,
-        Shutdown = 11,
-        ReadOnlyLeaderless = 12,
-        PreReadOnlyReplica = 13,
-        ReadOnlyReplica = 14,
-        ResigningLeader = 15,
-    }
+    pub method_name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub service_name: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "3")]
+    pub features: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[doc = r" Generated client implementations."]
-pub mod gossip_client {
+pub mod server_features_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
     #[derive(Debug, Clone)]
-    pub struct GossipClient<T> {
+    pub struct ServerFeaturesClient<T> {
         inner: tonic::client::Grpc<T>,
     }
-    impl GossipClient<tonic::transport::Channel> {
+    impl ServerFeaturesClient<tonic::transport::Channel> {
         #[doc = r" Attempt to create a new client by connecting to a given endpoint."]
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
@@ -65,7 +33,7 @@ pub mod gossip_client {
             Ok(Self::new(conn))
         }
     }
-    impl<T> GossipClient<T>
+    impl<T> ServerFeaturesClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
         T::ResponseBody: Body + Send + 'static,
@@ -79,7 +47,7 @@ pub mod gossip_client {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> GossipClient<InterceptedService<T, F>>
+        ) -> ServerFeaturesClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
             T: tonic::codegen::Service<
@@ -91,7 +59,7 @@ pub mod gossip_client {
             <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
                 Into<StdError> + Send + Sync,
         {
-            GossipClient::new(InterceptedService::new(inner, interceptor))
+            ServerFeaturesClient::new(InterceptedService::new(inner, interceptor))
         }
         #[doc = r" Compress requests with `gzip`."]
         #[doc = r""]
@@ -106,10 +74,10 @@ pub mod gossip_client {
             self.inner = self.inner.accept_gzip();
             self
         }
-        pub async fn read(
+        pub async fn get_supported_methods(
             &mut self,
             request: impl tonic::IntoRequest<super::super::Empty>,
-        ) -> Result<tonic::Response<super::ClusterInfo>, tonic::Status> {
+        ) -> Result<tonic::Response<super::SupportedMethods>, tonic::Status> {
             self.inner.ready().await.map_err(|e| {
                 tonic::Status::new(
                     tonic::Code::Unknown,
@@ -117,8 +85,9 @@ pub mod gossip_client {
                 )
             })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path =
-                http::uri::PathAndQuery::from_static("/event_store.client.gossip.Gossip/Read");
+            let path = http::uri::PathAndQuery::from_static(
+                "/event_store.client.server_features.ServerFeatures/GetSupportedMethods",
+            );
             self.inner.unary(request.into_request(), path, codec).await
         }
     }
