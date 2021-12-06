@@ -43,14 +43,13 @@ pub struct ProjectionStatus {
 #[derive(Clone)]
 pub struct ProjectionClient {
     client: GrpcClient,
-    settings: ClientSettings,
 }
 
 impl ProjectionClient {
-    pub async fn new(settings: ClientSettings) -> Result<Self, Box<dyn std::error::Error>> {
-        let client = GrpcClient::create(settings.clone()).await?;
+    pub fn new(settings: ClientSettings) -> Self {
+        let client = GrpcClient::create(settings);
 
-        Ok(ProjectionClient { client, settings })
+        ProjectionClient { client }
     }
 
     pub async fn create<Name>(

@@ -24,7 +24,7 @@ type Result<A> = std::result::Result<A, Box<dyn Error>>;
 pub async fn run() -> Result<()> {
     // region createClient
     let settings = "{connectionString}".parse()?;
-    let client = Client::new(settings).await?;
+    let client = Client::new(settings)?;
     // endregion createClient
 
     // region createEvent

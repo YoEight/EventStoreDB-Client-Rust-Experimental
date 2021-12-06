@@ -5,12 +5,12 @@ use crate::options::read_all::ReadAllOptions;
 use crate::options::read_stream::ReadStreamOptions;
 use crate::options::subscribe_to_stream::SubscribeToStreamOptions;
 use crate::{
-    commands, ConnectToPersistentSubscription, DeletePersistentSubscriptionOptions,
-    DeleteStreamOptions, GetPersistentSubscriptionInfoOptions, ListPersistentSubscriptionsOptions,
+    commands, DeletePersistentSubscriptionOptions, DeleteStreamOptions,
+    GetPersistentSubscriptionInfoOptions, ListPersistentSubscriptionsOptions,
     PersistentSubscriptionInfo, PersistentSubscriptionToAllOptions, Position, ReadResult,
     ReplayParkedMessagesOptions, ResolvedEvent, StreamMetadata, StreamMetadataResult, SubEvent,
-    SubscribeToAllOptions, SubscriptionRead, SubscriptionWrite, ToCount, TombstoneStreamOptions,
-    VersionedMetadata, WriteResult, WrongExpectedVersion,
+    SubscribeToAllOptions, SubscribeToPersistentSubscriptionn, SubscriptionRead, SubscriptionWrite,
+    ToCount, TombstoneStreamOptions, VersionedMetadata, WriteResult, WrongExpectedVersion,
 };
 use crate::{
     grpc::{ClientSettings, GrpcClient},
@@ -37,13 +37,14 @@ pub struct Client {
 
 impl Client {
     /// Creates a gRPC client to an EventStoreDB database.
-    pub async fn new(settings: ClientSettings) -> Result<Self, Box<dyn std::error::Error>> {
-        let client = GrpcClient::create(settings.clone()).await?;
+    pub fn new(settings: ClientSettings) -> crate::Result<Self> {
+        let client = GrpcClient::create(settings.clone());
 
         let http_client = reqwest::Client::builder()
             .danger_accept_invalid_certs(!settings.is_tls_certificate_verification_enabled())
             .https_only(settings.is_secure_mode_enabled())
-            .build()?;
+            .build()
+            .map_err(|e| crate::Error::InitializationError(e.to_string()))?;
 
         Ok(Client {
             http_client,
@@ -53,29 +54,25 @@ impl Client {
     }
 
     /// Sends events to a given stream.
-    pub async fn append_to_stream<StreamName, Events>(
+    pub async fn append_to_stream<Events>(
         &self,
-        stream_name: StreamName,
+        stream_name: impl AsRef<str>,
         options: &AppendToStreamOptions,
         events: Events,
     ) -> crate::Result<Result<WriteResult, WrongExpectedVersion>>
     where
-        StreamName: AsRef<str>,
         Events: ToEvents + 'static,
     {
         commands::append_to_stream(&self.client, stream_name, options, events.into_events()).await
     }
 
     // Sets a stream metadata.
-    pub async fn set_stream_metadata<StreamName>(
+    pub async fn set_stream_metadata(
         &self,
-        stream_name: StreamName,
+        stream_name: impl AsRef<str>,
         options: &AppendToStreamOptions,
         metadata: StreamMetadata,
-    ) -> crate::Result<Result<WriteResult, WrongExpectedVersion>>
-    where
-        StreamName: AsRef<str>,
-    {
+    ) -> crate::Result<Result<WriteResult, WrongExpectedVersion>> {
         let event = EventData::json("$metadata", metadata)
             .map_err(|e| crate::Error::InternalParsingError(e.to_string()))?;
 
@@ -93,14 +90,13 @@ impl Client {
 
     /// Reads events from a given stream. The reading can be done forward and
     /// backward.
-    pub async fn read_stream<StreamName, Count>(
+    pub async fn read_stream<Count>(
         &self,
-        stream_name: StreamName,
+        stream_name: impl AsRef<str>,
         options: &ReadStreamOptions,
         count: Count,
     ) -> crate::Result<ReadResult<Count::Selection>>
     where
-        StreamName: AsRef<str>,
         Count: ToCount<'static>,
     {
         let result =
@@ -135,14 +131,11 @@ impl Client {
     }
 
     /// Reads a stream metadata.
-    pub async fn get_stream_metadata<StreamName>(
+    pub async fn get_stream_metadata(
         &self,
-        stream_name: StreamName,
+        stream_name: impl AsRef<str>,
         options: &ReadStreamOptions,
-    ) -> crate::Result<StreamMetadataResult>
-    where
-        StreamName: AsRef<str>,
-    {
+    ) -> crate::Result<StreamMetadataResult> {
         let result = self
             .read_stream(format!("$${}", stream_name.as_ref()), options, Single)
             .await?;
@@ -178,14 +171,11 @@ impl Client {
     /// deleted stream is read, the read will return a StreamNotFound. After
     /// deleting the stream, you are able to write to it again, continuing from
     /// where it left off.
-    pub async fn delete_stream<StreamName>(
+    pub async fn delete_stream(
         &self,
-        stream_name: StreamName,
+        stream_name: impl AsRef<str>,
         options: &DeleteStreamOptions,
-    ) -> crate::Result<Option<Position>>
-    where
-        StreamName: AsRef<str>,
-    {
+    ) -> crate::Result<Option<Position>> {
         commands::delete_stream(&self.client, stream_name, options).await
     }
 
@@ -194,14 +184,11 @@ impl Client {
     /// deleting it. The stream cannot be recreated or written to again.
     /// Tombstone events are written with the event type '$streamDeleted'. When
     /// a hard deleted stream is read, the read will return a StreamDeleted.
-    pub async fn tombstone_stream<StreamName>(
+    pub async fn tombstone_stream(
         &self,
-        stream_name: StreamName,
+        stream_name: impl AsRef<str>,
         options: &TombstoneStreamOptions,
-    ) -> crate::Result<Option<Position>>
-    where
-        StreamName: AsRef<str>,
-    {
+    ) -> crate::Result<Option<Position>> {
         commands::tombstone_stream(&self.client, stream_name, options).await
     }
 
@@ -219,14 +206,11 @@ impl Client {
     /// as the subscription is dropped or closed.
     ///
     /// [`subscribe_to_all`]: #method.subscribe_to_all_from
-    pub async fn subscribe_to_stream<'a, StreamName>(
+    pub async fn subscribe_to_stream<'a>(
         &self,
-        stream_name: StreamName,
+        stream_name: impl AsRef<str>,
         options: &SubscribeToStreamOptions,
-    ) -> crate::Result<BoxStream<'a, crate::Result<SubEvent<ResolvedEvent>>>>
-    where
-        StreamName: AsRef<str>,
-    {
+    ) -> crate::Result<BoxStream<'a, crate::Result<SubEvent<ResolvedEvent>>>> {
         match options.retry.as_ref().cloned() {
             None => commands::subscribe_to_stream(&self.client, stream_name, options).await,
             Some(retry) => {
@@ -355,16 +339,12 @@ impl Client {
     /// server remembers the state of the subscription. This allows for many
     /// different modes of operations compared to a regular or catchup
     /// subscription where the client holds the subscription state.
-    pub async fn create_persistent_subscription<StreamName, GroupName>(
+    pub async fn create_persistent_subscription(
         &self,
-        stream_name: StreamName,
-        group_name: GroupName,
+        stream_name: impl AsRef<str>,
+        group_name: impl AsRef<str>,
         options: &PersistentSubscriptionOptions,
-    ) -> crate::Result<()>
-    where
-        StreamName: AsRef<str>,
-        GroupName: AsRef<str>,
-    {
+    ) -> crate::Result<()> {
         commands::create_persistent_subscription(
             &self.client,
             stream_name.as_ref(),
@@ -375,29 +355,22 @@ impl Client {
     }
 
     /// Creates a persistent subscription group on a the $all stream.
-    pub async fn create_persistent_subscription_to_all<GroupName>(
+    pub async fn create_persistent_subscription_to_all(
         &self,
-        group_name: GroupName,
+        group_name: impl AsRef<str>,
         options: &PersistentSubscriptionToAllOptions,
-    ) -> crate::Result<()>
-    where
-        GroupName: AsRef<str>,
-    {
+    ) -> crate::Result<()> {
         commands::create_persistent_subscription(&self.client, "", group_name.as_ref(), options)
             .await
     }
 
     /// Updates a persistent subscription group on a stream.
-    pub async fn update_persistent_subscription<StreamName, GroupName>(
+    pub async fn update_persistent_subscription(
         &self,
-        stream_name: StreamName,
-        group_name: GroupName,
+        stream_name: impl AsRef<str>,
+        group_name: impl AsRef<str>,
         options: &PersistentSubscriptionOptions,
-    ) -> crate::Result<()>
-    where
-        StreamName: AsRef<str>,
-        GroupName: AsRef<str>,
-    {
+    ) -> crate::Result<()> {
         commands::update_persistent_subscription(
             &self.client,
             stream_name.as_ref(),
@@ -408,29 +381,22 @@ impl Client {
     }
 
     /// Updates a persistent subscription group to $all.
-    pub async fn update_persistent_subscription_to_all<GroupName>(
+    pub async fn update_persistent_subscription_to_all(
         &self,
-        group_name: GroupName,
+        group_name: impl AsRef<str>,
         options: &PersistentSubscriptionToAllOptions,
-    ) -> crate::Result<()>
-    where
-        GroupName: AsRef<str>,
-    {
+    ) -> crate::Result<()> {
         commands::update_persistent_subscription(&self.client, "", group_name.as_ref(), options)
             .await
     }
 
     /// Deletes a persistent subscription group on a stream.
-    pub async fn delete_persistent_subscription<StreamName, GroupName>(
+    pub async fn delete_persistent_subscription(
         &self,
-        stream_name: StreamName,
-        group_name: GroupName,
+        stream_name: impl AsRef<str>,
+        group_name: impl AsRef<str>,
         options: &DeletePersistentSubscriptionOptions,
-    ) -> crate::Result<()>
-    where
-        StreamName: AsRef<str>,
-        GroupName: AsRef<str>,
-    {
+    ) -> crate::Result<()> {
         commands::delete_persistent_subscription(
             &self.client,
             stream_name.as_ref(),
@@ -442,14 +408,11 @@ impl Client {
     }
 
     /// Deletes a persistent subscription group on the $all stream.
-    pub async fn delete_persistent_subscription_to_all<GroupName>(
+    pub async fn delete_persistent_subscription_to_all(
         &self,
-        group_name: GroupName,
+        group_name: impl AsRef<str>,
         options: &DeletePersistentSubscriptionOptions,
-    ) -> crate::Result<()>
-    where
-        GroupName: AsRef<str>,
-    {
+    ) -> crate::Result<()> {
         commands::delete_persistent_subscription(
             &self.client,
             "",
@@ -461,16 +424,12 @@ impl Client {
     }
 
     /// Connects to a persistent subscription group on a stream.
-    pub async fn subscribe_to_persistent_subscription<StreamName, GroupName>(
+    pub async fn subscribe_to_persistent_subscription(
         &self,
-        stream_name: StreamName,
-        group_name: GroupName,
-        options: &ConnectToPersistentSubscription,
-    ) -> crate::Result<(SubscriptionRead, SubscriptionWrite)>
-    where
-        StreamName: AsRef<str>,
-        GroupName: AsRef<str>,
-    {
+        stream_name: impl AsRef<str>,
+        group_name: impl AsRef<str>,
+        options: &SubscribeToPersistentSubscriptionn,
+    ) -> crate::Result<(SubscriptionRead, SubscriptionWrite)> {
         commands::subscribe_to_persistent_subscription(
             &self.client,
             stream_name.as_ref(),
@@ -482,14 +441,11 @@ impl Client {
     }
 
     /// Connects to a persistent subscription group to $all stream.
-    pub async fn subscribe_to_persistent_subscription_to_all<GroupName>(
+    pub async fn subscribe_to_persistent_subscription_to_all(
         &self,
-        group_name: GroupName,
-        options: &ConnectToPersistentSubscription,
-    ) -> crate::Result<(SubscriptionRead, SubscriptionWrite)>
-    where
-        GroupName: AsRef<str>,
-    {
+        group_name: impl AsRef<str>,
+        options: &SubscribeToPersistentSubscriptionn,
+    ) -> crate::Result<(SubscriptionRead, SubscriptionWrite)> {
         commands::subscribe_to_persistent_subscription(
             &self.client,
             "",
@@ -501,16 +457,12 @@ impl Client {
     }
 
     /// Replays a persistent subscriptions parked events.
-    pub async fn replay_parked_messages<StreamName, GroupName>(
+    pub async fn replay_parked_messages(
         &self,
-        stream_name: StreamName,
-        group_name: GroupName,
+        stream_name: impl AsRef<str>,
+        group_name: impl AsRef<str>,
         options: &ReplayParkedMessagesOptions,
-    ) -> crate::Result<()>
-    where
-        StreamName: AsRef<str>,
-        GroupName: AsRef<str>,
-    {
+    ) -> crate::Result<()> {
         let handle = self.client.current_selected_node().await?;
 
         let mut builder = self
@@ -572,14 +524,11 @@ impl Client {
     }
 
     /// List all persistent subscriptions of a specific stream.
-    pub async fn list_persistent_subscriptions_for_stream<StreamName>(
+    pub async fn list_persistent_subscriptions_for_stream(
         &self,
-        stream_name: StreamName,
+        stream_name: impl AsRef<str>,
         options: &ListPersistentSubscriptionsOptions,
-    ) -> crate::Result<Vec<PersistentSubscriptionInfo>>
-    where
-        StreamName: AsRef<str>,
-    {
+    ) -> crate::Result<Vec<PersistentSubscriptionInfo>> {
         let handle = self.client.current_selected_node().await?;
 
         let mut builder = self
@@ -610,16 +559,12 @@ impl Client {
     }
 
     // Gets a specific persistent subscription info.
-    pub async fn get_persistent_subscription_info<StreamName, GroupName>(
+    pub async fn get_persistent_subscription_info(
         &self,
-        stream_name: StreamName,
-        group_name: GroupName,
+        stream_name: impl AsRef<str>,
+        group_name: impl AsRef<str>,
         options: &GetPersistentSubscriptionInfoOptions,
-    ) -> crate::Result<PersistentSubscriptionInfo>
-    where
-        StreamName: AsRef<str>,
-        GroupName: AsRef<str>,
-    {
+    ) -> crate::Result<PersistentSubscriptionInfo> {
         let handle = self.client.current_selected_node().await?;
 
         let mut builder = self
