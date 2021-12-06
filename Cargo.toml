@@ -23,7 +23,7 @@ exclude = [
 categories = ["database", "api-bindings"]
 
 [dependencies]
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", default-features = false, features = ["time"] }
 futures = "0.3"
 uuid = { version  = "0.8", features = [ "v4", "serde" ] }
 bytes = "1"
@@ -33,11 +33,11 @@ log = "0.4"
 rand = { version = "0.8", features = ["small_rng"] }
 byteorder = "1.2"
 http = "0.2"
-tonic = { version = "0.5", features = ["tls", "tls-roots"] }
-tonic-types = "0.3"
-prost = "0.8"
-prost-derive ="0.8"
-prost-types = "0.8"
+tonic = { version = "0.6", features = ["tls", "tls-roots"] }
+tonic-types = "0.4"
+prost = "0.9"
+prost-derive ="0.9"
+prost-types = "0.9"
 rustls = { version = "0.19", features = ["dangerous_configuration"] }
 webpki = "0.21"
 base64 = "0.13"
@@ -45,9 +45,10 @@ nom = "7"
 thiserror = "1"
 async-trait = "0.1"
 async-stream = "0.3"
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots", "json"] }
 
 [build-dependencies]
-tonic-build = { version = "0.5", features = ["prost"] }
+tonic-build = { version = "0.6", features = ["prost"] }
 
 [[test]]
 name = "integration"
@@ -72,13 +73,16 @@ crate-type = ["staticlib"]
 name = "subscribing_to_stream"
 crate-type = ["staticlib"]
 
+[[example]]
+name = "persistent_subscriptions"
+crate-type = ["staticlib"]
+
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }
 pretty_env_logger = "0.4"
 toml = "0.5"
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros"] }
 testcontainers = "0.12"
-reqwest = { version = "0.11", default-features = false, features = ["rustls", "rustls-native-certs"] }
 names = "0.12"
 
 [package.metadata.docs.rs]

@@ -13,7 +13,7 @@ impl Default for SubscribeToStreamOptions {
     fn default() -> Self {
         Self {
             credentials: None,
-            position: StreamPosition::Start,
+            position: StreamPosition::End,
             resolve_link_tos: false,
             retry: None,
         }
@@ -34,8 +34,8 @@ impl SubscribeToStreamOptions {
     /// 100, and then any events subsequently written events until such time
     /// as the subscription is dropped or closed.
     ///
-    /// By default, it's `Origin::Start`
-    pub fn position(self, position: StreamPosition<u64>) -> Self {
+    /// By default, it's `StreamPosition::End`
+    pub fn start_from(self, position: StreamPosition<u64>) -> Self {
         Self { position, ..self }
     }
 

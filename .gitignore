@@ -13,3 +13,6 @@ Cargo.lock
 
 # Directories generated during CI workflow.
 cached_cargo/
+
+# Jetbrains IDEs files
+.idea/

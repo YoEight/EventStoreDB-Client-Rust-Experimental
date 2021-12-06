@@ -34,6 +34,7 @@ message ReadReq {
 			event_store.client.Empty no_filter = 8;
 		}
 		UUIDOption uuid_option = 9;
+		ControlOption control_option = 10;
 
 		enum ReadDirection {
 			Forwards = 0;
@@ -82,6 +83,9 @@ message ReadReq {
 				event_store.client.Empty string = 2;
 			}
 		}
+		message ControlOption {
+			uint32 compatibility = 1;
+		}
 	}
 }
 
@@ -91,6 +95,9 @@ message ReadResp {
 		SubscriptionConfirmation confirmation = 2;
 		Checkpoint checkpoint = 3;
 		StreamNotFound stream_not_found = 4;
+		uint64 first_stream_position = 5;
+		uint64 last_stream_position = 6;
+		AllStreamPosition last_all_stream_position = 7;
 	}
 
 	message ReadEvent {

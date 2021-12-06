@@ -23,11 +23,18 @@ use crate::options::read_stream::ReadStreamOptions;
 use crate::options::subscribe_to_stream::SubscribeToStreamOptions;
 use crate::{
     ConnectToPersistentSubscription, Credentials, CurrentRevision,
-    DeletePersistentSubscriptionOptions, DeleteStreamOptions, NakAction, ReadResult,
-    SubscribeToAllOptions, SubscriptionFilter, SystemConsumerStrategy, TombstoneStreamOptions,
+    DeletePersistentSubscriptionOptions, DeleteStreamOptions, NakAction, PersistentSubEvent,
+    PersistentSubscriptionToAllOptions, ReadResult, SubscribeToAllOptions, SubscriptionFilter,
+    SystemConsumerStrategy, TombstoneStreamOptions,
 };
 use futures::stream::BoxStream;
 use tonic::Request;
+
+pub(crate) mod defaults {
+    use std::time::Duration;
+
+    pub const DEFAULT_WRITE_DEADLINE: Duration = Duration::from_secs(2);
+}
 
 fn raw_uuid_to_uuid(src: Uuid) -> uuid::Uuid {
     use byteorder::{BigEndian, ByteOrder};
@@ -210,20 +217,58 @@ fn convert_event_data_to_batch_proposed_message(
     }
 }
 
-fn convert_settings_create(
-    settings: PersistentSubscriptionSettings,
-) -> persistent::create_req::Settings {
-    let named_consumer_strategy = match settings.named_consumer_strategy {
+/// This trait is added as a compatibility layer when interacting with EventStoreDB servers <= 21 version.
+/// Its goal is to translate a persistent subscription starting position value to a u64 so the deprecated
+/// revision field can be used.
+///
+/// When dealing with persistent subscription to $all, we default any persistent subscription to $all
+/// starting position to 0 as the server will just ignore the field anyway.
+pub(crate) trait PsPosition: Copy {
+    fn to_deprecated_value(self) -> Option<u64>;
+}
+
+impl PsPosition for u64 {
+    fn to_deprecated_value(self) -> Option<u64> {
+        Some(self)
+    }
+}
+
+impl PsPosition for Position {
+    fn to_deprecated_value(self) -> Option<u64> {
+        None
+    }
+}
+
+fn ps_to_deprecated_revision_value<A>(value: StreamPosition<A>) -> u64
+where
+    A: PsPosition,
+{
+    match value {
+        StreamPosition::Start => 0,
+        StreamPosition::End => u64::MAX,
+        StreamPosition::Position(value) => value.to_deprecated_value().unwrap_or(0),
+    }
+}
+
+fn convert_settings_create<A>(
+    settings: PersistentSubscriptionSettings<A>,
+) -> persistent::create_req::Settings
+where
+    A: PsPosition,
+{
+    let named_consumer_strategy = match settings.consumer_strategy_name {
         SystemConsumerStrategy::DispatchToSingle => 0,
         SystemConsumerStrategy::RoundRobin => 1,
         SystemConsumerStrategy::Pinned => 2,
     };
 
+    let deprecated_revision_value = ps_to_deprecated_revision_value(settings.start_from);
+
     #[allow(deprecated)]
     persistent::create_req::Settings {
         resolve_links: settings.resolve_link_tos,
-        revision: settings.revision,
-        extra_statistics: settings.extra_stats,
+        revision: deprecated_revision_value,
+        extra_statistics: settings.extra_statistics,
         message_timeout: Some(
             persistent::create_req::settings::MessageTimeout::MessageTimeoutMs(
                 settings.message_timeout.as_millis() as i32,
@@ -235,8 +280,8 @@ fn convert_settings_create(
                 settings.checkpoint_after.as_millis() as i32,
             ),
         ),
-        min_checkpoint_count: settings.min_checkpoint_count,
-        max_checkpoint_count: settings.max_checkpoint_count,
+        min_checkpoint_count: settings.checkpoint_lower_bound,
+        max_checkpoint_count: settings.checkpoint_upper_bound,
         max_subscriber_count: settings.max_subscriber_count,
         live_buffer_size: settings.live_buffer_size,
         read_batch_size: settings.read_batch_size,
@@ -245,20 +290,25 @@ fn convert_settings_create(
     }
 }
 
-fn convert_settings_update(
-    settings: PersistentSubscriptionSettings,
-) -> persistent::update_req::Settings {
-    let named_consumer_strategy = match settings.named_consumer_strategy {
+fn convert_settings_update<A>(
+    settings: PersistentSubscriptionSettings<A>,
+) -> persistent::update_req::Settings
+where
+    A: PsPosition,
+{
+    let named_consumer_strategy = match settings.consumer_strategy_name {
         SystemConsumerStrategy::DispatchToSingle => 0,
         SystemConsumerStrategy::RoundRobin => 1,
         SystemConsumerStrategy::Pinned => 2,
     };
 
+    let deprecated_revision_value = ps_to_deprecated_revision_value(settings.start_from);
+
     #[allow(deprecated)]
     persistent::update_req::Settings {
         resolve_links: settings.resolve_link_tos,
-        revision: settings.revision,
-        extra_statistics: settings.extra_stats,
+        revision: deprecated_revision_value,
+        extra_statistics: settings.extra_statistics,
         message_timeout: Some(
             persistent::update_req::settings::MessageTimeout::MessageTimeoutMs(
                 settings.message_timeout.as_millis() as i32,
@@ -270,8 +320,8 @@ fn convert_settings_update(
                 settings.checkpoint_after.as_millis() as i32,
             ),
         ),
-        min_checkpoint_count: settings.min_checkpoint_count,
-        max_checkpoint_count: settings.max_checkpoint_count,
+        min_checkpoint_count: settings.checkpoint_lower_bound,
+        max_checkpoint_count: settings.checkpoint_upper_bound,
         max_subscriber_count: settings.max_subscriber_count,
         live_buffer_size: settings.live_buffer_size,
         read_batch_size: settings.read_batch_size,
@@ -297,7 +347,10 @@ fn convert_proto_read_event(event: streams::read_resp::ReadEvent) -> ResolvedEve
     }
 }
 
-fn convert_persistent_proto_read_event(event: persistent::read_resp::ReadEvent) -> ResolvedEvent {
+fn convert_persistent_proto_read_event(
+    event: persistent::read_resp::ReadEvent,
+) -> PersistentSubEvent {
+    use persistent::read_resp::read_event::Count;
     let commit_position = if let Some(pos_alt) = event.position {
         match pos_alt {
             persistent::read_resp::read_event::Position::CommitPosition(pos) => Some(pos),
@@ -307,10 +360,20 @@ fn convert_persistent_proto_read_event(event: persistent::read_resp::ReadEvent) 
         None
     };
 
-    ResolvedEvent {
+    let resolved = ResolvedEvent {
         event: event.event.map(convert_persistent_proto_recorded_event),
         link: event.link.map(convert_persistent_proto_recorded_event),
         commit_position,
+    };
+
+    let retry_count = event.count.map_or(0usize, |repr| match repr {
+        Count::RetryCount(count) => count as usize,
+        Count::NoRetryCount(_) => 0,
+    });
+
+    PersistentSubEvent {
+        event: resolved,
+        retry_count,
     }
 }
 
@@ -329,6 +392,7 @@ pub(crate) fn configure_auth_req<A>(req: &mut Request<A>, creds_opt: Option<Cred
         req.metadata_mut().insert("authorization", header_value);
     }
 }
+
 pub fn filter_into_proto(filter: SubscriptionFilter) -> streams::read_req::options::FilterOptions {
     use options::filter_options::{Expression, Filter, Window};
     use streams::read_req::options::{self, FilterOptions};
@@ -341,6 +405,35 @@ pub fn filter_into_proto(filter: SubscriptionFilter) -> streams::read_req::optio
     let expr = Expression {
         regex: filter.regex.unwrap_or_else(|| "".to_string()),
         prefix: filter.prefixes,
+    };
+
+    let filter = if filter.based_on_stream {
+        Filter::StreamIdentifier(expr)
+    } else {
+        Filter::EventType(expr)
+    };
+
+    FilterOptions {
+        filter: Some(filter),
+        window: Some(window),
+        checkpoint_interval_multiplier: 1,
+    }
+}
+
+pub fn ps_create_filter_into_proto(
+    filter: &SubscriptionFilter,
+) -> persistent::create_req::all_options::FilterOptions {
+    use persistent::create_req::all_options::filter_options::{Expression, Filter, Window};
+    use persistent::create_req::all_options::FilterOptions;
+
+    let window = match filter.max {
+        Some(max) => Window::Max(max),
+        None => Window::Count(Empty {}),
+    };
+
+    let expr = Expression {
+        regex: filter.regex.clone().unwrap_or_else(|| "".to_string()),
+        prefix: filter.prefixes.clone(),
     };
 
     let filter = if filter.based_on_stream {
@@ -680,6 +773,7 @@ pub async fn read_stream<'a, S: AsRef<str>>(
         filter_option: Some(options::FilterOption::NoFilter(Empty {})),
         count_option: Some(options::CountOption::Count(count)),
         uuid_option: Some(uuid_option),
+        control_option: None,
         read_direction,
     };
 
@@ -815,6 +909,7 @@ pub async fn read_all<'a>(
         filter_option: Some(options::FilterOption::NoFilter(Empty {})),
         count_option: Some(options::CountOption::Count(count)),
         uuid_option: Some(uuid_option),
+        control_option: None,
         read_direction,
     };
 
@@ -993,7 +1088,7 @@ pub async fn subscribe_to_stream<'a, S: AsRef<str>>(
     connection: &GrpcClient,
     stream_id: S,
     options: &SubscribeToStreamOptions,
-) -> crate::Result<BoxStream<'a, crate::Result<SubEvent>>> {
+) -> crate::Result<BoxStream<'a, crate::Result<SubEvent<ResolvedEvent>>>> {
     use streams::read_req::options::stream_options::RevisionOption;
     use streams::read_req::options::{self, StreamOption, StreamOptions, SubscriptionOptions};
     use streams::read_req::Options;
@@ -1029,6 +1124,7 @@ pub async fn subscribe_to_stream<'a, S: AsRef<str>>(
         filter_option: Some(options::FilterOption::NoFilter(Empty {})),
         count_option: Some(options::CountOption::Subscription(SubscriptionOptions {})),
         uuid_option: Some(uuid_option),
+        control_option: None,
         read_direction,
     };
 
@@ -1078,7 +1174,7 @@ pub async fn subscribe_to_stream<'a, S: AsRef<str>>(
                 }
             };
 
-            let stream: BoxStream<crate::Result<SubEvent>> = Box::pin(stream);
+            let stream: BoxStream<crate::Result<SubEvent<ResolvedEvent>>> = Box::pin(stream);
 
             Ok(stream)
         })
@@ -1088,7 +1184,7 @@ pub async fn subscribe_to_stream<'a, S: AsRef<str>>(
 pub async fn subscribe_to_all<'a>(
     connection: &GrpcClient,
     options: &SubscribeToAllOptions,
-) -> crate::Result<BoxStream<'a, crate::Result<SubEvent>>> {
+) -> crate::Result<BoxStream<'a, crate::Result<SubEvent<ResolvedEvent>>>> {
     use streams::read_req::options::all_options::AllOption;
     use streams::read_req::options::{self, AllOptions, StreamOption, SubscriptionOptions};
     use streams::read_req::Options;
@@ -1128,6 +1224,7 @@ pub async fn subscribe_to_all<'a>(
         filter_option: Some(filter_option),
         count_option: Some(options::CountOption::Subscription(SubscriptionOptions {})),
         uuid_option: Some(uuid_option),
+        control_option: None,
         read_direction,
     };
 
@@ -1186,58 +1283,177 @@ pub async fn subscribe_to_all<'a>(
                 }
             };
 
-            let stream: BoxStream<'a, crate::Result<SubEvent>> = Box::pin(stream);
+            let stream: BoxStream<'a, crate::Result<SubEvent<ResolvedEvent>>> = Box::pin(stream);
 
             Ok(stream)
         })
         .await
 }
 
-pub async fn create_persistent_subscription<S: AsRef<str>>(
+/// This trait is used to avoid code duplication when introducing persistent subscription to $all. It
+/// allows us to re-use most of regular persistent subscription code.
+pub(crate) trait PsSettings {
+    type Pos: PsPosition;
+
+    fn settings(&self) -> PersistentSubscriptionSettings<Self::Pos>;
+
+    fn credentials(&self) -> Option<Credentials>;
+
+    fn to_create_options(
+        &self,
+        stream_identifier: StreamIdentifier,
+    ) -> persistent::create_req::options::StreamOption;
+
+    fn to_update_options(
+        &self,
+        stream_identifier: StreamIdentifier,
+    ) -> persistent::update_req::options::StreamOption;
+}
+
+impl PsSettings for PersistentSubscriptionOptions {
+    type Pos = u64;
+
+    fn settings(&self) -> PersistentSubscriptionSettings<Self::Pos> {
+        self.setts
+    }
+
+    fn credentials(&self) -> Option<Credentials> {
+        self.credentials.clone()
+    }
+
+    fn to_create_options(
+        &self,
+        stream_identifier: StreamIdentifier,
+    ) -> persistent::create_req::options::StreamOption {
+        use persistent::create_req::{
+            options::StreamOption, stream_options::RevisionOption, StreamOptions,
+        };
+
+        let revision_option = match self.setts.start_from {
+            StreamPosition::Start => RevisionOption::Start(Empty {}),
+            StreamPosition::End => RevisionOption::End(Empty {}),
+            StreamPosition::Position(rev) => RevisionOption::Revision(rev),
+        };
+
+        StreamOption::Stream(StreamOptions {
+            stream_identifier: Some(stream_identifier),
+            revision_option: Some(revision_option),
+        })
+    }
+
+    fn to_update_options(
+        &self,
+        stream_identifier: StreamIdentifier,
+    ) -> persistent::update_req::options::StreamOption {
+        use persistent::update_req::{
+            options::StreamOption, stream_options::RevisionOption, StreamOptions,
+        };
+
+        let revision_option = match self.setts.start_from {
+            StreamPosition::Start => RevisionOption::Start(Empty {}),
+            StreamPosition::End => RevisionOption::End(Empty {}),
+            StreamPosition::Position(rev) => RevisionOption::Revision(rev),
+        };
+
+        StreamOption::Stream(StreamOptions {
+            stream_identifier: Some(stream_identifier),
+            revision_option: Some(revision_option),
+        })
+    }
+}
+
+impl PsSettings for PersistentSubscriptionToAllOptions {
+    type Pos = Position;
+
+    fn settings(&self) -> PersistentSubscriptionSettings<Self::Pos> {
+        self.setts
+    }
+
+    fn credentials(&self) -> Option<Credentials> {
+        self.credentials.clone()
+    }
+
+    fn to_create_options(
+        &self,
+        _stream_identifier: StreamIdentifier,
+    ) -> persistent::create_req::options::StreamOption {
+        use persistent::create_req::{
+            self,
+            all_options::{self, AllOption},
+            options::StreamOption,
+            AllOptions,
+        };
+
+        let filter_option = match self.filter.as_ref() {
+            Some(filter) => all_options::FilterOption::Filter(ps_create_filter_into_proto(filter)),
+            None => all_options::FilterOption::NoFilter(Empty {}),
+        };
+
+        let all_option = match self.setts.start_from {
+            StreamPosition::Start => AllOption::Start(Empty {}),
+            StreamPosition::End => AllOption::End(Empty {}),
+            StreamPosition::Position(pos) => AllOption::Position(create_req::Position {
+                commit_position: pos.commit,
+                prepare_position: pos.prepare,
+            }),
+        };
+
+        StreamOption::All(AllOptions {
+            filter_option: Some(filter_option),
+            all_option: Some(all_option),
+        })
+    }
+
+    fn to_update_options(
+        &self,
+        _stream_identifier: StreamIdentifier,
+    ) -> persistent::update_req::options::StreamOption {
+        use persistent::update_req::{
+            self, all_options::AllOption, options::StreamOption, AllOptions,
+        };
+
+        let all_option = match self.setts.start_from {
+            StreamPosition::Start => AllOption::Start(Empty {}),
+            StreamPosition::End => AllOption::End(Empty {}),
+            StreamPosition::Position(pos) => AllOption::Position(update_req::Position {
+                commit_position: pos.commit,
+                prepare_position: pos.prepare,
+            }),
+        };
+
+        StreamOption::All(AllOptions {
+            all_option: Some(all_option),
+        })
+    }
+}
+
+pub(crate) async fn create_persistent_subscription<S: AsRef<str>, Options>(
     connection: &GrpcClient,
     stream: S,
     group: S,
-    options: &PersistentSubscriptionOptions,
-) -> crate::Result<()> {
-    use persistent::create_req::{
-        options::StreamOption, stream_options::RevisionOption, Options, StreamOptions,
-    };
+    options: &Options,
+) -> crate::Result<()>
+where
+    Options: PsSettings,
+{
+    use persistent::create_req::Options;
     use persistent::CreateReq;
 
-    let settings = convert_settings_create(options.setts);
-    let stream_identifier = Some(StreamIdentifier {
+    let settings = convert_settings_create(options.settings());
+    let stream_identifier = StreamIdentifier {
         stream_name: stream.as_ref().to_string().into_bytes(),
-    });
-
-    let deprecated_stream_identifier = stream_identifier.clone();
+    };
 
     let credentials = options
-        .credentials
-        .clone()
+        .credentials()
         .or_else(|| connection.default_credentials());
-
-    let revision_option = match options.revision {
-        StreamPosition::Start => RevisionOption::Start(Empty {}),
-        StreamPosition::End => RevisionOption::End(Empty {}),
-        StreamPosition::Position(rev) => RevisionOption::Revision(rev),
-    };
-
-    let revision_option = Some(revision_option);
-
-    let stream_option = StreamOptions {
-        stream_identifier,
-        revision_option,
-    };
-
-    let stream_option = StreamOption::Stream(stream_option);
-    let stream_option = Some(stream_option);
 
     #[allow(deprecated)]
     let options = Options {
-        stream_identifier: deprecated_stream_identifier,
+        stream_option: Some(options.to_create_options(stream_identifier.clone())),
+        stream_identifier: Some(stream_identifier),
         group_name: group.as_ref().to_string(),
         settings: Some(settings),
-        stream_option,
     };
 
     let req = CreateReq {
@@ -1247,6 +1463,7 @@ pub async fn create_persistent_subscription<S: AsRef<str>>(
     let mut req = Request::new(req);
 
     configure_auth_req(&mut req, credentials);
+    req.set_timeout(defaults::DEFAULT_WRITE_DEADLINE);
 
     connection
         .execute(|channel| async {
@@ -1258,51 +1475,33 @@ pub async fn create_persistent_subscription<S: AsRef<str>>(
         .await
 }
 
-pub async fn update_persistent_subscription<S: AsRef<str>>(
+pub(crate) async fn update_persistent_subscription<S: AsRef<str>, Options>(
     connection: &GrpcClient,
     stream: S,
     group: S,
-    options: &PersistentSubscriptionOptions,
-) -> crate::Result<()> {
-    use persistent::update_req::{
-        options::StreamOption, stream_options::RevisionOption, Options, StreamOptions,
-    };
+    options: &Options,
+) -> crate::Result<()>
+where
+    Options: PsSettings,
+{
+    use persistent::update_req::Options;
     use persistent::UpdateReq;
 
-    let settings = convert_settings_update(options.setts);
-    let stream_identifier = Some(StreamIdentifier {
+    let settings = convert_settings_update(options.settings());
+    let stream_identifier = StreamIdentifier {
         stream_name: stream.as_ref().to_string().into_bytes(),
-    });
-
-    let deprecated_stream_identifier = stream_identifier.clone();
+    };
 
     let credentials = options
-        .credentials
-        .clone()
+        .credentials()
         .or_else(|| connection.default_credentials());
-
-    let revision_option = match options.revision {
-        StreamPosition::Start => RevisionOption::Start(Empty {}),
-        StreamPosition::End => RevisionOption::End(Empty {}),
-        StreamPosition::Position(rev) => RevisionOption::Revision(rev),
-    };
-
-    let revision_option = Some(revision_option);
-
-    let stream_option = StreamOptions {
-        stream_identifier,
-        revision_option,
-    };
-
-    let stream_option = StreamOption::Stream(stream_option);
-    let stream_option = Some(stream_option);
 
     #[allow(deprecated)]
     let options = Options {
-        stream_identifier: deprecated_stream_identifier,
         group_name: group.as_ref().to_string(),
+        stream_option: Some(options.to_update_options(stream_identifier.clone())),
+        stream_identifier: Some(stream_identifier),
         settings: Some(settings),
-        stream_option,
     };
 
     let req = UpdateReq {
@@ -1312,6 +1511,7 @@ pub async fn update_persistent_subscription<S: AsRef<str>>(
     let mut req = Request::new(req);
 
     configure_auth_req(&mut req, credentials);
+    req.set_timeout(defaults::DEFAULT_WRITE_DEADLINE);
 
     connection
         .execute(|channel| async {
@@ -1328,14 +1528,18 @@ pub async fn delete_persistent_subscription<S: AsRef<str>>(
     stream_id: S,
     group_name: S,
     options: &DeletePersistentSubscriptionOptions,
+    to_all: bool,
 ) -> crate::Result<()> {
     use persistent::delete_req::{options::StreamOption, Options};
 
-    let stream_identifier = StreamIdentifier {
-        stream_name: stream_id.as_ref().to_string().into_bytes(),
+    let stream_option = if !to_all {
+        StreamOption::StreamIdentifier(StreamIdentifier {
+            stream_name: stream_id.as_ref().to_string().into_bytes(),
+        })
+    } else {
+        StreamOption::All(Empty {})
     };
 
-    let stream_option = StreamOption::StreamIdentifier(stream_identifier);
     let stream_option = Some(stream_option);
 
     let credentials = options
@@ -1355,6 +1559,7 @@ pub async fn delete_persistent_subscription<S: AsRef<str>>(
     let mut req = Request::new(req);
 
     configure_auth_req(&mut req, credentials);
+    req.set_timeout(defaults::DEFAULT_WRITE_DEADLINE);
 
     connection
         .execute(|channel| async {
@@ -1368,11 +1573,12 @@ pub async fn delete_persistent_subscription<S: AsRef<str>>(
 
 /// Sends the persistent subscription connection request to the server
 /// asynchronously even if the subscription is available right away.
-pub async fn connect_persistent_subscription<S: AsRef<str>>(
+pub async fn subscribe_to_persistent_subscription<S: AsRef<str>>(
     connection: &GrpcClient,
     stream_id: S,
     group_name: S,
     options: &ConnectToPersistentSubscription,
+    to_all: bool,
 ) -> crate::Result<(SubscriptionRead, SubscriptionWrite)> {
     use futures::channel::mpsc;
     use futures::sink::SinkExt;
@@ -1387,11 +1593,14 @@ pub async fn connect_persistent_subscription<S: AsRef<str>>(
         content: Some(options::uuid_option::Content::String(Empty {})),
     };
 
-    let stream_identifier = StreamIdentifier {
-        stream_name: stream_id.as_ref().to_string().into_bytes(),
+    let stream_option = if !to_all {
+        StreamOption::StreamIdentifier(StreamIdentifier {
+            stream_name: stream_id.as_ref().to_string().into_bytes(),
+        })
+    } else {
+        StreamOption::All(Empty {})
     };
 
-    let stream_option = StreamOption::StreamIdentifier(stream_identifier);
     let stream_option = Some(stream_option);
 
     let credentials = options
@@ -1402,7 +1611,7 @@ pub async fn connect_persistent_subscription<S: AsRef<str>>(
     let options = Options {
         stream_option,
         group_name: group_name.as_ref().to_string(),
-        buffer_size: options.batch_size as i32,
+        buffer_size: options.buffer_size as i32,
         uuid_option: Some(uuid_option),
     };
 
@@ -1415,9 +1624,10 @@ pub async fn connect_persistent_subscription<S: AsRef<str>>(
     configure_auth_req(&mut req, credentials);
 
     let _ = sender.send(read_req).await;
-
+    let stream_id = stream_id.as_ref().to_string();
+    let group_name = group_name.as_ref().to_string();
     connection
-        .execute(|channel| async {
+        .execute(|channel| async move {
             let mut client = PersistentSubscriptionsClient::new(channel.channel.clone());
             let mut stream = client.read(req).await?.into_inner();
 
@@ -1425,8 +1635,20 @@ pub async fn connect_persistent_subscription<S: AsRef<str>>(
                 loop {
                     match stream.try_next().await {
                         Err(e) => {
-                            let e = crate::Error::from_grpc(e);
+                            if let Some("persistent-subscription-dropped") = e
+                                .metadata()
+                                .get("exception").and_then(|e| e.to_str().ok())
+                            {
+                                warn!(
+                                    "Persistent subscription on '{}' and group '{}' has dropped",
+                                    stream_id,
+                                    group_name,
+                                );
 
+                                break;
+                            }
+
+                            let e = crate::Error::from_grpc(e);
                             channel.report_error(e.clone()).await;
                             yield Err(e);
                             break;
@@ -1463,22 +1685,25 @@ pub async fn connect_persistent_subscription<S: AsRef<str>>(
 }
 
 pub struct SubscriptionRead {
-    inner: BoxStream<'static, crate::Result<SubEvent>>,
+    inner: BoxStream<'static, crate::Result<SubEvent<PersistentSubEvent>>>,
 }
 
 impl SubscriptionRead {
-    pub async fn try_next(&mut self) -> crate::Result<Option<SubEvent>> {
+    pub async fn try_next(&mut self) -> crate::Result<Option<SubEvent<PersistentSubEvent>>> {
         self.inner.try_next().await
     }
 
-    pub async fn try_next_event(&mut self) -> crate::Result<Option<ResolvedEvent>> {
-        let event = self.inner.try_next().await?;
-
-        if let Some(SubEvent::EventAppeared(event)) = event {
-            return Ok(Some(event));
+    pub async fn try_next_event(&mut self) -> crate::Result<Option<PersistentSubEvent>> {
+        loop {
+            let event = self.inner.try_next().await?;
+            if let Some(event) = event {
+                if let SubEvent::EventAppeared(event) = event {
+                    return Ok(Some(event));
+                }
+            } else {
+                return Ok(None);
+            }
         }
-
-        Ok(None)
     }
 }
 fn to_proto_uuid(id: uuid::Uuid) -> Uuid {
@@ -1520,20 +1745,30 @@ impl SubscriptionWrite {
         Ok(())
     }
 
+    pub async fn nack_event(
+        &mut self,
+        event: ResolvedEvent,
+        action: NakAction,
+        reason: impl AsRef<str>,
+    ) -> Result<(), tonic::Status> {
+        self.nack(vec![event.get_original_event().id], action, reason)
+            .await
+    }
+
     pub async fn nack<I>(
         &mut self,
         event_ids: I,
         action: NakAction,
-        reason: String,
+        reason: impl AsRef<str>,
     ) -> Result<(), tonic::Status>
     where
-        I: Iterator<Item = uuid::Uuid>,
+        I: IntoIterator<Item = uuid::Uuid>,
     {
         use futures::sink::SinkExt;
         use persistent::read_req::{Content, Nack};
         use persistent::ReadReq;
 
-        let ids = event_ids.map(to_proto_uuid).collect();
+        let ids = event_ids.into_iter().map(to_proto_uuid).collect();
 
         let action = match action {
             NakAction::Unknown => 0,
@@ -1547,7 +1782,7 @@ impl SubscriptionWrite {
             id: Vec::new(),
             ids,
             action,
-            reason,
+            reason: reason.as_ref().to_string(),
         };
 
         let content = Content::Nack(nack);
