@@ -695,7 +695,7 @@ async fn test_error_on_failure_to_discover_single_node() -> Result<(), Box<dyn E
     let _ = pretty_env_logger::try_init();
 
     let settings = format!("esdb://noserver:{}", 2_113).parse()?;
-    let client = Client::new(settings).await?;
+    let client = Client::new(settings)?;
     let stream_id = fresh_stream_id("wont-be-created");
     let events = generate_events("wont-be-written".to_string(), 5);
 
@@ -863,7 +863,7 @@ async fn cluster() -> Result<(), Box<dyn std::error::Error>> {
     let settings = "esdb://admin:changeit@localhost:2111,localhost:2112,localhost:2113?tlsVerifyCert=false&nodePreference=leader&maxdiscoverattempts=50"
         .parse::<ClientSettings>()?;
 
-    let client = Client::new(settings).await?;
+    let client = Client::new(settings)?;
 
     // Those pre-checks are put in place to avoid test flakiness. In essence, those functions use
     // features we test later on.
@@ -890,7 +890,7 @@ async fn single_node() -> Result<(), Box<dyn std::error::Error>> {
     )
     .parse::<ClientSettings>()?;
 
-    let client = Client::new(settings).await?;
+    let client = Client::new(settings)?;
 
     all_around_tests(client).await?;
 
@@ -914,7 +914,7 @@ async fn test_auto_resub_on_connection_drop() -> Result<(), Box<dyn std::error::
 
     let settings = format!("esdb://localhost:{}?tls=false", 3_113).parse::<ClientSettings>()?;
 
-    let client = Client::new(settings).await?;
+    let client = Client::new(settings)?;
     let stream_name = fresh_stream_id("auto-reconnect");
     let retry = eventstore::RetryOptions::default().retry_forever();
     let options = eventstore::SubscribeToStreamOptions::default().retry_options(retry);
@@ -1463,8 +1463,8 @@ async fn projection_tests() -> Result<(), Box<dyn std::error::Error>> {
     )
     .parse::<ClientSettings>()?;
 
-    let client = ProjectionClient::new(settings.clone()).await?;
-    let stream_client = Client::new(settings).await?;
+    let client = ProjectionClient::new(settings.clone());
+    let stream_client = Client::new(settings)?;
     let mut name_gen = names::Generator::default();
 
     match tokio::time::timeout(std::time::Duration::from_secs(15 * 60), async move {

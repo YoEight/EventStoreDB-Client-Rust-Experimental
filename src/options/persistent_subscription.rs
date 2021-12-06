@@ -4,19 +4,10 @@ use crate::{
 };
 use std::time::Duration;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct PersistentSubscriptionOptions {
     pub(crate) credentials: Option<Credentials>,
     pub(crate) setts: PersistentSubscriptionSettings<u64>,
-}
-
-impl Default for PersistentSubscriptionOptions {
-    fn default() -> Self {
-        Self {
-            credentials: None,
-            setts: Default::default(),
-        }
-    }
 }
 
 impl PersistentSubscriptionOptions {
@@ -120,21 +111,11 @@ impl PersistentSubscriptionOptions {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct PersistentSubscriptionToAllOptions {
     pub(crate) credentials: Option<Credentials>,
     pub(crate) setts: PersistentSubscriptionSettings<Position>,
     pub(crate) filter: Option<SubscriptionFilter>,
-}
-
-impl Default for PersistentSubscriptionToAllOptions {
-    fn default() -> Self {
-        Self {
-            credentials: None,
-            setts: Default::default(),
-            filter: None,
-        }
-    }
 }
 
 impl PersistentSubscriptionToAllOptions {
@@ -246,15 +227,9 @@ impl PersistentSubscriptionToAllOptions {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct DeletePersistentSubscriptionOptions {
     pub(crate) credentials: Option<Credentials>,
-}
-
-impl Default for DeletePersistentSubscriptionOptions {
-    fn default() -> Self {
-        Self { credentials: None }
-    }
 }
 
 impl DeletePersistentSubscriptionOptions {
@@ -267,12 +242,12 @@ impl DeletePersistentSubscriptionOptions {
 }
 
 #[derive(Clone)]
-pub struct ConnectToPersistentSubscription {
+pub struct SubscribeToPersistentSubscriptionn {
     pub(crate) credentials: Option<Credentials>,
     pub(crate) buffer_size: usize,
 }
 
-impl Default for ConnectToPersistentSubscription {
+impl Default for SubscribeToPersistentSubscriptionn {
     fn default() -> Self {
         Self {
             credentials: None,
@@ -281,7 +256,7 @@ impl Default for ConnectToPersistentSubscription {
     }
 }
 
-impl ConnectToPersistentSubscription {
+impl SubscribeToPersistentSubscriptionn {
     /// Performs the command with the given credentials.
     pub fn authenticated(self, creds: Credentials) -> Self {
         Self {

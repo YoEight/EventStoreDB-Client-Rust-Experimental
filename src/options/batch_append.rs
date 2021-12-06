@@ -1,14 +1,8 @@
 use crate::Credentials;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct BatchAppendOptions {
     pub(crate) credentials: Option<Credentials>,
-}
-
-impl Default for BatchAppendOptions {
-    fn default() -> Self {
-        Self { credentials: None }
-    }
 }
 
 impl BatchAppendOptions {

@@ -630,9 +630,7 @@ pub(crate) mod defaults {
     pub const KEEP_ALIVE_TIMEOUT_IN_MS: u64 = 10_000;
 }
 
-async fn cluster_mode(
-    conn_setts: ClientSettings,
-) -> Result<UnboundedSender<Msg>, Box<dyn std::error::Error>> {
+fn cluster_mode(conn_setts: ClientSettings) -> UnboundedSender<Msg> {
     let (sender, mut consumer) = futures::channel::mpsc::unbounded::<Msg>();
     let kind = if conn_setts.dns_discover {
         let endpoint = conn_setts.hosts.as_slice()[0].clone();
@@ -744,7 +742,7 @@ async fn cluster_mode(
         }
     });
 
-    Ok(dup_sender)
+    dup_sender
 }
 
 fn single_node_mode(conn_setts: ClientSettings, endpoint: Endpoint) -> UnboundedSender<Msg> {
@@ -930,10 +928,10 @@ pub struct GrpcClient {
 }
 
 impl GrpcClient {
-    pub async fn create(conn_setts: ClientSettings) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn create(conn_setts: ClientSettings) -> Self {
         let default_credentials = conn_setts.default_user_name.clone();
         let sender = if conn_setts.dns_discover || conn_setts.hosts.len() > 1 {
-            cluster_mode(conn_setts).await?
+            cluster_mode(conn_setts)
         } else {
             let endpoint = conn_setts
                 .hosts
@@ -944,10 +942,10 @@ impl GrpcClient {
             single_node_mode(conn_setts, endpoint)
         };
 
-        Ok(GrpcClient {
+        GrpcClient {
             sender,
             default_credentials,
-        })
+        }
     }
 
     pub(crate) async fn execute<F, Fut, A>(&self, action: F) -> crate::Result<A>

@@ -22,9 +22,9 @@ use crate::options::read_all::ReadAllOptions;
 use crate::options::read_stream::ReadStreamOptions;
 use crate::options::subscribe_to_stream::SubscribeToStreamOptions;
 use crate::{
-    ConnectToPersistentSubscription, Credentials, CurrentRevision,
-    DeletePersistentSubscriptionOptions, DeleteStreamOptions, NakAction, PersistentSubEvent,
-    PersistentSubscriptionToAllOptions, ReadResult, SubscribeToAllOptions, SubscriptionFilter,
+    Credentials, CurrentRevision, DeletePersistentSubscriptionOptions, DeleteStreamOptions,
+    NakAction, PersistentSubEvent, PersistentSubscriptionToAllOptions, ReadResult,
+    SubscribeToAllOptions, SubscribeToPersistentSubscriptionn, SubscriptionFilter,
     SystemConsumerStrategy, TombstoneStreamOptions,
 };
 use futures::stream::BoxStream;
@@ -1577,7 +1577,7 @@ pub async fn subscribe_to_persistent_subscription<S: AsRef<str>>(
     connection: &GrpcClient,
     stream_id: S,
     group_name: S,
-    options: &ConnectToPersistentSubscription,
+    options: &SubscribeToPersistentSubscriptionn,
     to_all: bool,
 ) -> crate::Result<(SubscriptionRead, SubscriptionWrite)> {
     use futures::channel::mpsc;

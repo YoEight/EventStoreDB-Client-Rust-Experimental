@@ -1320,7 +1320,7 @@ pub struct Endpoint {
 #[derive(Error, Debug, Clone)]
 /// EventStoreDB command error.
 pub enum Error {
-    #[error("Server-side error.")]
+    #[error("Server-side error: {0}")]
     ServerError(String),
     #[error("You tried to execute a command that requires a leader node on a follower node. New leader: ")]
     NotLeaderException(Endpoint),
@@ -1344,6 +1344,8 @@ pub enum Error {
     InternalClientError,
     #[error("Deadline exceeded")]
     DeadlineExceeded,
+    #[error("Initialization error: {0}")]
+    InitializationError(String),
 }
 
 impl Error {
