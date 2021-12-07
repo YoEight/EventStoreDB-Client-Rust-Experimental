@@ -8,8 +8,6 @@ use crate::gossip::VNodeState;
 use crate::private::Sealed;
 use async_trait::async_trait;
 use bytes::Bytes;
-use futures::stream::BoxStream;
-use futures::Stream;
 use serde::{de::Visitor, ser::SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
@@ -1016,42 +1014,32 @@ mod metadata_tests {
     }
 }
 
-/// Read part of a persistent subscription, isomorphic to a stream of events.
-pub struct PersistentSubRead {
-    pub(crate) inner: Box<dyn Stream<Item = PersistentSubEvent> + Send + Unpin>,
-}
-
-impl PersistentSubRead {
-    pub fn into_inner(self) -> Box<dyn Stream<Item = PersistentSubEvent> + Send + Unpin> {
-        self.inner
-    }
-
-    pub async fn read_next(&mut self) -> Option<PersistentSubEvent> {
-        use futures::stream::StreamExt;
-
-        self.inner.next().await
-    }
-}
-
 /// Events related to a subscription.
 #[derive(Debug)]
-pub enum SubEvent<A> {
+pub enum SubscriptionEvent {
     /// Indicates the subscription has been confirmed by the server. The String value represents
     /// the subscription id.
     Confirmed(String),
 
     /// An event notification from the server.
-    EventAppeared(A),
+    EventAppeared(ResolvedEvent),
 
     /// Indicates a checkpoint has been created. Related to subscription to $all when
     /// filters are used.
     Checkpoint(Position),
+
+    FirstStreamPosition(u64),
+    LastStreamPosition(u64),
+    LastAllPosition(Position),
 }
 
 #[derive(Debug)]
-pub struct PersistentSubEvent {
-    pub event: ResolvedEvent,
-    pub retry_count: usize,
+pub enum PersistentSubscriptionEvent {
+    EventAppeared {
+        retry_count: usize,
+        event: ResolvedEvent,
+    },
+    Confirmed(String),
 }
 
 /// Gathers every possible Nak actions.
@@ -1326,8 +1314,8 @@ pub enum Error {
     NotLeaderException(Endpoint),
     #[error("Connection is closed.")]
     ConnectionClosed,
-    #[error("Unmapped gRPC error: {0}.")]
-    Grpc(String),
+    #[error("Unmapped gRPC error: code: {code}, message: {message}.")]
+    Grpc { code: tonic::Code, message: String },
     #[error("gRPC connection error: {0}")]
     GrpcConnectionError(GrpcConnectionError),
     #[error("Internal parsing error: {0}")]
@@ -1338,6 +1326,8 @@ pub enum Error {
     ResourceAlreadyExists,
     #[error("The resource you asked for doesn't exist")]
     ResourceNotFound,
+    #[error("The resource you asked for was deleted")]
+    ResourceDeleted,
     #[error("The operation is unimplemented on the server")]
     Unimplemented,
     #[error("Unexpected internal client error. Please fill an issue on GitHub")]
@@ -1346,6 +1336,8 @@ pub enum Error {
     DeadlineExceeded,
     #[error("Initialization error: {0}")]
     InitializationError(String),
+    #[error("Illegal state error: {0}")]
+    IllegalStateError(String),
 }
 
 impl Error {
@@ -1367,6 +1359,14 @@ impl Error {
             if let Some(leader) = endpoint {
                 return Error::NotLeaderException(leader);
             }
+        }
+
+        if let Some("stream-deleted") = status
+            .metadata()
+            .get("exception")
+            .and_then(|e| e.to_str().ok())
+        {
+            return Error::ResourceDeleted;
         }
 
         if status.code() == Code::Cancelled && status.message() == "Timeout expired"
@@ -1402,7 +1402,10 @@ impl Error {
             return Error::Unimplemented;
         }
 
-        Error::Grpc(status.to_string())
+        Error::Grpc {
+            code: status.code(),
+            message: status.message().to_string(),
+        }
     }
 }
 
@@ -1417,91 +1420,23 @@ pub enum GrpcConnectionError {
 
 pub type Result<A> = std::result::Result<A, Error>;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ReadResult<A> {
-    Ok(A),
-    StreamNotFound(String),
-    StreamDeleted(String),
-}
-
-impl<A> ReadResult<A> {
-    /// Maps an `ReadResult<A>` to `ReadResult<B>` by applying a function to a contained value.
-    pub fn map<B, F>(self, f: F) -> ReadResult<B>
-    where
-        F: FnOnce(A) -> B,
-    {
-        match self {
-            ReadResult::Ok(a) => ReadResult::Ok(f(a)),
-            ReadResult::StreamNotFound(s) => ReadResult::StreamNotFound(s),
-            ReadResult::StreamDeleted(s) => ReadResult::StreamDeleted(s),
-        }
-    }
-
-    /// Converts from `ReadResult<A>` to [`Option<A>`].
-    ///
-    /// Converts `self` into an [`Option<A>`], consuming `self`,
-    /// and discarding the success value, if any.
-    ///
-    /// [`Option<A>`]: Option
-    pub fn ok(self) -> Option<A> {
-        match self {
-            ReadResult::Ok(a) => Some(a),
-            ReadResult::StreamNotFound(_) => None,
-            ReadResult::StreamDeleted(_) => None,
-        }
-    }
-
-    /// Returns `true` if the result is [`ReadResult::Ok`].
-    pub const fn is_ok(&self) -> bool {
-        matches!(*self, ReadResult::Ok(_))
-    }
-
-    /// Returns `true` if the result is [`ReadResult::StreamNotFound`].
-    pub const fn is_not_found(&self) -> bool {
-        !self.is_ok()
-    }
-
-    /// Returns the contained [`Ok`] value, consuming the `self` value.
-    #[inline]
-    #[track_caller]
-    pub fn unwrap(self) -> A {
-        match self {
-            ReadResult::Ok(a) => a,
-            ReadResult::StreamNotFound(s) => panic!(
-                "called `ReadResult::unwrap()` on an `StreamNotFound({})` value",
-                &s
-            ),
-            ReadResult::StreamDeleted(s) => panic!(
-                "called `ReadResult::unwrap()` on an `StreamDeleted({})` value",
-                &s
-            ),
-        }
-    }
-}
-
 #[async_trait]
-pub trait ToCount<'a>: Sealed {
+pub trait ToCount: Sealed {
     type Selection;
     fn to_count(&self) -> usize;
-    async fn select(
-        self,
-        stream: BoxStream<'a, crate::Result<ResolvedEvent>>,
-    ) -> crate::Result<Self::Selection>;
+    async fn select(self, stream: crate::ReadStream) -> Self::Selection;
 }
 
 #[async_trait]
-impl<'a> ToCount<'a> for usize {
-    type Selection = BoxStream<'a, crate::Result<ResolvedEvent>>;
+impl ToCount for usize {
+    type Selection = crate::ReadStream;
 
     fn to_count(&self) -> usize {
         *self
     }
 
-    async fn select(
-        self,
-        stream: BoxStream<'a, crate::Result<ResolvedEvent>>,
-    ) -> crate::Result<Self::Selection> {
-        Ok(stream)
+    async fn select(self, stream: crate::ReadStream) -> Self::Selection {
+        stream
     }
 }
 
@@ -1509,18 +1444,15 @@ impl<'a> ToCount<'a> for usize {
 pub struct All;
 
 #[async_trait]
-impl<'a> ToCount<'a> for All {
-    type Selection = BoxStream<'a, crate::Result<ResolvedEvent>>;
+impl ToCount for All {
+    type Selection = crate::ReadStream;
 
     fn to_count(&self) -> usize {
         usize::MAX
     }
 
-    async fn select(
-        self,
-        stream: BoxStream<'a, crate::Result<ResolvedEvent>>,
-    ) -> crate::Result<Self::Selection> {
-        Ok(stream)
+    async fn select(self, stream: crate::ReadStream) -> Self::Selection {
+        stream
     }
 }
 
@@ -1528,20 +1460,15 @@ impl<'a> ToCount<'a> for All {
 pub struct Single;
 
 #[async_trait]
-impl<'a> ToCount<'a> for Single {
-    type Selection = Option<ResolvedEvent>;
+impl ToCount for Single {
+    type Selection = crate::Result<Option<ResolvedEvent>>;
 
     fn to_count(&self) -> usize {
         1
     }
 
-    async fn select(
-        self,
-        mut stream: BoxStream<'a, crate::Result<ResolvedEvent>>,
-    ) -> crate::Result<Self::Selection> {
-        use futures::stream::TryStreamExt;
-
-        stream.try_next().await
+    async fn select(self, mut stream: crate::ReadStream) -> Self::Selection {
+        stream.next().await
     }
 }
 
