@@ -882,7 +882,7 @@ pub(crate) struct Handle {
 }
 
 impl Handle {
-    pub(crate) async fn report_error(mut self, e: crate::Error) {
+    pub(crate) async fn report_error(mut self, e: &crate::Error) {
         error!("Error occurred during operation execution: {:?}", e);
         let _ = self.sender.send(Msg::CreateChannel(self.id, None)).await;
     }
@@ -923,7 +923,7 @@ impl std::fmt::Debug for Msg {
 
 #[derive(Clone)]
 pub struct GrpcClient {
-    sender: futures::channel::mpsc::UnboundedSender<Msg>,
+    pub(crate) sender: futures::channel::mpsc::UnboundedSender<Msg>,
     default_credentials: Option<Credentials>,
 }
 
@@ -968,7 +968,13 @@ impl GrpcClient {
 
         let id = handle.id;
         match action(handle).await {
-            Err(status) => handle_error(&self.sender, id, crate::Error::from_grpc(status)).await,
+            Err(status) => {
+                let e = crate::Error::from_grpc(status);
+
+                handle_error(&self.sender, id, &e).await;
+
+                Err(e)
+            }
 
             Ok(a) => Ok(a),
         }
@@ -995,11 +1001,11 @@ impl GrpcClient {
     }
 }
 
-pub(crate) async fn handle_error<A>(
+pub(crate) async fn handle_error(
     sender: &UnboundedSender<Msg>,
     connection_id: Uuid,
-    err: crate::Error,
-) -> crate::Result<A> {
+    err: &crate::Error,
+) {
     if let crate::Error::ServerError(ref status) = err {
         error!("Current selected EventStoreDB node gone unavailable. Starting node selection process: {}", status);
 
@@ -1017,11 +1023,16 @@ pub(crate) async fn handle_error<A>(
             "NotLeaderException found. Start reconnection process on: {:?}",
             leader
         );
-    } else if let crate::Error::Grpc(ref e) = err {
-        debug!("Operation unexpected error: {}", e);
+    } else if let crate::Error::Grpc {
+        ref code,
+        ref message,
+    } = err
+    {
+        debug!(
+            "Operation unexpected error: code: {}, message: {}",
+            code, message
+        );
     }
-
-    Err(err)
 }
 
 struct Member {

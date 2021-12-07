@@ -102,7 +102,12 @@ impl BatchAppendClient {
 
                     BatchMsg::Out(resp) => {
                         if let Some(entry) = reg.remove(&resp.correlation_id) {
+                            let failed = resp.result.is_err();
                             let _ = entry.send(resp.result);
+
+                            if failed {
+                                break;
+                            }
 
                             continue;
                         }

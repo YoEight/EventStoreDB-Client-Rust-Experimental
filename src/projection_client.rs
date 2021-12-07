@@ -247,7 +247,7 @@ impl ProjectionClient {
                             Err(e) => {
                                 let e = crate::Error::from_grpc(e);
 
-                                handle.report_error(e.clone()).await;
+                                handle.report_error(&e).await;
                                 yield Err(e);
                                 break;
                             }
