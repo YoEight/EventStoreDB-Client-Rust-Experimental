@@ -95,8 +95,7 @@ pub async fn append_with_concurrency_check(client: Client) -> Result<()> {
 
     let last_event = client
         .read_stream("concurrency-stream", &options, Single)
-        .await?
-        .ok()
+        .await
         .expect("we expect the stream to at least exist.")
         .expect("we expect the stream to have at least one event.");
 
