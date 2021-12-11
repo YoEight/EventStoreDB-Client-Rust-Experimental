@@ -5,10 +5,8 @@
 #![allow(unused_must_use)]
 
 use eventstore::{
-    AppendToStreamOptions, Client, Credentials, EventData, ExpectedRevision, ReadResult,
-    ReadStreamOptions,
+    AppendToStreamOptions, Client, Credentials, EventData, ExpectedRevision, ReadStreamOptions,
 };
-use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use uuid::Uuid;
@@ -55,11 +53,11 @@ pub async fn run() -> Result<()> {
     // endregion overriding-user-credentials
 
     // region readStream
-    let result = client
+    let mut stream = client
         .read_stream("some-stream", &Default::default(), 10)
         .await?;
 
-    if let ReadResult::Ok(events) = result {
+    while let Some(event) = stream.next().await? {
         // Doing something productive with the events.
     }
     // endregion readStream

@@ -4,8 +4,8 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 use eventstore::{
-    Client, PersistentSubEvent, PersistentSubscriptionOptions, PersistentSubscriptionToAllOptions,
-    SubscriptionFilter,
+    Client, PersistentSubscriptionEvent, PersistentSubscriptionOptions,
+    PersistentSubscriptionToAllOptions, SubscriptionFilter,
 };
 
 async fn create_persistent_subscription(client: &Client) -> eventstore::Result<()> {
@@ -20,7 +20,7 @@ async fn create_persistent_subscription(client: &Client) -> eventstore::Result<(
 
 async fn connect_to_persistent_subscription_to_stream(client: &Client) -> eventstore::Result<()> {
     // #region subscribe-to-persistent-subscription-to-stream
-    let (mut read, mut write) = client
+    let mut sub = client
         .subscribe_to_persistent_subscription(
             "test-stream",
             "subscription-group",
@@ -28,27 +28,24 @@ async fn connect_to_persistent_subscription_to_stream(client: &Client) -> events
         )
         .await?;
 
-    while let Some(PersistentSubEvent {
-        retry_count,
-        event: inner,
-    }) = read.try_next_event().await?
-    {
+    loop {
+        let event = sub.next().await?;
         // Doing some productive work with the event...
-        let _ = write.ack_event(inner).await;
+        sub.ack(event).await?;
     }
+
     // #endregion subscribe-to-persistent-subscription-to-stream
-    Ok(())
 }
 
 async fn create_persistent_subscription_to_all(client: &Client) -> eventstore::Result<()> {
-    // #region create-persistent-subscription
+    // #region create-persistent-subscription-to-all
     let options = PersistentSubscriptionToAllOptions::default()
         .filter(SubscriptionFilter::on_stream_name().add_prefix("test"));
 
     client
         .create_persistent_subscription_to_all("subscription-group", &options)
         .await?;
-    // #endregion create-persistent-subscription
+    // #endregion create-persistent-subscription-to-all
     Ok(())
 }
 
@@ -56,7 +53,7 @@ async fn connect_to_persistent_subscription_with_manual_acks(
     client: &Client,
 ) -> eventstore::Result<()> {
     // #region subscribe-to-persistent-subscription-with-manual-acks
-    let (mut read, mut write) = client
+    let mut sub = client
         .subscribe_to_persistent_subscription(
             "test-stream",
             "subscription-group",
@@ -64,17 +61,12 @@ async fn connect_to_persistent_subscription_with_manual_acks(
         )
         .await?;
 
-    while let Some(PersistentSubEvent {
-        event: inner,
-        retry_count,
-    }) = read.try_next_event().await?
-    {
+    loop {
+        let event = sub.next().await?;
         // Doing some productive work with the event...
-        let _ = write.ack_event(inner).await;
+        sub.ack(event).await?;
     }
     // #endregion subscribe-to-persistent-subscription-with-manual-acks
-
-    Ok(())
 }
 
 async fn update_persistent_subscription(client: &Client) -> eventstore::Result<()> {
