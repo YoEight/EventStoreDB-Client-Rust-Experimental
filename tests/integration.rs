@@ -6,7 +6,7 @@ extern crate serde_json;
 mod images;
 
 use eventstore::{
-    Acl, Client, ClientSettings, EventData, ProjectionClient, Single, StreamAclBuilder,
+    Acl, Client, ClientSettings, EventData, ProjectionClient, ReadResult, Single, StreamAclBuilder,
     StreamMetadataBuilder, StreamMetadataResult,
 };
 use futures::channel::oneshot;
@@ -72,15 +72,19 @@ async fn test_read_stream_events(client: &Client) -> Result<(), Box<dyn Error>> 
     let mut pos = 0usize;
     let mut idx = 0i64;
 
-    let mut stream = client.read_stream(stream_id, &Default::default(), 10).await;
+    let result = client
+        .read_stream(stream_id, &Default::default(), 10)
+        .await?;
 
-    while let Some(event) = stream.try_next().await? {
-        let event = event.get_original_event();
-        let obj: HashMap<String, i64> = event.as_json().unwrap();
-        let value = obj.get("event_index").unwrap();
+    if let eventstore::ReadResult::Ok(mut stream) = result {
+        while let Some(event) = stream.try_next().await? {
+            let event = event.get_original_event();
+            let obj: HashMap<String, i64> = event.as_json().unwrap();
+            let value = obj.get("event_index").unwrap();
 
-        idx = *value;
-        pos += 1;
+            idx = *value;
+            pos += 1;
+        }
     }
 
     assert_eq!(pos, 10);
@@ -145,9 +149,10 @@ async fn test_read_stream_events_non_existent(client: &Client) -> Result<(), Box
 
     let result = client
         .read_stream(stream_id.as_str(), &Default::default(), Single)
-        .await;
+        .await?;
 
-    if let Err(eventstore::Error::ResourceNotFound) = result {
+    if let eventstore::ReadResult::StreamNotFound(stream) = result {
+        assert_eq!(stream, stream_id);
         return Ok(());
     }
 
@@ -188,11 +193,12 @@ async fn test_tombstone_stream(client: &Client) -> Result<(), Box<dyn Error>> {
 
     debug!("Tombstone stream [{}] result: {:?}", stream_id, result);
 
-    let mut stream = client
+    let result = client
         .read_stream(stream_id.as_str(), &Default::default(), 1)
-        .await;
+        .await?;
 
-    if let Err(eventstore::Error::ResourceDeleted) = stream.try_next().await {
+    if let ReadResult::StreamDeleted(stream_name) = result {
+        assert_eq!(stream_id, stream_name);
         Ok(())
     } else {
         panic!("Expected stream deleted error");
@@ -218,7 +224,7 @@ async fn test_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
 
     let mut sub = client
         .subscribe_to_stream(stream_id.as_str(), &options)
-        .await;
+        .await?;
 
     let (tx, recv) = oneshot::channel();
 
@@ -431,7 +437,10 @@ async fn test_persistent_subscription_to_all(
         for _ in 0..limit + 1 {
             if let Some(event) = read.try_next().await? {
                 if let eventstore::SubEvent::EventAppeared(event) = event {
-                    write.ack_event(event.event).await?;
+                    write
+                        .ack_event(event.event)
+                        .await
+                        .map_err(|e| eventstore::Error::Grpc(e.to_string()))?;
 
                     count += 1;
 
@@ -649,7 +658,7 @@ async fn test_replay_parked_messages(
 }
 
 async fn test_batch_append(client: &Client) -> eventstore::Result<()> {
-    let batch_client = client.batch_append(&Default::default());
+    let batch_client = client.batch_append(&Default::default()).await?;
 
     for _ in 0..3 {
         let stream_id = fresh_stream_id("batch-append");
@@ -666,7 +675,8 @@ async fn test_batch_append(client: &Client) -> eventstore::Result<()> {
             .position(eventstore::StreamPosition::Start);
         let mut stream = client
             .read_stream(stream_id.as_str(), &options, eventstore::All)
-            .await;
+            .await?
+            .unwrap();
 
         let mut cpt = 0usize;
 
@@ -772,18 +782,19 @@ async fn wait_for_admin_to_be_available(client: &eventstore::Client) -> eventsto
         count += 1;
 
         debug!("Checking if admin user is available...{}/50", count);
-        match client
-            .read_stream("$users", &Default::default(), Single)
-            .await
-        {
-            Ok(_) => {
+        match client.read_stream("$users", &Default::default(), 1).await {
+            Ok(result) => {
+                if result.is_not_found() {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    debug!("Not available retrying...");
+                    continue;
+                }
+
                 debug!("Completed.");
                 return Ok(());
             }
             Err(e) => match e {
-                eventstore::Error::AccessDenied
-                | eventstore::Error::ServerError(_)
-                | eventstore::Error::ResourceNotFound => {
+                eventstore::Error::AccessDenied | eventstore::Error::ServerError(_) => {
                     tokio::time::sleep(Duration::from_millis(500)).await;
                     debug!("Not available retrying...");
                     continue;
@@ -838,8 +849,6 @@ async fn wait_for_leader_to_be_elected(client: &eventstore::Client) -> eventstor
                 debug!("Not available retrying...");
                 continue;
             }
-
-            return Err(e);
         } else {
             debug!("Completed.");
             return Ok(());
@@ -911,7 +920,7 @@ async fn test_auto_resub_on_connection_drop() -> Result<(), Box<dyn std::error::
     let options = eventstore::SubscribeToStreamOptions::default().retry_options(retry);
     let mut stream = client
         .subscribe_to_stream(stream_name.as_str(), &options)
-        .await;
+        .await?;
     let max = 6usize;
     let (tx, recv) = oneshot::channel();
 
