@@ -4,8 +4,8 @@
 #![allow(unused_variables)]
 
 use eventstore::{
-    Client, Credentials, EventData, ExpectedRevision, Position, RetryOptions, StreamPosition,
-    SubEvent, SubscribeToAllOptions, SubscribeToStreamOptions, SubscriptionFilter,
+    Client, Credentials, EventData, ExpectedRevision, Position, ReadResult, RetryOptions,
+    StreamPosition, SubEvent, SubscribeToAllOptions, SubscribeToStreamOptions, SubscriptionFilter,
 };
 use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ pub async fn subscribe_to_stream(client: &Client) -> Result<()> {
     // region subscribe-to-stream
     let mut stream = client
         .subscribe_to_stream("some-stream", &Default::default())
-        .await;
+        .await?;
 
     while let Some(event) = stream.try_next().await? {
         if let SubEvent::EventAppeared(event) = event {
@@ -30,12 +30,12 @@ pub async fn subscribe_to_stream(client: &Client) -> Result<()> {
     // region subscribe-to-stream-from-position
     let options = SubscribeToStreamOptions::default().start_from(StreamPosition::Position(20));
 
-    client.subscribe_to_stream("some-stream", &options).await;
+    client.subscribe_to_stream("some-stream", &options).await?;
     // endregion subscribe-to-stream-from-position
 
     // region subscribe-to-stream-live
     let options = SubscribeToStreamOptions::default().start_from(StreamPosition::End);
-    client.subscribe_to_stream("some-stream", &options).await;
+    client.subscribe_to_stream("some-stream", &options).await?;
     // endregion subscribe-to-stream-live
 
     // region subscribe-to-stream-resolving-linktos
@@ -45,13 +45,13 @@ pub async fn subscribe_to_stream(client: &Client) -> Result<()> {
 
     client
         .subscribe_to_stream("$et-myEventType", &options)
-        .await;
+        .await?;
     // endregion subscribe-to-stream-resolving-linktos
 
     // region subscribe-to-stream-subscription-dropped
     let retry = RetryOptions::default().retry_forever();
     let options = SubscribeToStreamOptions::default().retry_options(retry);
-    let mut stream = client.subscribe_to_stream("some-stream", &options).await;
+    let mut stream = client.subscribe_to_stream("some-stream", &options).await?;
 
     while let Some(event) = stream.try_next().await? {
         if let SubEvent::EventAppeared(event) = event {
@@ -65,7 +65,7 @@ pub async fn subscribe_to_stream(client: &Client) -> Result<()> {
 
 pub async fn subscribe_to_all(client: &Client) -> Result<()> {
     // region subscribe-to-all
-    let mut stream = client.subscribe_to_all(&Default::default()).await;
+    let mut stream = client.subscribe_to_all(&Default::default()).await?;
 
     while let Some(event) = stream.try_next().await? {
         if let SubEvent::EventAppeared(event) = event {
@@ -80,18 +80,18 @@ pub async fn subscribe_to_all(client: &Client) -> Result<()> {
         prepare: 1_056,
     }));
 
-    client.subscribe_to_all(&options).await;
+    client.subscribe_to_all(&options).await?;
     // endregion subscribe-to-all-from-position
 
     // region subscribe-to-all-live
     let options = SubscribeToAllOptions::default().position(StreamPosition::End);
-    client.subscribe_to_all(&options).await;
+    client.subscribe_to_all(&options).await?;
     // endregion subscribe-to-all-live
 
     // region subscribe-to-all-subscription-dropped
     let retry = RetryOptions::default().retry_forever();
     let options = SubscribeToAllOptions::default().retry_options(retry);
-    let mut stream = client.subscribe_to_all(&options).await;
+    let mut stream = client.subscribe_to_all(&options).await?;
 
     while let Some(event) = stream.try_next().await? {
         if let SubEvent::EventAppeared(event) = event {
@@ -108,7 +108,7 @@ pub async fn subscribe_to_all_filtered(client: &Client) -> Result<()> {
     let filter = SubscriptionFilter::on_stream_name().add_prefix("test-");
     let options = SubscribeToAllOptions::default().filter(filter);
 
-    client.subscribe_to_all(&options).await;
+    client.subscribe_to_all(&options).await?;
     // endregion stream-prefix-filtered-subscription
 
     // region stream-regex-filtered-subscription
@@ -122,7 +122,7 @@ pub async fn overriding_user_credentials(client: &Client) -> Result<()> {
     // region overriding-user-credentials
     let options =
         SubscribeToAllOptions::default().authenticated(Credentials::new("admin", "changeit"));
-    client.subscribe_to_all(&options).await;
+    client.subscribe_to_all(&options).await?;
     // endregion overriding-user-credentials
 
     Ok(())
