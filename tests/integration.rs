@@ -1104,7 +1104,7 @@ async fn wait_until_projection_status_cc(
     status: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
-        let result = client.get_status(name, None).await?;
+        let result = client.get_status(name, &Default::default()).await?;
 
         if let Some(stats) = result {
             if stats.status.contains(status) {
@@ -1225,7 +1225,7 @@ async fn delete_projection(
 
     debug!("delete_projection: create_projection succeeded: {}", name);
 
-    client.abort(name.as_str(), None).await?;
+    client.abort(name.as_str(), &Default::default()).await?;
 
     wait_until_projection_status_is(client, name.as_str(), "Aborted").await?;
 
@@ -1279,7 +1279,9 @@ async fn update_projection(
         )
         .await?;
 
-    let stats = client.get_status(name.as_str(), None).await?;
+    let stats = client
+        .get_status(name.as_str(), &Default::default())
+        .await?;
 
     assert!(stats.is_some());
 
@@ -1306,7 +1308,7 @@ async fn enable_projection(
 
     wait_until_projection_status_is(client, name.as_str(), "Running").await?;
 
-    client.enable(name.as_str(), None).await?;
+    client.enable(name.as_str(), &Default::default()).await?;
 
     wait_until_projection_status_is(client, name.as_str(), "Running").await?;
 
@@ -1327,9 +1329,9 @@ async fn disable_projection(
         .await?;
 
     wait_until_projection_status_is(client, name.as_str(), "Running").await?;
-    client.enable(name.as_str(), None).await?;
+    client.enable(name.as_str(), &Default::default()).await?;
     wait_until_projection_status_is(client, name.as_str(), "Running").await?;
-    client.disable(name.as_str(), None).await?;
+    client.disable(name.as_str(), &Default::default()).await?;
     wait_until_projection_status_is(client, name.as_str(), "Stopped").await?;
 
     Ok(())
@@ -1349,8 +1351,8 @@ async fn reset_projection(
         .await?;
 
     wait_until_projection_status_is(client, name.as_str(), "Running").await?;
-    client.enable(name.as_str(), None).await?;
-    client.reset(name.as_str(), None).await?;
+    client.enable(name.as_str(), &Default::default()).await?;
+    client.reset(name.as_str(), &Default::default()).await?;
 
     Ok(())
 }
@@ -1397,7 +1399,7 @@ async fn projection_state(
         .await?;
 
     wait_until_projection_status_is(client, name.as_str(), "Running").await?;
-    client.enable(name.as_str(), None).await?;
+    client.enable(name.as_str(), &Default::default()).await?;
 
     let state = wait_until_state_ready::<State>(client, name.as_str()).await?;
 
@@ -1448,7 +1450,7 @@ async fn projection_result(
         .await?;
 
     wait_until_projection_status_is(client, name.as_str(), "Running").await?;
-    client.enable(name.as_str(), None).await?;
+    client.enable(name.as_str(), &Default::default()).await?;
 
     let result = wait_until_result_ready::<State>(client, name.as_str()).await?;
 

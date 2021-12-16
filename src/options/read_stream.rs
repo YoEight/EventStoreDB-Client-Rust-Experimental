@@ -1,4 +1,6 @@
-use crate::{Credentials, ReadDirection, StreamPosition};
+use std::time::Duration;
+
+use crate::{impl_options_trait, Credentials, ReadDirection, StreamPosition};
 
 #[derive(Clone)]
 pub struct ReadStreamOptions {
@@ -6,6 +8,8 @@ pub struct ReadStreamOptions {
     pub(crate) direction: ReadDirection,
     pub(crate) position: StreamPosition<u64>,
     pub(crate) resolve_link_tos: bool,
+    pub(crate) require_leader: bool,
+    pub(crate) deadline: Option<Duration>,
 }
 
 impl Default for ReadStreamOptions {
@@ -15,9 +19,13 @@ impl Default for ReadStreamOptions {
             direction: ReadDirection::Forward,
             position: StreamPosition::Start,
             resolve_link_tos: false,
+            require_leader: false,
+            deadline: None,
         }
     }
 }
+
+impl_options_trait!(ReadStreamOptions);
 
 impl ReadStreamOptions {
     /// Asks the command to read forward (toward the end of the stream).
@@ -33,14 +41,6 @@ impl ReadStreamOptions {
     pub fn backwards(self) -> Self {
         Self {
             direction: ReadDirection::Backward,
-            ..self
-        }
-    }
-
-    /// Performs the command with the given credentials.
-    pub fn authenticated(self, value: Credentials) -> Self {
-        Self {
-            credentials: Some(value),
             ..self
         }
     }

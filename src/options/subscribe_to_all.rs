@@ -1,5 +1,7 @@
+use std::time::Duration;
+
 use crate::options::retry::RetryOptions;
-use crate::{Credentials, Position, StreamPosition, SubscriptionFilter};
+use crate::{impl_options_trait, Credentials, Position, StreamPosition, SubscriptionFilter};
 
 #[derive(Clone)]
 pub struct SubscribeToAllOptions {
@@ -8,6 +10,8 @@ pub struct SubscribeToAllOptions {
     pub(crate) resolve_link_tos: bool,
     pub(crate) filter: Option<SubscriptionFilter>,
     pub(crate) retry: Option<RetryOptions>,
+    pub(crate) require_leader: bool,
+    pub(crate) deadline: Option<Duration>,
 }
 
 impl Default for SubscribeToAllOptions {
@@ -18,19 +22,15 @@ impl Default for SubscribeToAllOptions {
             position: StreamPosition::Start,
             resolve_link_tos: false,
             retry: None,
+            require_leader: false,
+            deadline: None,
         }
     }
 }
 
-impl SubscribeToAllOptions {
-    /// Performs the command with the given credentials.
-    pub fn authenticated(self, value: Credentials) -> Self {
-        Self {
-            credentials: Some(value),
-            ..self
-        }
-    }
+impl_options_trait!(SubscribeToAllOptions);
 
+impl SubscribeToAllOptions {
     /// Starting point in the transaction journal log. By default, it will start at
     /// `StreamPosition::Start`
     pub fn position(self, position: StreamPosition<Position>) -> Self {

@@ -2,10 +2,9 @@ use crate::event_store::client::projections;
 use crate::event_store::client::shared::Empty;
 use crate::grpc::{ClientSettings, GrpcClient};
 use crate::options::projections::{
-    CreateProjectionOptions, DeleteProjectionOptions, GetResultProjectionOptions,
-    GetStateProjectionOptions, UpdateProjectionOptions,
+    CreateProjectionOptions, DeleteProjectionOptions, GenericProjectionOptions,
+    GetResultProjectionOptions, GetStateProjectionOptions, UpdateProjectionOptions,
 };
-use crate::Credentials;
 use futures::stream::BoxStream;
 use serde::de::DeserializeOwned;
 
@@ -62,7 +61,7 @@ impl ProjectionClient {
         Name: AsRef<str>,
     {
         self.create_projection_internal(
-            options.credentials.as_ref(),
+            options,
             projections::create_req::Options {
                 query: query.clone(),
                 mode: Some(projections::create_req::options::Mode::Continuous(
@@ -86,18 +85,19 @@ impl ProjectionClient {
         Ok(())
     }
 
-    async fn create_projection_internal(
+    async fn create_projection_internal<Opts>(
         &self,
-        credentials: Option<&Credentials>,
+        create_opts: &Opts,
         options: projections::create_req::Options,
-    ) -> crate::Result<()> {
+    ) -> crate::Result<()>
+    where
+        Opts: crate::options::Options,
+    {
         let req = projections::CreateReq {
             options: Some(options),
         };
 
-        let mut req = tonic::Request::new(req);
-
-        crate::commands::configure_auth_req(&mut req, credentials.cloned());
+        let req = crate::commands::new_request(self.client.connection_settings(), create_opts, req);
 
         self.client
             .execute(|handle| async move {
@@ -136,9 +136,7 @@ impl ProjectionClient {
             options: Some(req_options),
         };
 
-        let mut req = tonic::Request::new(req);
-
-        crate::commands::configure_auth_req(&mut req, options.credentials.as_ref().cloned());
+        let req = crate::commands::new_request(self.client.connection_settings(), options, req);
 
         self.client
             .execute(|handle| async move {
@@ -171,9 +169,7 @@ impl ProjectionClient {
             options: Some(req_options),
         };
 
-        let mut req = tonic::Request::new(req);
-
-        crate::commands::configure_auth_req(&mut req, options.credentials.as_ref().cloned());
+        let req = crate::commands::new_request(self.client.connection_settings(), options, req);
 
         self.client
             .execute(|handle| async move {
@@ -190,13 +186,13 @@ impl ProjectionClient {
     pub async fn get_status<Name>(
         &self,
         name: Name,
-        credentials: Option<&Credentials>,
+        options: &GenericProjectionOptions,
     ) -> crate::Result<Option<ProjectionStatus>>
     where
         Name: AsRef<str>,
     {
         use futures::TryStreamExt;
-        self.statistics(StatsFor::Name(name.as_ref().to_string()), credentials)
+        self.statistics(StatsFor::Name(name.as_ref().to_string()), options)
             .await?
             .try_next()
             .await
@@ -204,15 +200,15 @@ impl ProjectionClient {
 
     pub async fn list(
         &self,
-        credentials: Option<&Credentials>,
+        options: &GenericProjectionOptions,
     ) -> crate::Result<BoxStream<'_, crate::Result<ProjectionStatus>>> {
-        self.statistics(StatsFor::AllContinuous, credentials).await
+        self.statistics(StatsFor::AllContinuous, options).await
     }
 
     async fn statistics(
         &self,
         stats_for: StatsFor,
-        credentials: Option<&Credentials>,
+        options: &GenericProjectionOptions,
     ) -> crate::Result<BoxStream<'_, crate::Result<ProjectionStatus>>> {
         use futures::TryStreamExt;
 
@@ -224,15 +220,13 @@ impl ProjectionClient {
             }
         };
 
-        let options = projections::statistics_req::Options { mode: Some(mode) };
+        let stats_options = projections::statistics_req::Options { mode: Some(mode) };
 
         let req = projections::StatisticsReq {
-            options: Some(options),
+            options: Some(stats_options),
         };
 
-        let mut req = tonic::Request::new(req);
-
-        crate::commands::configure_auth_req(&mut req, credentials.cloned());
+        let req = crate::commands::new_request(self.client.connection_settings(), options, req);
 
         self.client
             .execute(|handle| async move {
@@ -297,22 +291,20 @@ impl ProjectionClient {
     pub async fn enable<Name>(
         &self,
         name: Name,
-        credentials: Option<&Credentials>,
+        options: &GenericProjectionOptions,
     ) -> crate::Result<()>
     where
         Name: AsRef<str>,
     {
-        let options = projections::enable_req::Options {
+        let req_options = projections::enable_req::Options {
             name: name.as_ref().to_string(),
         };
 
         let req = projections::EnableReq {
-            options: Some(options),
+            options: Some(req_options),
         };
 
-        let mut req = tonic::Request::new(req);
-
-        crate::commands::configure_auth_req(&mut req, credentials.cloned());
+        let req = crate::commands::new_request(self.client.connection_settings(), options, req);
 
         self.client
             .execute(|handle| async move {
@@ -329,7 +321,7 @@ impl ProjectionClient {
     pub async fn reset<Name>(
         &self,
         name: Name,
-        credentials: Option<&Credentials>,
+        options: &GenericProjectionOptions,
     ) -> crate::Result<()>
     where
         Name: AsRef<str>,
@@ -343,9 +335,7 @@ impl ProjectionClient {
             options: Some(req_options),
         };
 
-        let mut req = tonic::Request::new(req);
-
-        crate::commands::configure_auth_req(&mut req, credentials.cloned());
+        let req = crate::commands::new_request(self.client.connection_settings(), options, req);
 
         self.client
             .execute(|handle| async move {
@@ -362,48 +352,44 @@ impl ProjectionClient {
     pub async fn disable<Name>(
         &self,
         name: Name,
-        credentials: Option<&Credentials>,
+        options: &GenericProjectionOptions,
     ) -> crate::Result<()>
     where
         Name: AsRef<str>,
     {
-        self.disable_projection_internal(name, true, credentials)
-            .await
+        self.disable_projection_internal(name, true, options).await
     }
 
     pub async fn abort<Name>(
         &self,
         name: Name,
-        credentials: Option<&Credentials>,
+        options: &GenericProjectionOptions,
     ) -> crate::Result<()>
     where
         Name: AsRef<str>,
     {
-        self.disable_projection_internal(name, false, credentials)
-            .await
+        self.disable_projection_internal(name, false, options).await
     }
 
     async fn disable_projection_internal<Name>(
         &self,
         name: Name,
         write_checkpoint: bool,
-        credentials: Option<&Credentials>,
+        options: &GenericProjectionOptions,
     ) -> crate::Result<()>
     where
         Name: AsRef<str>,
     {
-        let options = projections::disable_req::Options {
+        let req_options = projections::disable_req::Options {
             name: name.as_ref().to_string(),
             write_checkpoint,
         };
 
         let req = projections::DisableReq {
-            options: Some(options),
+            options: Some(req_options),
         };
 
-        let mut req = tonic::Request::new(req);
-
-        crate::commands::configure_auth_req(&mut req, credentials.cloned());
+        let req = crate::commands::new_request(self.client.connection_settings(), options, req);
 
         self.client
             .execute(|handle| async move {
@@ -435,9 +421,7 @@ impl ProjectionClient {
             options: Some(req_options),
         };
 
-        let mut req = tonic::Request::new(req);
-
-        crate::commands::configure_auth_req(&mut req, options.credentials.as_ref().cloned());
+        let req = crate::commands::new_request(self.client.connection_settings(), options, req);
 
         self.client
             .execute(|handle| async move {
@@ -473,9 +457,7 @@ impl ProjectionClient {
             options: Some(req_options),
         };
 
-        let mut req = tonic::Request::new(req);
-
-        crate::commands::configure_auth_req(&mut req, options.credentials.as_ref().cloned());
+        let req = crate::commands::new_request(self.client.connection_settings(), options, req);
 
         self.client
             .execute(|handle| async move {
@@ -493,10 +475,9 @@ impl ProjectionClient {
             .await
     }
 
-    pub async fn restart_subsystem(&self, credentials: Option<&Credentials>) -> crate::Result<()> {
-        let mut req = tonic::Request::new(Empty {});
-
-        crate::commands::configure_auth_req(&mut req, credentials.cloned());
+    pub async fn restart_subsystem(&self, options: &GenericProjectionOptions) -> crate::Result<()> {
+        let req =
+            crate::commands::new_request(self.client.connection_settings(), options, Empty {});
 
         self.client
             .execute(|handle| async {

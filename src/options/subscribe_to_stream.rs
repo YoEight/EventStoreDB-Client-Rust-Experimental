@@ -1,5 +1,7 @@
+use std::time::Duration;
+
 use crate::options::retry::RetryOptions;
-use crate::{Credentials, StreamPosition};
+use crate::{impl_options_trait, Credentials, StreamPosition};
 
 #[derive(Clone)]
 pub struct SubscribeToStreamOptions {
@@ -7,6 +9,8 @@ pub struct SubscribeToStreamOptions {
     pub(crate) position: StreamPosition<u64>,
     pub(crate) resolve_link_tos: bool,
     pub(crate) retry: Option<RetryOptions>,
+    pub(crate) require_leader: bool,
+    pub(crate) deadline: Option<Duration>,
 }
 
 impl Default for SubscribeToStreamOptions {
@@ -16,19 +20,15 @@ impl Default for SubscribeToStreamOptions {
             position: StreamPosition::End,
             resolve_link_tos: false,
             retry: None,
+            require_leader: false,
+            deadline: None,
         }
     }
 }
 
-impl SubscribeToStreamOptions {
-    /// Performs the command with the given credentials.
-    pub fn authenticated(self, value: Credentials) -> Self {
-        Self {
-            credentials: Some(value),
-            ..self
-        }
-    }
+impl_options_trait!(SubscribeToStreamOptions);
 
+impl SubscribeToStreamOptions {
     /// For example, if a starting point of 50 is specified when a stream has
     /// 100 events in it, the subscriber can expect to see events 51 through
     /// 100, and then any events subsequently written events until such time
