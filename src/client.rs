@@ -345,7 +345,7 @@ impl Client {
         group_name: impl AsRef<str>,
         options: &ReplayParkedMessagesOptions,
     ) -> crate::Result<()> {
-        let handle = self.client.current_selected_node().await?;
+        let handle = self.client.current_node().await?;
 
         let mut builder = self
             .http_client
@@ -380,7 +380,7 @@ impl Client {
         &self,
         options: &ListPersistentSubscriptionsOptions,
     ) -> crate::Result<Vec<PersistentSubscriptionInfo>> {
-        let handle = self.client.current_selected_node().await?;
+        let handle = self.client.current_node().await?;
 
         let mut builder = self
             .http_client
@@ -411,7 +411,7 @@ impl Client {
         stream_name: impl AsRef<str>,
         options: &ListPersistentSubscriptionsOptions,
     ) -> crate::Result<Vec<PersistentSubscriptionInfo>> {
-        let handle = self.client.current_selected_node().await?;
+        let handle = self.client.current_node().await?;
 
         let mut builder = self
             .http_client
@@ -447,7 +447,7 @@ impl Client {
         group_name: impl AsRef<str>,
         options: &GetPersistentSubscriptionInfoOptions,
     ) -> crate::Result<PersistentSubscriptionInfo> {
-        let handle = self.client.current_selected_node().await?;
+        let handle = self.client.current_node().await?;
 
         let mut builder = self
             .http_client

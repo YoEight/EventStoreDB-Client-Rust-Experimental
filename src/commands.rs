@@ -16,7 +16,7 @@ use shared::{Empty, StreamIdentifier, Uuid};
 use streams::streams_client::StreamsClient;
 
 use crate::batch::BatchAppendClient;
-use crate::grpc::{handle_error, GrpcClient, Msg};
+use crate::grpc::{handle_error, GrpcClient, Handle, Msg};
 use crate::options::append_to_stream::AppendToStreamOptions;
 use crate::options::batch_append::BatchAppendOptions;
 use crate::options::persistent_subscription::PersistentSubscriptionOptions;
@@ -449,7 +449,83 @@ pub fn ps_create_filter_into_proto(
         checkpoint_interval_multiplier: 1,
     }
 }
+async fn run_append_stream<Events>(
+    stream: String,
+    options: &AppendToStreamOptions,
+    events: Events,
+) -> Result<WriteResult, tonic::Status>
+where
+    Events: Stream<Item = EventData> + Send + Sync + 'static,
+{
+    use streams::append_req::{self, Content};
+    use streams::AppendReq;
 
+    let stream_identifier = Some(StreamIdentifier {
+        stream_name: stream.into_bytes(),
+    });
+    let header = Content::Options(append_req::Options {
+        stream_identifier,
+        expected_stream_revision: Some(options.version.clone()),
+    });
+    let header = AppendReq {
+        content: Some(header),
+    };
+    let header = stream::once(async move { header });
+    let events = events.map(convert_event_data);
+    let payload = header.chain(events);
+    let mut req = Request::new(payload);
+
+    let credentials = options
+        .credentials
+        .clone()
+        .or_else(|| connection.default_credentials());
+
+    configure_auth_req(&mut req, credentials);
+
+    let mut client = StreamsClient::new(channel.channel);
+    let resp = client.append(req).await?.into_inner();
+
+    match resp.result.unwrap() {
+        streams::append_resp::Result::Success(success) => {
+            let next_expected_version = match success.current_revision_option.unwrap() {
+                streams::append_resp::success::CurrentRevisionOption::CurrentRevision(rev) => rev,
+                streams::append_resp::success::CurrentRevisionOption::NoStream(_) => 0,
+            };
+
+            let position = match success.position_option.unwrap() {
+                streams::append_resp::success::PositionOption::Position(pos) => Position {
+                    commit: pos.commit_position,
+                    prepare: pos.prepare_position,
+                },
+
+                streams::append_resp::success::PositionOption::NoPosition(_) => Position::start(),
+            };
+
+            let write_result = WriteResult {
+                next_expected_version,
+                position,
+            };
+
+            Ok(Ok(write_result))
+        }
+
+        streams::append_resp::Result::WrongExpectedVersion(error) => {
+            let current = match error.current_revision_option.unwrap() {
+                    streams::append_resp::wrong_expected_version::CurrentRevisionOption::CurrentRevision(rev) => CurrentRevision::Current(rev),
+                    streams::append_resp::wrong_expected_version::CurrentRevisionOption::CurrentNoStream(_) => CurrentRevision::NoStream,
+                };
+
+            let expected = match error.expected_revision_option.unwrap() {
+                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedRevision(rev) => ExpectedRevision::Exact(rev),
+                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedAny(_) => ExpectedRevision::Any,
+                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedStreamExists(_) => ExpectedRevision::StreamExists,
+                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedNoStream(_) => ExpectedRevision::NoStream,
+                };
+
+            Ok(Err(WrongExpectedVersion { current, expected }))
+        }
+    }
+}
 /// Sends asynchronously the write command to the server.
 pub async fn append_to_stream<S, Events>(
     connection: &GrpcClient,
@@ -465,6 +541,7 @@ where
     use streams::AppendReq;
 
     let stream = stream.as_ref().to_string();
+    let handle = connection.current_node().await?;
 
     connection.execute(move |channel| async move {
         let stream_identifier = Some(StreamIdentifier {
@@ -860,7 +937,7 @@ pub async fn read_stream<S: AsRef<str>>(
 
     configure_auth_req(&mut req, credentials);
 
-    let handle = connection.current_selected_node().await?;
+    let handle = connection.current_node().await?;
     let channel_id = handle.id();
     let mut client = StreamsClient::new(handle.channel);
 
@@ -941,7 +1018,7 @@ pub async fn read_all(
 
     configure_auth_req(&mut req, credentials);
 
-    let handle = connection.current_selected_node().await?;
+    let handle = connection.current_node().await?;
     let channel_id = handle.id();
     let mut client = StreamsClient::new(handle.channel);
 
@@ -1244,7 +1321,7 @@ impl Subscription {
                     }
                 }
             } else {
-                let handle = self.connection.current_selected_node().await?;
+                let handle = self.connection.current_node().await?;
 
                 self.channel_id = handle.id();
 
@@ -1725,7 +1802,7 @@ pub async fn subscribe_to_persistent_subscription<S: AsRef<str>>(
     let _ = sender.send(read_req).await;
     let stream_id = stream_id.as_ref().to_string();
     let group_name = group_name.as_ref().to_string();
-    let handle = connection.current_selected_node().await?;
+    let handle = connection.current_node().await?;
     let channel_id = handle.id();
     let mut client = PersistentSubscriptionsClient::new(handle.channel);
 

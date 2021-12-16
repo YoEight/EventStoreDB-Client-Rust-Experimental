@@ -810,10 +810,7 @@ fn connection_state_machine(settings: ClientSettings) -> UnboundedSender<Msg> {
                         }
                         Ok(info) => {
                             let handle = Handle {
-                                id: info.id,
-                                channel: info.channel,
-                                endpoint: info.endpoint,
-                                secure: info.secure,
+                                info,
                                 sender: sender.clone(),
                             };
 
@@ -836,10 +833,7 @@ fn connection_state_machine(settings: ClientSettings) -> UnboundedSender<Msg> {
                         }
                         Ok(info) => {
                             let handle = Handle {
-                                id: info.id,
-                                channel: info.channel,
-                                endpoint: info.endpoint,
-                                secure: info.secure,
+                                info,
                                 sender: sender.clone(),
                             };
 
@@ -882,34 +876,35 @@ async fn new_channel(
 
 #[derive(Clone)]
 pub(crate) struct Handle {
-    id: Uuid,
-    pub(crate) channel: Channel,
-    pub(crate) endpoint: Endpoint,
-    pub(crate) secure: bool,
+    info: HandleInfo,
     sender: futures::channel::mpsc::UnboundedSender<Msg>,
 }
 
 impl Handle {
-    pub(crate) async fn report_error(mut self, e: &crate::Error) {
-        error!("Error occurred during operation execution: {:?}", e);
-        let _ = self.sender.send(Msg::CreateChannel(self.id, None)).await;
-    }
-
-    pub(crate) fn id(&self) -> Uuid {
-        self.id
-    }
-
-    pub(crate) fn sender(&self) -> &futures::channel::mpsc::UnboundedSender<Msg> {
-        &self.sender
-    }
-
     pub(crate) fn url(&self) -> String {
-        let protocol = if self.secure { "https" } else { "http" };
+        let protocol = if self.info.secure { "https" } else { "http" };
 
         format!(
             "{}://{}:{}",
-            protocol, self.endpoint.host, self.endpoint.port
+            protocol, self.info.endpoint.host, self.info.endpoint.port
         )
+    }
+
+    pub(crate) fn channel(&self) -> Channel {
+        self.info.channel.clone()
+    }
+
+    pub(crate) async fn inspect<A>(self, result: Result<A, tonic::Status>) -> crate::Result<A> {
+        match result {
+            Ok(a) => Ok(a),
+            Err(status) => {
+                let e = crate::Error::from_grpc(status);
+
+                handle_error(&self.sender, self.info.id, &e).await;
+
+                Err(e)
+            }
+        }
     }
 }
 
@@ -946,39 +941,7 @@ impl GrpcClient {
         }
     }
 
-    pub(crate) async fn execute<F, Fut, A>(&self, action: F) -> crate::Result<A>
-    where
-        F: FnOnce(Handle) -> Fut + Send,
-        Fut: Future<Output = Result<A, Status>> + Send,
-        A: Send,
-    {
-        let (sender, consumer) = futures::channel::oneshot::channel();
-
-        debug!("Sending channel handle request...");
-        let _ = self.sender.clone().send(Msg::GetChannel(sender)).await;
-
-        let handle = match consumer.await {
-            Ok(handle) => handle.map_err(crate::Error::GrpcConnectionError),
-            Err(_) => Err(crate::Error::ConnectionClosed),
-        }?;
-
-        debug!("Handle received!");
-
-        let id = handle.id;
-        match action(handle).await {
-            Err(status) => {
-                let e = crate::Error::from_grpc(status);
-
-                handle_error(&self.sender, id, &e).await;
-
-                Err(e)
-            }
-
-            Ok(a) => Ok(a),
-        }
-    }
-
-    pub(crate) async fn current_selected_node(&self) -> crate::Result<Handle> {
+    pub(crate) async fn current_node(&self) -> crate::Result<Handle> {
         let (sender, consumer) = futures::channel::oneshot::channel();
 
         debug!("Sending channel handle request...");
