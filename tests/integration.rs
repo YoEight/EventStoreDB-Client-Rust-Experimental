@@ -262,8 +262,10 @@ async fn test_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
 async fn test_create_persistent_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("create_persistent_sub");
 
+    let options =
+        eventstore::PersistentSubscriptionOptions::default().deadline(Duration::from_secs(2));
     client
-        .create_persistent_subscription(stream_id, "a_group_name", &Default::default())
+        .create_persistent_subscription(stream_id, "a_group_name", &options)
         .await?;
 
     Ok(())
@@ -274,9 +276,11 @@ async fn test_create_persistent_subscription_to_all(
     names: &mut names::Generator<'_>,
 ) -> eventstore::Result<()> {
     let group_name = names.next().unwrap();
+    let options =
+        eventstore::PersistentSubscriptionToAllOptions::default().deadline(Duration::from_secs(2));
 
     client
-        .create_persistent_subscription_to_all(group_name, &Default::default())
+        .create_persistent_subscription_to_all(group_name, &options)
         .await?;
 
     Ok(())
@@ -286,10 +290,11 @@ async fn test_create_persistent_subscription_to_all(
 async fn test_update_persistent_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("update_persistent_sub");
 
-    let mut options = eventstore::PersistentSubscriptionOptions::default();
+    let mut options =
+        eventstore::PersistentSubscriptionOptions::default().deadline(Duration::from_secs(2));
 
     client
-        .create_persistent_subscription(stream_id.as_str(), "a_group_name", &Default::default())
+        .create_persistent_subscription(stream_id.as_str(), "a_group_name", &options)
         .await?;
 
     options.settings_mut().max_retry_count = 1_000;
@@ -307,7 +312,8 @@ async fn test_update_persistent_subscription_to_all(
 ) -> eventstore::Result<()> {
     let group_name = names.next().unwrap();
 
-    let mut options = eventstore::PersistentSubscriptionToAllOptions::default();
+    let mut options =
+        eventstore::PersistentSubscriptionToAllOptions::default().deadline(Duration::from_secs(2));
 
     client
         .create_persistent_subscription_to_all(group_name.as_str(), &options)
@@ -325,12 +331,18 @@ async fn test_update_persistent_subscription_to_all(
 // We test we can successfully delete a persistent subscription.
 async fn test_delete_persistent_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("delete_persistent_sub");
-    client
-        .create_persistent_subscription(stream_id.as_str(), "a_group_name", &Default::default())
-        .await?;
+    let options =
+        eventstore::PersistentSubscriptionOptions::default().deadline(Duration::from_secs(2));
 
     client
-        .delete_persistent_subscription(stream_id, "a_group_name", &Default::default())
+        .create_persistent_subscription(stream_id.as_str(), "a_group_name", &options)
+        .await?;
+
+    let options =
+        eventstore::DeletePersistentSubscriptionOptions::default().deadline(Duration::from_secs(2));
+
+    client
+        .delete_persistent_subscription(stream_id, "a_group_name", &options)
         .await?;
 
     Ok(())
@@ -341,13 +353,18 @@ async fn test_delete_persistent_subscription_to_all(
     names: &mut names::Generator<'_>,
 ) -> eventstore::Result<()> {
     let group_name = names.next().unwrap();
+    let options =
+        eventstore::PersistentSubscriptionToAllOptions::default().deadline(Duration::from_secs(2));
 
     client
-        .create_persistent_subscription_to_all(group_name.as_str(), &Default::default())
+        .create_persistent_subscription_to_all(group_name.as_str(), &options)
         .await?;
 
+    let options =
+        eventstore::DeletePersistentSubscriptionOptions::default().deadline(Duration::from_secs(2));
+
     client
-        .delete_persistent_subscription_to_all(group_name.as_str(), &Default::default())
+        .delete_persistent_subscription_to_all(group_name.as_str(), &options)
         .await?;
 
     Ok(())
@@ -356,9 +373,11 @@ async fn test_delete_persistent_subscription_to_all(
 async fn test_persistent_subscription(client: &Client) -> eventstore::Result<()> {
     let stream_id = fresh_stream_id("persistent_subscription");
     let events = generate_events("es6-persistent-subscription-test".to_string(), 5);
+    let options =
+        eventstore::PersistentSubscriptionOptions::default().deadline(Duration::from_secs(2));
 
     client
-        .create_persistent_subscription(stream_id.as_str(), "a_group_name", &Default::default())
+        .create_persistent_subscription(stream_id.as_str(), "a_group_name", &options)
         .await?;
 
     let _ = client
@@ -421,7 +440,8 @@ async fn test_persistent_subscription_to_all(
     let group_name = names.next().unwrap();
 
     let options = eventstore::PersistentSubscriptionToAllOptions::default()
-        .start_from(eventstore::StreamPosition::Start);
+        .start_from(eventstore::StreamPosition::Start)
+        .deadline(Duration::from_secs(2));
 
     client
         .create_persistent_subscription_to_all(group_name.as_str(), &options)
@@ -765,6 +785,7 @@ async fn wait_for_admin_to_be_available(client: &eventstore::Client) -> eventsto
             eventstore::Error::AccessDenied
             | eventstore::Error::DeadlineExceeded
             | eventstore::Error::ServerError(_)
+            | eventstore::Error::NotLeaderException(_)
             | eventstore::Error::ResourceNotFound => true,
             _ => false,
         }
@@ -816,55 +837,6 @@ async fn wait_for_admin_to_be_available(client: &eventstore::Client) -> eventsto
     ))
 }
 
-// This function makes sure that we are connected to the leader node but also assumes that we are using
-// the admin credentials. This function is useful in the case where the environment where the cluster
-// is not powerful, which leads to executing commands when the cluster might not having elected
-// a leader yet.
-async fn wait_for_leader_to_be_elected(client: &eventstore::Client) -> eventstore::Result<()> {
-    let mut names = names::Generator::default();
-    let stream_name = names.next().unwrap();
-    let group_name = names.next().unwrap();
-    let mut count = 0;
-
-    while count < 50 {
-        count += 1;
-
-        debug!(
-            "Checking if we are connected to the leader node...{}/50",
-            count
-        );
-        if let Err(e) = client
-            .create_persistent_subscription(
-                stream_name.as_str(),
-                group_name.as_str(),
-                &Default::default(),
-            )
-            .await
-        {
-            // If that exception happens, it means next time we are using the connection, we will
-            // connected to the leader node.
-            if let eventstore::Error::NotLeaderException(_) = e {
-                tokio::time::sleep(Duration::from_millis(500)).await;
-                debug!("Not available retrying...");
-                continue;
-            }
-
-            // Probably useless considering we made sure to have the admin user ready is by now.
-            if let eventstore::Error::AccessDenied = e {
-                tokio::time::sleep(Duration::from_millis(500)).await;
-                debug!("Not available retrying...");
-                continue;
-            }
-
-            return Err(e);
-        } else {
-            debug!("Election cycle is completed!");
-            return Ok(());
-        }
-    }
-    Ok(())
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn cluster() -> Result<(), Box<dyn std::error::Error>> {
     let _ = pretty_env_logger::try_init();
@@ -876,7 +848,6 @@ async fn cluster() -> Result<(), Box<dyn std::error::Error>> {
     // Those pre-checks are put in place to avoid test flakiness. In essence, those functions use
     // features we test later on.
     wait_for_admin_to_be_available(&client).await?;
-    wait_for_leader_to_be_elected(&client).await?;
 
     all_around_tests(client).await?;
 
@@ -1104,7 +1075,7 @@ async fn wait_until_projection_status_cc(
     status: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
-        let result = client.get_status(name, None).await?;
+        let result = client.get_status(name, &Default::default()).await?;
 
         if let Some(stats) = result {
             if stats.status.contains(status) {
@@ -1225,7 +1196,7 @@ async fn delete_projection(
 
     debug!("delete_projection: create_projection succeeded: {}", name);
 
-    client.abort(name.as_str(), None).await?;
+    client.abort(name.as_str(), &Default::default()).await?;
 
     wait_until_projection_status_is(client, name.as_str(), "Aborted").await?;
 
@@ -1279,7 +1250,9 @@ async fn update_projection(
         )
         .await?;
 
-    let stats = client.get_status(name.as_str(), None).await?;
+    let stats = client
+        .get_status(name.as_str(), &Default::default())
+        .await?;
 
     assert!(stats.is_some());
 
@@ -1306,7 +1279,7 @@ async fn enable_projection(
 
     wait_until_projection_status_is(client, name.as_str(), "Running").await?;
 
-    client.enable(name.as_str(), None).await?;
+    client.enable(name.as_str(), &Default::default()).await?;
 
     wait_until_projection_status_is(client, name.as_str(), "Running").await?;
 
@@ -1327,9 +1300,9 @@ async fn disable_projection(
         .await?;
 
     wait_until_projection_status_is(client, name.as_str(), "Running").await?;
-    client.enable(name.as_str(), None).await?;
+    client.enable(name.as_str(), &Default::default()).await?;
     wait_until_projection_status_is(client, name.as_str(), "Running").await?;
-    client.disable(name.as_str(), None).await?;
+    client.disable(name.as_str(), &Default::default()).await?;
     wait_until_projection_status_is(client, name.as_str(), "Stopped").await?;
 
     Ok(())
@@ -1349,8 +1322,8 @@ async fn reset_projection(
         .await?;
 
     wait_until_projection_status_is(client, name.as_str(), "Running").await?;
-    client.enable(name.as_str(), None).await?;
-    client.reset(name.as_str(), None).await?;
+    client.enable(name.as_str(), &Default::default()).await?;
+    client.reset(name.as_str(), &Default::default()).await?;
 
     Ok(())
 }
@@ -1397,7 +1370,7 @@ async fn projection_state(
         .await?;
 
     wait_until_projection_status_is(client, name.as_str(), "Running").await?;
-    client.enable(name.as_str(), None).await?;
+    client.enable(name.as_str(), &Default::default()).await?;
 
     let state = wait_until_state_ready::<State>(client, name.as_str()).await?;
 
@@ -1448,7 +1421,7 @@ async fn projection_result(
         .await?;
 
     wait_until_projection_status_is(client, name.as_str(), "Running").await?;
-    client.enable(name.as_str(), None).await?;
+    client.enable(name.as_str(), &Default::default()).await?;
 
     let result = wait_until_result_ready::<State>(client, name.as_str()).await?;
 

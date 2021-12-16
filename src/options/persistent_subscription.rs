@@ -1,24 +1,19 @@
+use crate::options::CommonOperationOptions;
 use crate::{
-    Credentials, PersistentSubscriptionSettings, Position, StreamPosition, SubscriptionFilter,
-    SystemConsumerStrategy,
+    impl_options_trait, Credentials, PersistentSubscriptionSettings, Position, StreamPosition,
+    SubscriptionFilter, SystemConsumerStrategy,
 };
 use std::time::Duration;
 
 #[derive(Clone, Default)]
 pub struct PersistentSubscriptionOptions {
-    pub(crate) credentials: Option<Credentials>,
     pub(crate) setts: PersistentSubscriptionSettings<u64>,
+    pub(crate) common_operation_options: CommonOperationOptions,
 }
 
-impl PersistentSubscriptionOptions {
-    /// Performs the command with the given credentials.
-    pub fn authenticated(self, value: Credentials) -> Self {
-        Self {
-            credentials: Some(value),
-            ..self
-        }
-    }
+impl_options_trait!(PersistentSubscriptionOptions);
 
+impl PersistentSubscriptionOptions {
     /// Applies the specified persistent subscription settings.
     pub fn settings(self, setts: PersistentSubscriptionSettings<u64>) -> Self {
         Self { setts, ..self }
@@ -113,20 +108,14 @@ impl PersistentSubscriptionOptions {
 
 #[derive(Clone, Default)]
 pub struct PersistentSubscriptionToAllOptions {
-    pub(crate) credentials: Option<Credentials>,
     pub(crate) setts: PersistentSubscriptionSettings<Position>,
     pub(crate) filter: Option<SubscriptionFilter>,
+    pub(crate) common_operation_options: CommonOperationOptions,
 }
 
-impl PersistentSubscriptionToAllOptions {
-    /// Performs the command with the given credentials.
-    pub fn authenticated(self, value: Credentials) -> Self {
-        Self {
-            credentials: Some(value),
-            ..self
-        }
-    }
+impl_options_trait!(PersistentSubscriptionToAllOptions);
 
+impl PersistentSubscriptionToAllOptions {
     /// Applies the specified persistent subscription settings.
     pub fn settings(self, setts: PersistentSubscriptionSettings<Position>) -> Self {
         Self { setts, ..self }
@@ -229,42 +218,29 @@ impl PersistentSubscriptionToAllOptions {
 
 #[derive(Clone, Default)]
 pub struct DeletePersistentSubscriptionOptions {
-    pub(crate) credentials: Option<Credentials>,
+    pub(crate) common_operation_options: CommonOperationOptions,
 }
 
-impl DeletePersistentSubscriptionOptions {
-    /// Performs the command with the given credentials.
-    pub fn authenticated(self, value: Credentials) -> Self {
-        Self {
-            credentials: Some(value),
-        }
-    }
-}
+impl_options_trait!(DeletePersistentSubscriptionOptions);
 
 #[derive(Clone)]
-pub struct SubscribeToPersistentSubscriptionn {
-    pub(crate) credentials: Option<Credentials>,
+pub struct SubscribeToPersistentSubscriptionOptions {
     pub(crate) buffer_size: usize,
+    pub(crate) common_operation_options: CommonOperationOptions,
 }
 
-impl Default for SubscribeToPersistentSubscriptionn {
+impl Default for SubscribeToPersistentSubscriptionOptions {
     fn default() -> Self {
         Self {
-            credentials: None,
             buffer_size: 10,
+            common_operation_options: Default::default(),
         }
     }
 }
 
-impl SubscribeToPersistentSubscriptionn {
-    /// Performs the command with the given credentials.
-    pub fn authenticated(self, creds: Credentials) -> Self {
-        Self {
-            credentials: Some(creds),
-            ..self
-        }
-    }
+impl_options_trait!(SubscribeToPersistentSubscriptionOptions);
 
+impl SubscribeToPersistentSubscriptionOptions {
     /// The buffer size to use  for the persistent subscription.
     pub fn buffer_size(self, buffer_size: usize) -> Self {
         Self {

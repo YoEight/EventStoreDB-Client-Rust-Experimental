@@ -1,7 +1,8 @@
 use crate::event_store::client::shared::Empty;
 use crate::event_store::client::streams::append_req::options::ExpectedStreamRevision;
+use crate::options::CommonOperationOptions;
 use crate::private::Sealed;
-use crate::{Credentials, EventData, ExpectedRevision};
+use crate::{impl_options_trait, EventData, ExpectedRevision};
 use futures::future::Ready;
 use futures::stream::{Iter, Once};
 use futures::Stream;
@@ -10,27 +11,21 @@ use futures::Stream;
 /// Options of the append to stream command.
 pub struct AppendToStreamOptions {
     pub(crate) version: ExpectedStreamRevision,
-    pub(crate) credentials: Option<Credentials>,
+    pub(crate) common_operation_options: CommonOperationOptions,
 }
 
 impl Default for AppendToStreamOptions {
     fn default() -> Self {
         Self {
             version: ExpectedStreamRevision::Any(Empty {}),
-            credentials: None,
+            common_operation_options: Default::default(),
         }
     }
 }
 
-impl AppendToStreamOptions {
-    /// Performs the command with the given credentials.
-    pub fn authenticated(self, credentials: Credentials) -> Self {
-        Self {
-            credentials: Some(credentials),
-            ..self
-        }
-    }
+impl_options_trait!(AppendToStreamOptions);
 
+impl AppendToStreamOptions {
     /// Asks the server to check that the stream receiving the event is at
     /// the given expected version. Default: `ExpectedVersion::Any`.
     pub fn expected_revision(self, version: ExpectedRevision) -> Self {

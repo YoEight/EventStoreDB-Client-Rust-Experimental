@@ -1,30 +1,25 @@
-use crate::{Credentials, ExpectedRevision};
+use crate::options::CommonOperationOptions;
+use crate::{impl_options_trait, ExpectedRevision};
 
 #[derive(Clone)]
 /// Options of the tombstone stream command.
 pub struct TombstoneStreamOptions {
     pub(crate) version: ExpectedRevision,
-    pub(crate) credentials: Option<Credentials>,
+    pub(crate) common_operation_options: CommonOperationOptions,
 }
 
 impl Default for TombstoneStreamOptions {
     fn default() -> Self {
         Self {
             version: ExpectedRevision::Any,
-            credentials: None,
+            common_operation_options: Default::default(),
         }
     }
 }
 
-impl TombstoneStreamOptions {
-    /// Performs the command with the given credentials.
-    pub fn authenticated(self, credentials: Credentials) -> Self {
-        Self {
-            credentials: Some(credentials),
-            ..self
-        }
-    }
+impl_options_trait!(TombstoneStreamOptions);
 
+impl TombstoneStreamOptions {
     /// Asks the server to check that the stream receiving the event is at
     /// the given expected version. Default: `ExpectedVersion::Any`.
     pub fn expected_revision(self, version: ExpectedRevision) -> Self {

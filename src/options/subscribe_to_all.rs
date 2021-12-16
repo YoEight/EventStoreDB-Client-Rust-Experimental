@@ -1,36 +1,31 @@
 use crate::options::retry::RetryOptions;
-use crate::{Credentials, Position, StreamPosition, SubscriptionFilter};
+use crate::options::CommonOperationOptions;
+use crate::{impl_options_trait, Position, StreamPosition, SubscriptionFilter};
 
 #[derive(Clone)]
 pub struct SubscribeToAllOptions {
-    pub(crate) credentials: Option<Credentials>,
     pub(crate) position: StreamPosition<Position>,
     pub(crate) resolve_link_tos: bool,
     pub(crate) filter: Option<SubscriptionFilter>,
     pub(crate) retry: Option<RetryOptions>,
+    pub(crate) common_operation_options: CommonOperationOptions,
 }
 
 impl Default for SubscribeToAllOptions {
     fn default() -> Self {
         Self {
             filter: None,
-            credentials: None,
             position: StreamPosition::Start,
             resolve_link_tos: false,
             retry: None,
+            common_operation_options: Default::default(),
         }
     }
 }
 
-impl SubscribeToAllOptions {
-    /// Performs the command with the given credentials.
-    pub fn authenticated(self, value: Credentials) -> Self {
-        Self {
-            credentials: Some(value),
-            ..self
-        }
-    }
+impl_options_trait!(SubscribeToAllOptions);
 
+impl SubscribeToAllOptions {
     /// Starting point in the transaction journal log. By default, it will start at
     /// `StreamPosition::Start`
     pub fn position(self, position: StreamPosition<Position>) -> Self {

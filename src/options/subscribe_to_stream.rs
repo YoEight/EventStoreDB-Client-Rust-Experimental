@@ -1,34 +1,29 @@
 use crate::options::retry::RetryOptions;
-use crate::{Credentials, StreamPosition};
+use crate::options::CommonOperationOptions;
+use crate::{impl_options_trait, StreamPosition};
 
 #[derive(Clone)]
 pub struct SubscribeToStreamOptions {
-    pub(crate) credentials: Option<Credentials>,
     pub(crate) position: StreamPosition<u64>,
     pub(crate) resolve_link_tos: bool,
     pub(crate) retry: Option<RetryOptions>,
+    pub(crate) common_operation_options: CommonOperationOptions,
 }
 
 impl Default for SubscribeToStreamOptions {
     fn default() -> Self {
         Self {
-            credentials: None,
             position: StreamPosition::End,
             resolve_link_tos: false,
             retry: None,
+            common_operation_options: Default::default(),
         }
     }
 }
 
-impl SubscribeToStreamOptions {
-    /// Performs the command with the given credentials.
-    pub fn authenticated(self, value: Credentials) -> Self {
-        Self {
-            credentials: Some(value),
-            ..self
-        }
-    }
+impl_options_trait!(SubscribeToStreamOptions);
 
+impl SubscribeToStreamOptions {
     /// For example, if a starting point of 50 is specified when a stream has
     /// 100 events in it, the subscriber can expect to see events 51 through
     /// 100, and then any events subsequently written events until such time
