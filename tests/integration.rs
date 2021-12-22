@@ -6,11 +6,10 @@ extern crate serde_json;
 mod images;
 
 use eventstore::{
-    Acl, Client, ClientSettings, EventData, ProjectionClient, ReadResult, Single, StreamAclBuilder,
+    Acl, Client, ClientSettings, EventData, ProjectionClient, Single, StreamAclBuilder,
     StreamMetadataBuilder, StreamMetadataResult,
 };
 use futures::channel::oneshot;
-use futures::stream::TryStreamExt;
 use std::collections::HashMap;
 use std::error::Error;
 use std::time::Duration;
@@ -54,7 +53,7 @@ async fn test_write_events(client: &Client) -> Result<(), Box<dyn Error>> {
 // We read all stream events by batch.
 async fn test_read_all_stream_events(client: &Client) -> Result<(), Box<dyn Error>> {
     // Eventstore should always have "some" events in $all, since eventstore itself uses streams, ouroboros style.
-    client.read_all(&Default::default(), Single).await?;
+    client.read_all(&Default::default(), Single).await??;
 
     Ok(())
 }
@@ -72,19 +71,17 @@ async fn test_read_stream_events(client: &Client) -> Result<(), Box<dyn Error>> 
     let mut pos = 0usize;
     let mut idx = 0i64;
 
-    let result = client
+    let mut stream = client
         .read_stream(stream_id, &Default::default(), 10)
         .await?;
 
-    if let eventstore::ReadResult::Ok(mut stream) = result {
-        while let Some(event) = stream.try_next().await? {
-            let event = event.get_original_event();
-            let obj: HashMap<String, i64> = event.as_json().unwrap();
-            let value = obj.get("event_index").unwrap();
+    while let Some(event) = stream.next().await? {
+        let event = event.get_original_event();
+        let obj: HashMap<String, i64> = event.as_json().unwrap();
+        let value = obj.get("event_index").unwrap();
 
-            idx = *value;
-            pos += 1;
-        }
+        idx = *value;
+        pos += 1;
     }
 
     assert_eq!(pos, 10);
@@ -151,8 +148,7 @@ async fn test_read_stream_events_non_existent(client: &Client) -> Result<(), Box
         .read_stream(stream_id.as_str(), &Default::default(), Single)
         .await?;
 
-    if let eventstore::ReadResult::StreamNotFound(stream) = result {
-        assert_eq!(stream, stream_id);
+    if let Err(eventstore::Error::ResourceNotFound) = result {
         return Ok(());
     }
 
@@ -195,10 +191,9 @@ async fn test_tombstone_stream(client: &Client) -> Result<(), Box<dyn Error>> {
 
     let result = client
         .read_stream(stream_id.as_str(), &Default::default(), 1)
-        .await?;
+        .await;
 
-    if let ReadResult::StreamDeleted(stream_name) = result {
-        assert_eq!(stream_id, stream_name);
+    if let Err(eventstore::Error::ResourceDeleted) = result {
         Ok(())
     } else {
         panic!("Expected stream deleted error");
@@ -224,7 +219,7 @@ async fn test_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
 
     let mut sub = client
         .subscribe_to_stream(stream_id.as_str(), &options)
-        .await?;
+        .await;
 
     let (tx, recv) = oneshot::channel();
 
@@ -232,13 +227,12 @@ async fn test_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
         let mut count = 0usize;
         let max = 6usize;
 
-        while let Some(event) = sub.try_next().await? {
-            if let eventstore::SubEvent::EventAppeared(_) = event {
-                count += 1;
+        loop {
+            sub.next().await?;
+            count += 1;
 
-                if count == max {
-                    break;
-                }
+            if count == max {
+                break;
             }
         }
 
@@ -359,7 +353,7 @@ async fn test_delete_persistent_subscription_to_all(
     Ok(())
 }
 
-async fn test_persistent_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
+async fn test_persistent_subscription(client: &Client) -> eventstore::Result<()> {
     let stream_id = fresh_stream_id("persistent_subscription");
     let events = generate_events("es6-persistent-subscription-test".to_string(), 5);
 
@@ -371,7 +365,7 @@ async fn test_persistent_subscription(client: &Client) -> Result<(), Box<dyn Err
         .append_to_stream(stream_id.as_str(), &Default::default(), events)
         .await?;
 
-    let (mut read, mut write) = client
+    let mut sub = client
         .subscribe_to_persistent_subscription(
             stream_id.as_str(),
             "a_group_name",
@@ -383,19 +377,18 @@ async fn test_persistent_subscription(client: &Client) -> Result<(), Box<dyn Err
 
     let handle = tokio::spawn(async move {
         let mut count = 0usize;
-        while let Some(event) = read.try_next().await.unwrap() {
-            if let eventstore::SubEvent::EventAppeared(event) = event {
-                write.ack_event(event.event).await.unwrap();
+        loop {
+            let event = sub.next().await?;
+            sub.ack(event).await?;
 
-                count += 1;
+            count += 1;
 
-                if count == max {
-                    break;
-                }
+            if count == max {
+                break;
             }
         }
 
-        count
+        Ok::<usize, eventstore::Error>(count)
     });
 
     let events = generate_events("es6-persistent-subscription-test".to_string(), 5);
@@ -403,7 +396,14 @@ async fn test_persistent_subscription(client: &Client) -> Result<(), Box<dyn Err
         .append_to_stream(stream_id.as_str(), &Default::default(), events)
         .await?;
 
-    let count = handle.await?;
+    let count = handle
+        .await
+        .map_err(|_| {
+            eventstore::Error::IllegalStateError(
+                "Error when joining the tokio thread handle".to_string(),
+            )
+        })
+        .and_then(|r| r)?;
 
     assert_eq!(
         count, 10,
@@ -427,7 +427,7 @@ async fn test_persistent_subscription_to_all(
         .create_persistent_subscription_to_all(group_name.as_str(), &options)
         .await?;
 
-    let (mut read, mut write) = client
+    let mut sub = client
         .subscribe_to_persistent_subscription_to_all(group_name, &Default::default())
         .await?;
 
@@ -435,28 +435,14 @@ async fn test_persistent_subscription_to_all(
     let outcome = tokio::time::timeout(Duration::from_secs(60), async move {
         let mut count = 0;
         for _ in 0..limit + 1 {
-            if let Some(event) = read.try_next().await? {
-                if let eventstore::SubEvent::EventAppeared(event) = event {
-                    write
-                        .ack_event(event.event)
-                        .await
-                        .map_err(|e| eventstore::Error::Grpc(e.to_string()))?;
+            let event = sub.next().await?;
+            sub.ack(event).await?;
 
-                    count += 1;
+            count += 1;
 
-                    if count == limit {
-                        break;
-                    } else {
-                        continue;
-                    }
-                }
-
-                continue;
+            if count == limit {
+                break;
             }
-
-            // Should never happen considering how late in the test process this test is. You should have
-            // many events in $all.
-            break;
         }
 
         Ok(count)
@@ -601,7 +587,7 @@ async fn test_replay_parked_messages(
         )
         .await?;
 
-    let (mut read, mut write) = client
+    let mut sub = client
         .subscribe_to_persistent_subscription(
             stream_name.as_str(),
             group_name.as_str(),
@@ -619,11 +605,10 @@ async fn test_replay_parked_messages(
 
     let outcome = tokio::time::timeout(Duration::from_secs(30), async move {
         for _ in 0..event_count {
-            let event = read.try_next_event().await?.unwrap();
-            assert!(write
-                .nack_event(event.event, eventstore::NakAction::Park, "because reasons")
-                .await
-                .is_ok());
+            let event = sub.next().await?;
+
+            sub.nack(event, eventstore::NakAction::Park, "because reasons")
+                .await?;
         }
 
         debug!("We let the server the time to write those parked event in the stream...");
@@ -638,9 +623,9 @@ async fn test_replay_parked_messages(
 
         for _ in 0..event_count {
             debug!("Waiting on parked event to be replayed...");
-            let event = read.try_next_event().await?.unwrap();
+            let event = sub.next().await?;
             debug!("done.");
-            assert!(write.ack_event(event.event).await.is_ok());
+            sub.ack(event).await?;
         }
 
         Ok::<(), eventstore::Error>(())
@@ -658,7 +643,7 @@ async fn test_replay_parked_messages(
 }
 
 async fn test_batch_append(client: &Client) -> eventstore::Result<()> {
-    let batch_client = client.batch_append(&Default::default()).await?;
+    let batch_client = client.batch_append(&Default::default());
 
     for _ in 0..3 {
         let stream_id = fresh_stream_id("batch-append");
@@ -675,12 +660,11 @@ async fn test_batch_append(client: &Client) -> eventstore::Result<()> {
             .position(eventstore::StreamPosition::Start);
         let mut stream = client
             .read_stream(stream_id.as_str(), &options, eventstore::All)
-            .await?
-            .unwrap();
+            .await?;
 
         let mut cpt = 0usize;
 
-        while let Some(_) = stream.try_next().await? {
+        while let Some(_) = stream.next().await? {
             cpt += 1;
         }
 
@@ -776,33 +760,55 @@ async fn wait_node_is_alive(port: u16) -> Result<(), Box<dyn std::error::Error>>
 // This function assumes that we are using the admin credentials. It's possible during CI that
 // the cluster hasn't created the admin user yet, leading to failing the tests.
 async fn wait_for_admin_to_be_available(client: &eventstore::Client) -> eventstore::Result<()> {
+    fn can_retry(e: &eventstore::Error) -> bool {
+        match e {
+            eventstore::Error::AccessDenied
+            | eventstore::Error::DeadlineExceeded
+            | eventstore::Error::ServerError(_)
+            | eventstore::Error::ResourceNotFound => true,
+            _ => false,
+        }
+    }
     let mut count = 0;
 
     while count < 50 {
         count += 1;
 
         debug!("Checking if admin user is available...{}/50", count);
-        match client.read_stream("$users", &Default::default(), 1).await {
-            Ok(result) => {
-                if result.is_not_found() {
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                    debug!("Not available retrying...");
-                    continue;
-                }
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            client.read_stream("$users", &Default::default(), Single),
+        )
+        .await;
 
-                debug!("Completed.");
-                return Ok(());
+        match result {
+            Err(_) => {
+                debug!("Request timed out, retrying...");
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
-            Err(e) => match e {
-                eventstore::Error::AccessDenied | eventstore::Error::ServerError(_) => {
+
+            Ok(result) => match result.and_then(|r| r) {
+                Err(e) if can_retry(&e) => {
+                    debug!("Not available: {:?}, retrying...", e);
                     tokio::time::sleep(Duration::from_millis(500)).await;
-                    debug!("Not available retrying...");
-                    continue;
                 }
 
-                e => return Err(e),
+                Err(e) => {
+                    debug!("Fatal error, stop retrying. Cause: {:?}", e);
+                    return Err(e);
+                }
+
+                Ok(opt) => {
+                    if opt.is_some() {
+                        debug!("Admin account is available!");
+                        return Ok(());
+                    }
+
+                    debug!("$users stream seems to be empty, retrying...");
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
             },
-        };
+        }
     }
 
     Err(eventstore::Error::ServerError(
@@ -849,8 +855,10 @@ async fn wait_for_leader_to_be_elected(client: &eventstore::Client) -> eventstor
                 debug!("Not available retrying...");
                 continue;
             }
+
+            return Err(e);
         } else {
-            debug!("Completed.");
+            debug!("Election cycle is completed!");
             return Ok(());
         }
     }
@@ -920,14 +928,15 @@ async fn test_auto_resub_on_connection_drop() -> Result<(), Box<dyn std::error::
     let options = eventstore::SubscribeToStreamOptions::default().retry_options(retry);
     let mut stream = client
         .subscribe_to_stream(stream_name.as_str(), &options)
-        .await?;
+        .await;
     let max = 6usize;
     let (tx, recv) = oneshot::channel();
 
     tokio::spawn(async move {
         let mut count = 0usize;
 
-        while let Some(_) = stream.try_next().await? {
+        loop {
+            stream.next().await?;
             count += 1;
 
             if count == max {

@@ -1,3 +1,4 @@
+#![allow(clippy::large_enum_variant)]
 //! Commands this client supports.
 use futures::{stream, TryStreamExt};
 use futures::{Stream, StreamExt};
@@ -5,16 +6,17 @@ use futures::{Stream, StreamExt};
 use crate::event_store::client::{persistent, shared, streams};
 use crate::types::{
     EventData, ExpectedRevision, PersistentSubscriptionSettings, Position, ReadDirection,
-    RecordedEvent, ResolvedEvent, StreamPosition, SubEvent, WriteResult, WrongExpectedVersion,
+    RecordedEvent, ResolvedEvent, StreamPosition, SubscriptionEvent, WriteResult,
+    WrongExpectedVersion,
 };
 
-use async_stream::stream;
+use async_stream::try_stream;
 use persistent::persistent_subscriptions_client::PersistentSubscriptionsClient;
 use shared::{Empty, StreamIdentifier, Uuid};
 use streams::streams_client::StreamsClient;
 
 use crate::batch::BatchAppendClient;
-use crate::grpc::GrpcClient;
+use crate::grpc::{handle_error, GrpcClient, Msg};
 use crate::options::append_to_stream::AppendToStreamOptions;
 use crate::options::batch_append::BatchAppendOptions;
 use crate::options::persistent_subscription::PersistentSubscriptionOptions;
@@ -23,12 +25,11 @@ use crate::options::read_stream::ReadStreamOptions;
 use crate::options::subscribe_to_stream::SubscribeToStreamOptions;
 use crate::{
     Credentials, CurrentRevision, DeletePersistentSubscriptionOptions, DeleteStreamOptions,
-    NakAction, PersistentSubEvent, PersistentSubscriptionToAllOptions, ReadResult,
+    NakAction, PersistentSubscriptionEvent, PersistentSubscriptionToAllOptions, RetryOptions,
     SubscribeToAllOptions, SubscribeToPersistentSubscriptionn, SubscriptionFilter,
     SystemConsumerStrategy, TombstoneStreamOptions,
 };
-use futures::stream::BoxStream;
-use tonic::Request;
+use tonic::{Request, Streaming};
 
 pub(crate) mod defaults {
     use std::time::Duration;
@@ -349,7 +350,7 @@ fn convert_proto_read_event(event: streams::read_resp::ReadEvent) -> ResolvedEve
 
 fn convert_persistent_proto_read_event(
     event: persistent::read_resp::ReadEvent,
-) -> PersistentSubEvent {
+) -> PersistentSubscriptionEvent {
     use persistent::read_resp::read_event::Count;
     let commit_position = if let Some(pos_alt) = event.position {
         match pos_alt {
@@ -371,9 +372,9 @@ fn convert_persistent_proto_read_event(
         Count::NoRetryCount(_) => 0,
     });
 
-    PersistentSubEvent {
-        event: resolved,
+    PersistentSubscriptionEvent::EventAppeared {
         retry_count,
+        event: resolved,
     }
 }
 
@@ -535,10 +536,7 @@ where
     }).await
 }
 
-pub async fn batch_append<'a>(
-    connection: &GrpcClient,
-    options: &BatchAppendOptions,
-) -> crate::Result<BatchAppendClient> {
+pub fn batch_append(connection: &GrpcClient, options: &BatchAppendOptions) -> BatchAppendClient {
     use futures::SinkExt;
     use streams::{
         batch_append_req::{options::ExpectedStreamPosition, Options, ProposedMessage},
@@ -553,8 +551,6 @@ pub async fn batch_append<'a>(
     let (forward, receiver) = futures::channel::mpsc::unbounded::<crate::batch::Req>();
     let (batch_sender, batch_receiver) = futures::channel::mpsc::unbounded();
     let mut cloned_batch_sender = batch_sender.clone();
-
-    let mut early_error_reporting = batch_sender.clone();
     let batch_client = BatchAppendClient::new(batch_sender, batch_receiver, forward);
 
     let credentials = options
@@ -614,127 +610,206 @@ pub async fn batch_append<'a>(
             })
             .await;
 
-        let (handle, resp_stream) = match result {
-            Ok(value) => value,
+        match result {
             Err(e) => {
-                let _ = early_error_reporting
-                    .send(crate::batch::BatchMsg::Error(e.clone()))
+                let _ = cloned_batch_sender
+                    .send(crate::batch::BatchMsg::Error(e))
                     .await;
-
-                return Err(e);
             }
-        };
 
-        let mut resp_stream = resp_stream.map_ok(|resp| {
-            let stream_name = String::from_utf8(resp.stream_identifier.unwrap().stream_name)
-                .expect("valid UTF-8 string");
+            Ok((handle, resp_stream)) => {
+                let mut resp_stream = resp_stream.map_ok(|resp| {
+                    let stream_name =
+                        String::from_utf8(resp.stream_identifier.unwrap().stream_name)
+                            .expect("valid UTF-8 string");
 
-            let correlation_id = raw_uuid_to_uuid(resp.correlation_id.unwrap());
-            let result = match resp.result.unwrap() {
-                batch_append_resp::Result::Success(success) => {
-                    let current_revision =
-                        success.current_revision_option.and_then(|rev| match rev {
-                            CurrentRevisionOption::CurrentRevision(rev) => Some(rev),
-                            CurrentRevisionOption::NoStream(()) => None,
-                        });
+                    let correlation_id = raw_uuid_to_uuid(resp.correlation_id.unwrap());
+                    let result = match resp.result.unwrap() {
+                        batch_append_resp::Result::Success(success) => {
+                            let current_revision =
+                                success.current_revision_option.and_then(|rev| match rev {
+                                    CurrentRevisionOption::CurrentRevision(rev) => Some(rev),
+                                    CurrentRevisionOption::NoStream(()) => None,
+                                });
 
-                    let position = success.position_option.and_then(|pos| match pos {
-                        PositionOption::Position(pos) => Some(Position {
-                            commit: pos.commit_position,
-                            prepare: pos.prepare_position,
-                        }),
-                        PositionOption::NoPosition(_) => None,
-                    });
+                            let position = success.position_option.and_then(|pos| match pos {
+                                PositionOption::Position(pos) => Some(Position {
+                                    commit: pos.commit_position,
+                                    prepare: pos.prepare_position,
+                                }),
+                                PositionOption::NoPosition(_) => None,
+                            });
 
-                    let expected_version = resp.expected_stream_position.map(|exp| match exp {
-                        batch_append_resp::ExpectedStreamPosition::Any(_) => {
-                            crate::types::ExpectedRevision::Any
+                            let expected_version =
+                                resp.expected_stream_position.map(|exp| match exp {
+                                    batch_append_resp::ExpectedStreamPosition::Any(_) => {
+                                        crate::types::ExpectedRevision::Any
+                                    }
+                                    batch_append_resp::ExpectedStreamPosition::NoStream(_) => {
+                                        crate::types::ExpectedRevision::NoStream
+                                    }
+                                    batch_append_resp::ExpectedStreamPosition::StreamExists(_) => {
+                                        crate::types::ExpectedRevision::StreamExists
+                                    }
+                                    batch_append_resp::ExpectedStreamPosition::StreamPosition(
+                                        rev,
+                                    ) => crate::types::ExpectedRevision::Exact(rev),
+                                });
+
+                            Ok(crate::batch::BatchWriteResult::new(
+                                stream_name,
+                                current_revision,
+                                position,
+                                expected_version,
+                            ))
                         }
-                        batch_append_resp::ExpectedStreamPosition::NoStream(_) => {
-                            crate::types::ExpectedRevision::NoStream
+                        batch_append_resp::Result::Error(code) => {
+                            let message = code.message;
+                            let code = tonic::Code::from(code.code);
+                            let err = crate::Error::Grpc { code, message };
+
+                            Err(err)
                         }
-                        batch_append_resp::ExpectedStreamPosition::StreamExists(_) => {
-                            crate::types::ExpectedRevision::StreamExists
-                        }
-                        batch_append_resp::ExpectedStreamPosition::StreamPosition(rev) => {
-                            crate::types::ExpectedRevision::Exact(rev)
-                        }
-                    });
+                    };
 
-                    Ok(crate::batch::BatchWriteResult::new(
-                        stream_name,
-                        current_revision,
-                        position,
-                        expected_version,
-                    ))
-                }
-                batch_append_resp::Result::Error(code) => {
-                    let message = code.message;
-                    let code = tonic::Code::from(code.code);
-                    let status = tonic::Status::new(code, message);
-                    let err = crate::Error::Grpc(status.to_string());
-
-                    Err(err)
-                }
-            };
-
-            crate::batch::Out {
-                correlation_id,
-                result,
-            }
-        });
-
-        tokio::spawn(async move {
-            loop {
-                match resp_stream.try_next().await {
-                    Err(e) => {
-                        let err = crate::Error::from_grpc(e);
-                        let _ = crate::grpc::handle_error::<()>(
-                            handle.sender(),
-                            handle.id(),
-                            err.clone(),
-                        )
-                        .await;
-
-                        // We notify the batch-append client that its session has been closed because of a gRPC error.
-                        let _ = cloned_batch_sender
-                            .send(crate::batch::BatchMsg::Error(err))
-                            .await;
-                        break;
+                    crate::batch::Out {
+                        correlation_id,
+                        result,
                     }
+                });
 
-                    Ok(out) => {
-                        if let Some(out) = out {
-                            if cloned_batch_sender
-                                .send(crate::batch::BatchMsg::Out(out))
-                                .await
-                                .is_err()
-                            {
+                tokio::spawn(async move {
+                    loop {
+                        match resp_stream.try_next().await {
+                            Err(e) => {
+                                let err = crate::Error::from_grpc(e);
+                                crate::grpc::handle_error(handle.sender(), handle.id(), &err).await;
+
+                                // We notify the batch-append client that its session has been closed because of a gRPC error.
+                                let _ = cloned_batch_sender
+                                    .send(crate::batch::BatchMsg::Error(err))
+                                    .await;
                                 break;
                             }
 
-                            continue;
-                        }
+                            Ok(out) => {
+                                if let Some(out) = out {
+                                    if cloned_batch_sender
+                                        .send(crate::batch::BatchMsg::Out(out))
+                                        .await
+                                        .is_err()
+                                    {
+                                        break;
+                                    }
 
-                        break;
+                                    continue;
+                                }
+
+                                break;
+                            }
+                        }
                     }
-                }
+                });
             }
-        });
+        }
 
         Ok::<(), crate::Error>(())
     });
 
-    Ok(batch_client)
+    batch_client
+}
+
+pub enum ReadEvent {
+    Event(ResolvedEvent),
+    FirstStreamPosition(u64),
+    LastStreamPosition(u64),
+    LastAllStreamPosition(Position),
+}
+
+#[derive(Debug)]
+pub struct ReadStream {
+    sender: futures::channel::mpsc::UnboundedSender<Msg>,
+    channel_id: uuid::Uuid,
+    inner: Streaming<crate::event_store::client::streams::ReadResp>,
+}
+
+impl ReadStream {
+    pub async fn next_read_event(&mut self) -> crate::Result<Option<ReadEvent>> {
+        loop {
+            match self.inner.try_next().await.map_err(crate::Error::from_grpc) {
+                Err(e) => {
+                    handle_error(&self.sender, self.channel_id, &e).await;
+                    return Err(e);
+                }
+
+                Ok(resp) => {
+                    if let Some(resp) = resp {
+                        match resp.content.unwrap() {
+                            streams::read_resp::Content::StreamNotFound(_) => {
+                                return Err(crate::Error::ResourceNotFound)
+                            }
+                            streams::read_resp::Content::Event(event) => {
+                                return Ok(Some(ReadEvent::Event(convert_proto_read_event(event))))
+                            }
+
+                            streams::read_resp::Content::FirstStreamPosition(event_number) => {
+                                return Ok(Some(ReadEvent::FirstStreamPosition(event_number)));
+                            }
+                            streams::read_resp::Content::LastStreamPosition(event_number) => {
+                                return Ok(Some(ReadEvent::LastStreamPosition(event_number)));
+                            }
+                            streams::read_resp::Content::LastAllStreamPosition(position) => {
+                                return Ok(Some(ReadEvent::LastAllStreamPosition(Position {
+                                    commit: position.commit_position,
+                                    prepare: position.prepare_position,
+                                })));
+                            }
+                            _ => continue,
+                        }
+                    }
+
+                    return Ok(None);
+                }
+            }
+        }
+    }
+
+    pub async fn next(&mut self) -> crate::Result<Option<ResolvedEvent>> {
+        while let Some(event) = self.next_read_event().await? {
+            if let ReadEvent::Event(event) = event {
+                return Ok(Some(event));
+            }
+
+            continue;
+        }
+
+        Ok(None)
+    }
+
+    pub fn into_stream_of_read_events(mut self) -> impl Stream<Item = crate::Result<ReadEvent>> {
+        try_stream! {
+            while let Some(event) = self.next_read_event().await? {
+                yield event;
+            }
+        }
+    }
+
+    pub fn into_stream(mut self) -> impl Stream<Item = crate::Result<ResolvedEvent>> {
+        try_stream! {
+            while let Some(event) = self.next().await? {
+                yield event;
+            }
+        }
+    }
 }
 
 /// Sends asynchronously the read command to the server.
-pub async fn read_stream<'a, S: AsRef<str>>(
-    connection: &GrpcClient,
+pub async fn read_stream<S: AsRef<str>>(
+    connection: GrpcClient,
     options: &ReadStreamOptions,
     stream: S,
     count: u64,
-) -> crate::Result<ReadResult<BoxStream<'a, crate::Result<ResolvedEvent>>>> {
+) -> crate::Result<ReadStream> {
     use streams::read_req::options::stream_options::RevisionOption;
     use streams::read_req::options::{self, StreamOption, StreamOptions};
     use streams::read_req::Options;
@@ -785,88 +860,33 @@ pub async fn read_stream<'a, S: AsRef<str>>(
 
     configure_auth_req(&mut req, credentials);
 
-    connection
-        .execute(|channel| async {
-            let mut client = StreamsClient::new(channel.channel.clone());
-            let result = client.read(req).await;
+    let handle = connection.current_selected_node().await?;
+    let channel_id = handle.id();
+    let mut client = StreamsClient::new(handle.channel);
 
-            if let Err(status) = result.as_ref() {
-                if let Some("stream-deleted") = status.metadata().get("exception").and_then(|e| e.to_str().ok()) {
-                    if let Some(stream_name) = status.metadata().get("stream-name").and_then(|e| e.to_str().ok()) {
-                        return Ok(ReadResult::StreamDeleted(stream_name.to_string()));
-                    }
+    match client.read(req).await {
+        Err(status) => {
+            debug!("__> Status error: {:?}", status);
+            let e = crate::Error::from_grpc(status);
+            debug!("__> Error: {:?}", e);
+            handle_error(&connection.sender, channel_id, &e).await;
 
-                    warn!("stream-deleted exception didn't have a stream-name property, falling back to returning a generic gRPC error");
-                }
-            }
+            Err(e)
+        }
 
-            let mut stream = result?.into_inner();
-
-            if let Some(resp) = stream.try_next().await? {
-                match resp.content.as_ref().unwrap() {
-                    streams::read_resp::Content::StreamNotFound(params) => {
-                        let stream_name = std::string::String::from_utf8(
-                            params
-                                .stream_identifier
-                                .as_ref()
-                                .unwrap()
-                                .stream_name
-                                .clone(),
-                        )
-                        .expect("Don't worry this string is valid!");
-
-                        return Ok(ReadResult::StreamNotFound(stream_name));
-                    }
-
-                    _ => {
-                        let stream = stream! {
-                            // We send back to the user the first event we received.
-                            if let streams::read_resp::Content::Event(event) = resp.content.expect("content is defined") {
-                                yield Ok(convert_proto_read_event(event));
-                            }
-
-                            loop {
-                                match stream.try_next().await {
-                                    Err(e) => {
-                                        let e = crate::Error::from_grpc(e);
-
-                                        channel.report_error(e.clone()).await;
-                                        yield Err(e);
-                                        break;
-                                    }
-
-                                    Ok(resp) => {
-                                        if let Some(resp) = resp {
-                                            if let streams::read_resp::Content::Event(event) = resp.content.expect("content is defined") {
-                                                yield Ok(convert_proto_read_event(event));
-                                            }
-
-                                            continue;
-                                        }
-
-                                        break;
-                                    }
-                                }
-                            }
-                        };
-
-                        let stream: BoxStream<crate::Result<ResolvedEvent>> = Box::pin(stream);
-
-                        return Ok(ReadResult::Ok(stream));
-                    }
-                }
-            }
-
-            Ok(ReadResult::Ok(Box::pin(stream::empty())))
-        })
-        .await
+        Ok(resp) => Ok(ReadStream {
+            sender: connection.sender.clone(),
+            channel_id,
+            inner: resp.into_inner(),
+        }),
+    }
 }
 
-pub async fn read_all<'a>(
-    connection: &GrpcClient,
+pub async fn read_all(
+    connection: GrpcClient,
     options: &ReadAllOptions,
     count: u64,
-) -> crate::Result<BoxStream<'a, crate::Result<ResolvedEvent>>> {
+) -> crate::Result<ReadStream> {
     use streams::read_req::options::all_options::AllOption;
     use streams::read_req::options::{self, AllOptions, StreamOption};
     use streams::read_req::Options;
@@ -921,42 +941,24 @@ pub async fn read_all<'a>(
 
     configure_auth_req(&mut req, credentials);
 
-    connection
-        .execute(|channel| async {
-            let mut client = StreamsClient::new(channel.channel.clone());
-            let mut stream = client.read(req).await?.into_inner();
+    let handle = connection.current_selected_node().await?;
+    let channel_id = handle.id();
+    let mut client = StreamsClient::new(handle.channel);
 
-            let stream = stream! {
-                loop {
-                    match stream.try_next().await {
-                        Err(e) => {
-                            let e = crate::Error::from_grpc(e);
+    match client.read(req).await {
+        Err(status) => {
+            let e = crate::Error::from_grpc(status);
+            handle_error(&connection.sender, channel_id, &e).await;
 
-                            channel.report_error(e.clone()).await;
-                            yield Err(e);
-                            break;
-                        }
+            Err(e)
+        }
 
-                        Ok(resp) => {
-                            if let Some(resp) = resp {
-                                if let streams::read_resp::Content::Event(event) = resp.content.expect("content is defined") {
-                                    yield Ok(convert_proto_read_event(event));
-                                }
-
-                                continue;
-                            }
-
-                            break;
-                        }
-                    }
-                }
-            };
-
-            let stream: BoxStream<crate::Result<ResolvedEvent>> = Box::pin(stream);
-
-            Ok(stream)
-        })
-        .await
+        Ok(resp) => Ok(ReadStream {
+            sender: connection.sender.clone(),
+            channel_id,
+            inner: resp.into_inner(),
+        }),
+    }
 }
 
 /// Sends asynchronously the delete command to the server.
@@ -1083,16 +1085,225 @@ pub async fn tombstone_stream<S: AsRef<str>>(
         .await
 }
 
+pub struct Subscription {
+    connection: GrpcClient,
+    channel_id: uuid::Uuid,
+    stream: Option<Streaming<crate::event_store::client::streams::ReadResp>>,
+    attempts: usize,
+    limit: usize,
+    retry_enabled: bool,
+    delay: std::time::Duration,
+    options: streams::read_req::Options,
+    credentials: Option<Credentials>,
+}
+
+impl Subscription {
+    fn new(
+        connection: GrpcClient,
+        retry: Option<RetryOptions>,
+        credentials: Option<Credentials>,
+        options: streams::read_req::Options,
+    ) -> Self {
+        let (limit, delay, retry_enabled) = if let Some(retry) = retry {
+            (retry.limit, retry.delay, true)
+        } else {
+            (1, Default::default(), false)
+        };
+
+        Self {
+            connection,
+            channel_id: uuid::Uuid::nil(),
+            limit,
+            delay,
+            retry_enabled,
+            options,
+            credentials,
+            stream: None,
+            attempts: 1,
+        }
+    }
+
+    pub fn into_stream_of_subscription_events(
+        mut self,
+    ) -> impl Stream<Item = crate::Result<SubscriptionEvent>> {
+        try_stream! {
+            loop {
+                let event = self.next_subscription_event().await?;
+
+                yield event;
+            }
+        }
+    }
+
+    pub fn into_stream(mut self) -> impl Stream<Item = crate::Result<ResolvedEvent>> {
+        try_stream! {
+            loop {
+                let event = self.next().await?;
+                yield event;
+            }
+        }
+    }
+
+    pub async fn next(&mut self) -> crate::Result<ResolvedEvent> {
+        loop {
+            if let SubscriptionEvent::EventAppeared(event) = self.next_subscription_event().await? {
+                return Ok(event);
+            }
+        }
+    }
+
+    pub async fn next_subscription_event(&mut self) -> crate::Result<SubscriptionEvent> {
+        use streams::read_req::options::all_options::AllOption;
+        use streams::read_req::options::stream_options::RevisionOption;
+        use streams::read_req::options::{self, StreamOption};
+
+        loop {
+            if let Some(mut stream) = self.stream.take() {
+                match stream.try_next().await {
+                    Err(status) => {
+                        let e = crate::Error::from_grpc(status);
+                        handle_error(&self.connection.sender, self.channel_id, &e).await;
+                        self.attempts = 1;
+
+                        error!("Subscription dropped. cause: {}", e);
+
+                        if !self.retry_enabled {
+                            return Err(e);
+                        }
+                    }
+
+                    Ok(resp) => {
+                        if let Some(content) = resp.and_then(|r| r.content) {
+                            self.stream = Some(stream);
+
+                            match content {
+                                streams::read_resp::Content::Event(event) => {
+                                    let event = convert_proto_read_event(event);
+
+                                    let stream_options =
+                                        self.options.stream_option.as_mut().unwrap();
+
+                                    match stream_options {
+                                        StreamOption::Stream(stream_options) => {
+                                            let revision = RevisionOption::Revision(
+                                                event.get_original_event().revision as u64,
+                                            );
+                                            stream_options.revision_option = Some(revision);
+                                        }
+
+                                        StreamOption::All(all_options) => {
+                                            let position = event.get_original_event().position;
+                                            let position = options::Position {
+                                                prepare_position: position.prepare,
+                                                commit_position: position.commit,
+                                            };
+
+                                            all_options.all_option =
+                                                Some(AllOption::Position(position));
+                                        }
+                                    }
+
+                                    return Ok(SubscriptionEvent::EventAppeared(event));
+                                }
+
+                                streams::read_resp::Content::Confirmation(info) => {
+                                    return Ok(SubscriptionEvent::Confirmed(info.subscription_id))
+                                }
+
+                                streams::read_resp::Content::Checkpoint(chk) => {
+                                    let position = Position {
+                                        commit: chk.commit_position,
+                                        prepare: chk.prepare_position,
+                                    };
+
+                                    return Ok(SubscriptionEvent::Checkpoint(position));
+                                }
+
+                                streams::read_resp::Content::FirstStreamPosition(event_number) => {
+                                    return Ok(SubscriptionEvent::FirstStreamPosition(
+                                        event_number,
+                                    ));
+                                }
+
+                                streams::read_resp::Content::LastStreamPosition(event_number) => {
+                                    return Ok(SubscriptionEvent::LastStreamPosition(event_number));
+                                }
+
+                                streams::read_resp::Content::LastAllStreamPosition(position) => {
+                                    return Ok(SubscriptionEvent::LastAllPosition(Position {
+                                        commit: position.commit_position,
+                                        prepare: position.prepare_position,
+                                    }));
+                                }
+
+                                _ => unreachable!(),
+                            }
+                        }
+
+                        unreachable!()
+                    }
+                }
+            } else {
+                let handle = self.connection.current_selected_node().await?;
+
+                self.channel_id = handle.id();
+
+                let mut client = StreamsClient::new(handle.channel);
+                let mut req = Request::new(streams::ReadReq {
+                    options: Some(self.options.clone()),
+                });
+
+                configure_auth_req(&mut req, self.credentials.as_ref().cloned());
+
+                match client.read(req).await {
+                    Err(status) => {
+                        let e = crate::Error::from_grpc(status);
+
+                        handle_error(&self.connection.sender, self.channel_id, &e).await;
+
+                        if self.attempts < self.limit {
+                            error!(
+                                "Subscription: attempt ({}/{}) failure, cause: {}, retrying...",
+                                self.attempts, self.limit, e
+                            );
+                            self.attempts += 1;
+                            tokio::time::sleep(self.delay).await;
+
+                            continue;
+                        }
+
+                        if self.retry_enabled {
+                            error!(
+                                "Subscription: maximum retry threshold reached, cause: {}",
+                                e
+                            );
+                        }
+
+                        return Err(e);
+                    }
+
+                    Ok(stream) => {
+                        self.stream = Some(stream.into_inner());
+
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Runs the subscription command.
-pub async fn subscribe_to_stream<'a, S: AsRef<str>>(
-    connection: &GrpcClient,
+pub fn subscribe_to_stream<S: AsRef<str>>(
+    connection: GrpcClient,
     stream_id: S,
     options: &SubscribeToStreamOptions,
-) -> crate::Result<BoxStream<'a, crate::Result<SubEvent<ResolvedEvent>>>> {
+) -> Subscription {
     use streams::read_req::options::stream_options::RevisionOption;
     use streams::read_req::options::{self, StreamOption, StreamOptions, SubscriptionOptions};
     use streams::read_req::Options;
 
+    let retry = options.retry.as_ref().cloned();
     let read_direction = 0; // <- Going forward.
 
     let revision = match options.position {
@@ -1128,67 +1339,15 @@ pub async fn subscribe_to_stream<'a, S: AsRef<str>>(
         read_direction,
     };
 
-    let req = streams::ReadReq {
-        options: Some(options),
-    };
-
-    let mut req = Request::new(req);
-
-    configure_auth_req(&mut req, credentials);
-
-    connection
-        .execute(|channel| async {
-            let mut client = StreamsClient::new(channel.channel.clone());
-            let mut stream = client.read(req).await?.into_inner();
-
-            let stream = stream! {
-                loop {
-                    match stream.try_next().await {
-                        Err(e) => {
-                            let e = crate::Error::from_grpc(e);
-
-                            channel.report_error(e.clone()).await;
-                            yield Err(e);
-                            break;
-                        }
-
-                        Ok(resp) => {
-                            if let Some(resp) = resp {
-                                match resp.content.expect("content is defined") {
-                                    streams::read_resp::Content::Event(event) => {
-                                        yield Ok(SubEvent::EventAppeared(convert_proto_read_event(event)));
-                                    }
-
-                                    streams::read_resp::Content::Confirmation(sub) => {
-                                        yield Ok(SubEvent::Confirmed(sub.subscription_id));
-                                    }
-
-                                    _ => {}
-                                }
-                                continue;
-                            }
-
-                            break;
-                        }
-                    }
-                }
-            };
-
-            let stream: BoxStream<crate::Result<SubEvent<ResolvedEvent>>> = Box::pin(stream);
-
-            Ok(stream)
-        })
-        .await
+    Subscription::new(connection, retry, credentials, options)
 }
 
-pub async fn subscribe_to_all<'a>(
-    connection: &GrpcClient,
-    options: &SubscribeToAllOptions,
-) -> crate::Result<BoxStream<'a, crate::Result<SubEvent<ResolvedEvent>>>> {
+pub fn subscribe_to_all(connection: GrpcClient, options: &SubscribeToAllOptions) -> Subscription {
     use streams::read_req::options::all_options::AllOption;
     use streams::read_req::options::{self, AllOptions, StreamOption, SubscriptionOptions};
     use streams::read_req::Options;
 
+    let retry = options.retry.as_ref().cloned();
     let read_direction = 0; // <- Going forward.
 
     let revision = match options.position {
@@ -1228,66 +1387,7 @@ pub async fn subscribe_to_all<'a>(
         read_direction,
     };
 
-    let req = streams::ReadReq {
-        options: Some(options),
-    };
-
-    let mut req = Request::new(req);
-
-    configure_auth_req(&mut req, credentials);
-
-    connection
-        .execute(|channel| async {
-            let mut client = StreamsClient::new(channel.channel.clone());
-            let mut stream = client.read(req).await?.into_inner();
-
-            let stream = stream! {
-                loop {
-                    match stream.try_next().await {
-                        Err(e) => {
-                            let e = crate::Error::from_grpc(e);
-
-                            channel.report_error(e.clone()).await;
-                            yield Err(e);
-                            break;
-                        }
-
-                        Ok(resp) => {
-                            if let Some(resp) = resp {
-                                match resp.content.expect("content is defined") {
-                                    streams::read_resp::Content::Event(event) => {
-                                        yield Ok(SubEvent::EventAppeared(convert_proto_read_event(event)));
-                                    }
-
-                                    streams::read_resp::Content::Confirmation(sub) => {
-                                        yield Ok(SubEvent::Confirmed(sub.subscription_id));
-                                    }
-
-                                    streams::read_resp::Content::Checkpoint(chk) => {
-                                        let position = Position {
-                                            commit: chk.commit_position,
-                                            prepare: chk.prepare_position,
-                                        };
-
-                                        yield Ok(SubEvent::Checkpoint(position));
-                                    }
-
-                                    _ => {}
-                                }
-                                continue;
-                            }
-
-                            break;
-                        }
-                    }
-                }
-            };
-
-            let stream: BoxStream<'a, crate::Result<SubEvent<ResolvedEvent>>> = Box::pin(stream);
-
-            Ok(stream)
-        })
-        .await
+    Subscription::new(connection, retry, credentials, options)
 }
 
 /// This trait is used to avoid code duplication when introducing persistent subscription to $all. It
@@ -1579,12 +1679,11 @@ pub async fn subscribe_to_persistent_subscription<S: AsRef<str>>(
     group_name: S,
     options: &SubscribeToPersistentSubscriptionn,
     to_all: bool,
-) -> crate::Result<(SubscriptionRead, SubscriptionWrite)> {
+) -> crate::Result<PersistentSubscription> {
     use futures::channel::mpsc;
     use futures::sink::SinkExt;
     use persistent::read_req::options::{self, UuidOption};
     use persistent::read_req::{self, options::StreamOption, Options};
-    use persistent::read_resp;
     use persistent::ReadReq;
 
     let (mut sender, recv) = mpsc::channel(500);
@@ -1626,102 +1725,94 @@ pub async fn subscribe_to_persistent_subscription<S: AsRef<str>>(
     let _ = sender.send(read_req).await;
     let stream_id = stream_id.as_ref().to_string();
     let group_name = group_name.as_ref().to_string();
-    connection
-        .execute(|channel| async move {
-            let mut client = PersistentSubscriptionsClient::new(channel.channel.clone());
-            let mut stream = client.read(req).await?.into_inner();
+    let handle = connection.current_selected_node().await?;
+    let channel_id = handle.id();
+    let mut client = PersistentSubscriptionsClient::new(handle.channel);
 
-            let stream = stream! {
-                loop {
-                    match stream.try_next().await {
-                        Err(e) => {
-                            if let Some("persistent-subscription-dropped") = e
-                                .metadata()
-                                .get("exception").and_then(|e| e.to_str().ok())
-                            {
-                                warn!(
-                                    "Persistent subscription on '{}' and group '{}' has dropped",
-                                    stream_id,
-                                    group_name,
-                                );
+    match client.read(req).await {
+        Err(status) => {
+            let e = crate::Error::from_grpc(status);
+            handle_error(&connection.sender, channel_id, &e).await;
 
-                                break;
-                            }
+            Err(e)
+        }
+        Ok(resp) => Ok(PersistentSubscription {
+            sender: connection.sender.clone(),
+            ack_sender: sender,
+            channel_id,
+            inner: resp.into_inner(),
+            stream_id,
+            group_name,
+        }),
+    }
+}
 
-                            let e = crate::Error::from_grpc(e);
-                            channel.report_error(e.clone()).await;
-                            yield Err(e);
-                            break;
+pub struct PersistentSubscription {
+    sender: futures::channel::mpsc::UnboundedSender<Msg>,
+    ack_sender: futures::channel::mpsc::Sender<crate::event_store::client::persistent::ReadReq>,
+    channel_id: uuid::Uuid,
+    inner: tonic::Streaming<crate::event_store::client::persistent::ReadResp>,
+    stream_id: String,
+    group_name: String,
+}
+
+impl PersistentSubscription {
+    pub async fn next_subscription_event(&mut self) -> crate::Result<PersistentSubscriptionEvent> {
+        match self.inner.try_next().await {
+            Err(status) => {
+                if let Some("persistent-subscription-dropped") = status
+                    .metadata()
+                    .get("exception")
+                    .and_then(|e| e.to_str().ok())
+                {
+                    let message = format!(
+                        "Persistent subscription on '{}' and group '{}' has dropped",
+                        self.stream_id, self.group_name,
+                    );
+
+                    return Err(crate::Error::IllegalStateError(message));
+                }
+
+                let e = crate::Error::from_grpc(status);
+                handle_error(&self.sender, self.channel_id, &e).await;
+
+                Err(e)
+            }
+            Ok(resp) => {
+                if let Some(content) = resp.and_then(|r| r.content) {
+                    match content {
+                        crate::event_store::client::persistent::read_resp::Content::Event(
+                            event,
+                        ) => {
+                            return Ok(convert_persistent_proto_read_event(event));
                         }
 
-                        Ok(resp) => {
-                            if let Some(resp) = resp {
-                                match resp.content.expect("content is defined") {
-                                    read_resp::Content::Event(event) => {
-                                        yield Ok(SubEvent::EventAppeared(convert_persistent_proto_read_event(event)));
-                                    }
-
-                                    read_resp::Content::SubscriptionConfirmation(sub) => {
-                                        yield Ok(SubEvent::Confirmed(sub.subscription_id));
-                                    }
-                                }
-                                continue;
-                            }
-
-                            break;
+                        crate::event_store::client::persistent::read_resp::Content::SubscriptionConfirmation(sub) => {
+                            return Ok(PersistentSubscriptionEvent::Confirmed(sub.subscription_id));
                         }
                     }
                 }
-            };
 
-            let read = SubscriptionRead {
-                inner: Box::pin(stream),
-            };
-            let write = SubscriptionWrite { sender };
-
-            Ok((read, write))
-        })
-        .await
-}
-
-pub struct SubscriptionRead {
-    inner: BoxStream<'static, crate::Result<SubEvent<PersistentSubEvent>>>,
-}
-
-impl SubscriptionRead {
-    pub async fn try_next(&mut self) -> crate::Result<Option<SubEvent<PersistentSubEvent>>> {
-        self.inner.try_next().await
-    }
-
-    pub async fn try_next_event(&mut self) -> crate::Result<Option<PersistentSubEvent>> {
-        loop {
-            let event = self.inner.try_next().await?;
-            if let Some(event) = event {
-                if let SubEvent::EventAppeared(event) = event {
-                    return Ok(Some(event));
-                }
-            } else {
-                return Ok(None);
+                unreachable!()
             }
         }
     }
-}
-fn to_proto_uuid(id: uuid::Uuid) -> Uuid {
-    Uuid {
-        value: Some(shared::uuid::Value::String(format!("{}", id))),
-    }
-}
 
-pub struct SubscriptionWrite {
-    sender: futures::channel::mpsc::Sender<persistent::ReadReq>,
-}
+    pub async fn next(&mut self) -> crate::Result<ResolvedEvent> {
+        loop {
+            let event = self.next_subscription_event().await?;
 
-impl SubscriptionWrite {
-    pub async fn ack_event(&mut self, event: ResolvedEvent) -> Result<(), tonic::Status> {
-        self.ack(vec![event.get_original_event().id]).await
+            if let PersistentSubscriptionEvent::EventAppeared { event, .. } = event {
+                return Ok(event);
+            }
+        }
     }
 
-    pub async fn ack<I>(&mut self, event_ids: I) -> Result<(), tonic::Status>
+    pub async fn ack(&mut self, event: ResolvedEvent) -> crate::Result<()> {
+        self.ack_ids(vec![event.get_original_event().id]).await
+    }
+
+    pub async fn ack_ids<I>(&mut self, event_ids: I) -> crate::Result<()>
     where
         I: IntoIterator<Item = uuid::Uuid>,
     {
@@ -1740,27 +1831,29 @@ impl SubscriptionWrite {
             content: Some(content),
         };
 
-        let _ = self.sender.send(read_req).await;
-
-        Ok(())
+        self.ack_sender.send(read_req).await.map_err(|_| {
+            crate::Error::IllegalStateError(
+                "Ack was ignored as the transaction no longer exists".to_string(),
+            )
+        })
     }
 
-    pub async fn nack_event(
+    pub async fn nack(
         &mut self,
         event: ResolvedEvent,
         action: NakAction,
         reason: impl AsRef<str>,
-    ) -> Result<(), tonic::Status> {
-        self.nack(vec![event.get_original_event().id], action, reason)
+    ) -> crate::Result<()> {
+        self.nack_ids(vec![event.get_original_event().id], action, reason)
             .await
     }
 
-    pub async fn nack<I>(
+    pub async fn nack_ids<I>(
         &mut self,
         event_ids: I,
         action: NakAction,
         reason: impl AsRef<str>,
-    ) -> Result<(), tonic::Status>
+    ) -> crate::Result<()>
     where
         I: IntoIterator<Item = uuid::Uuid>,
     {
@@ -1790,8 +1883,15 @@ impl SubscriptionWrite {
             content: Some(content),
         };
 
-        let _ = self.sender.send(read_req).await;
-
-        Ok(())
+        self.ack_sender.send(read_req).await.map_err(|_| {
+            crate::Error::IllegalStateError(
+                "Ack was ignored as the transaction no longer exists".to_string(),
+            )
+        })
+    }
+}
+fn to_proto_uuid(id: uuid::Uuid) -> Uuid {
+    Uuid {
+        value: Some(shared::uuid::Value::String(format!("{}", id))),
     }
 }
