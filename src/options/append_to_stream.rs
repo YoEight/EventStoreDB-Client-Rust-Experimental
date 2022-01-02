@@ -45,7 +45,7 @@ impl AppendToStreamOptions {
     }
 }
 
-pub struct Streaming<S>(S);
+pub struct Streaming<S>(pub S);
 
 pub trait ToEvents: Sealed {
     type Events: Stream<Item = EventData> + Send + Sync;
