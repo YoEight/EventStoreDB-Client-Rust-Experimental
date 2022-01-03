@@ -27,7 +27,7 @@ use crate::{
     Credentials, CurrentRevision, DeletePersistentSubscriptionOptions, DeleteStreamOptions,
     NakAction, PersistentSubscriptionEvent, PersistentSubscriptionToAllOptions, RetryOptions,
     SubscribeToAllOptions, SubscribeToPersistentSubscriptionn, SubscriptionFilter,
-    SystemConsumerStrategy, TombstoneStreamOptions,
+    SystemConsumerStrategy, ToEvents, TombstoneStreamOptions,
 };
 use tonic::{Request, Streaming};
 
@@ -83,7 +83,7 @@ fn raw_persistent_uuid_to_uuid(src: Uuid) -> uuid::Uuid {
     }
 }
 
-fn convert_event_data(event: EventData) -> streams::AppendReq {
+pub fn convert_event_data(event: EventData) -> streams::AppendReq {
     use streams::append_req;
 
     let id = event.id_opt.unwrap_or_else(uuid::Uuid::new_v4);
@@ -459,27 +459,32 @@ pub async fn append_to_stream<S, Events>(
 ) -> crate::Result<Result<WriteResult, WrongExpectedVersion>>
 where
     S: AsRef<str>,
-    Events: Stream<Item = EventData> + Send + Sync + 'static,
+    Events: ToEvents,
 {
     use streams::append_req::{self, Content};
     use streams::AppendReq;
 
     let stream = stream.as_ref().to_string();
+    let stream_identifier = Some(StreamIdentifier {
+        stream_name: stream.into_bytes(),
+    });
+    let header = Content::Options(append_req::Options {
+        stream_identifier,
+        expected_stream_revision: Some(options.version.clone()),
+    });
+    let header = AppendReq {
+        content: Some(header),
+    };
+    let mut events = events.into_events();
+    let payload = async_stream::stream! {
+        yield header;
+
+        while let Some(event) = events.next() {
+            yield convert_event_data(event);
+        }
+    };
 
     connection.execute(move |channel| async move {
-        let stream_identifier = Some(StreamIdentifier {
-            stream_name: stream.into_bytes(),
-        });
-        let header = Content::Options(append_req::Options {
-            stream_identifier,
-            expected_stream_revision: Some(options.version.clone()),
-        });
-        let header = AppendReq {
-            content: Some(header),
-        };
-        let header = stream::once(async move { header });
-        let events = events.map(convert_event_data);
-        let payload = header.chain(events);
         let mut req = Request::new(payload);
 
         let credentials = options.credentials.clone().or_else(|| connection.default_credentials());

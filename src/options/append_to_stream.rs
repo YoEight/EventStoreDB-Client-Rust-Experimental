@@ -45,36 +45,27 @@ impl AppendToStreamOptions {
     }
 }
 
-pub struct Streaming<S>(pub S);
-
-pub trait ToEvents: Sealed {
-    type Events: Stream<Item = EventData> + Send + Sync;
+pub trait ToEvents {
+    type Events: Iterator<Item = EventData> + Send;
     fn into_events(self) -> Self::Events;
 }
 
 impl ToEvents for EventData {
-    type Events = Once<Ready<EventData>>;
+    type Events = std::option::IntoIter<EventData>;
 
     fn into_events(self) -> Self::Events {
-        futures::stream::once(futures::future::ready(self))
+        Some(self).into_iter()
     }
 }
 
-impl ToEvents for Vec<EventData> {
-    type Events = Iter<std::vec::IntoIter<EventData>>;
-
-    fn into_events(self) -> Self::Events {
-        futures::stream::iter(self)
-    }
-}
-
-impl<S> ToEvents for Streaming<S>
+impl<I> ToEvents for I
 where
-    S: Stream<Item = EventData> + Send + Sync,
+    I: IntoIterator<Item = EventData>,
+    <I as IntoIterator>::IntoIter: Send,
 {
-    type Events = S;
+    type Events = <I as IntoIterator>::IntoIter;
 
     fn into_events(self) -> Self::Events {
-        self.0
+        self.into_iter()
     }
 }
