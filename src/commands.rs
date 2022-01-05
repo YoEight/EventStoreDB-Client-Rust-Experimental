@@ -23,19 +23,14 @@ use crate::options::persistent_subscription::PersistentSubscriptionOptions;
 use crate::options::read_all::ReadAllOptions;
 use crate::options::read_stream::ReadStreamOptions;
 use crate::options::subscribe_to_stream::SubscribeToStreamOptions;
+use crate::options::{CommonOperationOptions, Options};
 use crate::{
-    Credentials, CurrentRevision, DeletePersistentSubscriptionOptions, DeleteStreamOptions,
+    ClientSettings, CurrentRevision, DeletePersistentSubscriptionOptions, DeleteStreamOptions,
     NakAction, PersistentSubscriptionEvent, PersistentSubscriptionToAllOptions, RetryOptions,
-    SubscribeToAllOptions, SubscribeToPersistentSubscriptionn, SubscriptionFilter,
+    SubscribeToAllOptions, SubscribeToPersistentSubscriptionOptions, SubscriptionFilter,
     SystemConsumerStrategy, TombstoneStreamOptions,
 };
 use tonic::{Request, Streaming};
-
-pub(crate) mod defaults {
-    use std::time::Duration;
-
-    pub const DEFAULT_WRITE_DEADLINE: Duration = Duration::from_secs(2);
-}
 
 fn raw_uuid_to_uuid(src: Uuid) -> uuid::Uuid {
     use byteorder::{BigEndian, ByteOrder};
@@ -378,22 +373,6 @@ fn convert_persistent_proto_read_event(
     }
 }
 
-pub(crate) fn configure_auth_req<A>(req: &mut Request<A>, creds_opt: Option<Credentials>) {
-    use tonic::metadata::MetadataValue;
-
-    if let Some(creds) = creds_opt {
-        let login = String::from_utf8_lossy(&*creds.login).into_owned();
-        let password = String::from_utf8_lossy(&*creds.password).into_owned();
-
-        let basic_auth_string = base64::encode(&format!("{}:{}", login, password));
-        let basic_auth = format!("Basic {}", basic_auth_string);
-        let header_value = MetadataValue::from_str(basic_auth.as_str())
-            .expect("Auth header value should be valid metadata header value");
-
-        req.metadata_mut().insert("authorization", header_value);
-    }
-}
-
 pub fn filter_into_proto(filter: SubscriptionFilter) -> streams::read_req::options::FilterOptions {
     use options::filter_options::{Expression, Filter, Window};
     use streams::read_req::options::{self, FilterOptions};
@@ -450,6 +429,60 @@ pub fn ps_create_filter_into_proto(
     }
 }
 
+fn build_request_metadata(
+    settings: &ClientSettings,
+    options: &CommonOperationOptions,
+) -> tonic::metadata::MetadataMap
+where
+{
+    use tonic::metadata::MetadataValue;
+
+    let mut metadata = tonic::metadata::MetadataMap::new();
+    let credentials = options
+        .credentials
+        .as_ref()
+        .or_else(|| settings.default_authenticated_user().as_ref());
+
+    if let Some(creds) = credentials {
+        let login = String::from_utf8_lossy(&*creds.login).into_owned();
+        let password = String::from_utf8_lossy(&*creds.password).into_owned();
+
+        let basic_auth_string = base64::encode(&format!("{}:{}", login, password));
+        let basic_auth = format!("Basic {}", basic_auth_string);
+        let header_value = MetadataValue::from_str(basic_auth.as_str())
+            .expect("Auth header value should be valid metadata header value");
+
+        metadata.insert("authorization", header_value);
+    }
+
+    if options.requires_leader {
+        let header_value = MetadataValue::from_str("true").expect("valid metadata header value");
+        metadata.insert("requires-leader", header_value);
+    }
+
+    metadata
+}
+
+pub(crate) fn new_request<Message, Opts>(
+    settings: &ClientSettings,
+    options: &Opts,
+    message: Message,
+) -> tonic::Request<Message>
+where
+    Opts: crate::options::Options,
+{
+    let mut req = tonic::Request::new(message);
+    let options = options.common_operation_options();
+
+    *req.metadata_mut() = build_request_metadata(settings, options);
+
+    if let Some(duration) = options.deadline {
+        req.set_timeout(duration);
+    }
+
+    req
+}
+
 /// Sends asynchronously the write command to the server.
 pub async fn append_to_stream<S, Events>(
     connection: &GrpcClient,
@@ -471,8 +504,7 @@ where
             stream_name: stream.into_bytes(),
         });
         let header = Content::Options(append_req::Options {
-            stream_identifier,
-            expected_stream_revision: Some(options.version.clone()),
+            stream_identifier, expected_stream_revision: Some(options.version.clone()),
         });
         let header = AppendReq {
             content: Some(header),
@@ -480,11 +512,7 @@ where
         let header = stream::once(async move { header });
         let events = events.map(convert_event_data);
         let payload = header.chain(events);
-        let mut req = Request::new(payload);
-
-        let credentials = options.credentials.clone().or_else(|| connection.default_credentials());
-
-        configure_auth_req(&mut req, credentials);
+        let req = new_request(connection.connection_settings(), options, payload);
 
         let mut client = StreamsClient::new(channel.channel);
         let resp = client.append(req).await?.into_inner();
@@ -553,12 +581,6 @@ pub fn batch_append(connection: &GrpcClient, options: &BatchAppendOptions) -> Ba
     let mut cloned_batch_sender = batch_sender.clone();
     let batch_client = BatchAppendClient::new(batch_sender, batch_receiver, forward);
 
-    let credentials = options
-        .credentials
-        .as_ref()
-        .cloned()
-        .or_else(|| connection.default_credentials());
-
     let receiver = receiver.map(|req| {
         let correlation_id = shared::uuid::Value::String(req.id.to_string());
         let correlation_id = Some(Uuid {
@@ -597,13 +619,11 @@ pub fn batch_append(connection: &GrpcClient, options: &BatchAppendOptions) -> Ba
         }
     });
 
+    let req = new_request(connection.connection_settings(), options, receiver);
     tokio::spawn(async move {
         let result = connection
             .execute(move |handle| async move {
-                let mut req = Request::new(receiver);
-                configure_auth_req(&mut req, credentials);
                 let mut client = StreamsClient::new(handle.channel.clone());
-
                 let resp = client.batch_append(req).await?;
 
                 Ok((handle, resp.into_inner()))
@@ -837,12 +857,7 @@ pub async fn read_stream<S: AsRef<str>>(
         content: Some(options::uuid_option::Content::String(Empty {})),
     };
 
-    let credentials = options
-        .credentials
-        .clone()
-        .or_else(|| connection.default_credentials());
-
-    let options = Options {
+    let req_options = Options {
         stream_option: Some(StreamOption::Stream(stream_options)),
         resolve_links: options.resolve_link_tos,
         filter_option: Some(options::FilterOption::NoFilter(Empty {})),
@@ -853,22 +868,17 @@ pub async fn read_stream<S: AsRef<str>>(
     };
 
     let req = streams::ReadReq {
-        options: Some(options),
+        options: Some(req_options),
     };
 
-    let mut req = Request::new(req);
-
-    configure_auth_req(&mut req, credentials);
-
+    let req = new_request(connection.connection_settings(), options, req);
     let handle = connection.current_selected_node().await?;
     let channel_id = handle.id();
     let mut client = StreamsClient::new(handle.channel);
 
     match client.read(req).await {
         Err(status) => {
-            debug!("__> Status error: {:?}", status);
             let e = crate::Error::from_grpc(status);
-            debug!("__> Error: {:?}", e);
             handle_error(&connection.sender, channel_id, &e).await;
 
             Err(e)
@@ -918,12 +928,7 @@ pub async fn read_all(
         content: Some(options::uuid_option::Content::String(Empty {})),
     };
 
-    let credentials = options
-        .credentials
-        .clone()
-        .or_else(|| connection.default_credentials());
-
-    let options = Options {
+    let req_options = Options {
         stream_option: Some(StreamOption::All(stream_options)),
         resolve_links: options.resolve_link_tos,
         filter_option: Some(options::FilterOption::NoFilter(Empty {})),
@@ -934,13 +939,10 @@ pub async fn read_all(
     };
 
     let req = streams::ReadReq {
-        options: Some(options),
+        options: Some(req_options),
     };
 
-    let mut req = Request::new(req);
-
-    configure_auth_req(&mut req, credentials);
-
+    let req = new_request(connection.connection_settings(), options, req);
     let handle = connection.current_selected_node().await?;
     let channel_id = handle.id();
     let mut client = StreamsClient::new(handle.channel);
@@ -967,11 +969,6 @@ pub async fn delete_stream<S: AsRef<str>>(
     stream: S,
     options: &DeleteStreamOptions,
 ) -> crate::Result<Option<Position>> {
-    let credentials = options
-        .credentials
-        .clone()
-        .or_else(|| connection.default_credentials());
-
     use streams::delete_req::options::ExpectedStreamRevision;
     use streams::delete_req::Options;
     use streams::delete_resp::PositionOption;
@@ -987,16 +984,18 @@ pub async fn delete_stream<S: AsRef<str>>(
     let stream_identifier = Some(StreamIdentifier {
         stream_name: stream.as_ref().to_string().into_bytes(),
     });
-    let options = Options {
+    let req_options = Options {
         stream_identifier,
         expected_stream_revision,
     };
 
-    let mut req = Request::new(streams::DeleteReq {
-        options: Some(options),
-    });
-
-    configure_auth_req(&mut req, credentials);
+    let req = new_request(
+        connection.connection_settings(),
+        options,
+        streams::DeleteReq {
+            options: Some(req_options),
+        },
+    );
 
     connection
         .execute(|channel| async {
@@ -1029,11 +1028,6 @@ pub async fn tombstone_stream<S: AsRef<str>>(
     stream: S,
     options: &TombstoneStreamOptions,
 ) -> crate::Result<Option<Position>> {
-    let credentials = options
-        .credentials
-        .clone()
-        .or_else(|| connection.default_credentials());
-
     use streams::tombstone_req::options::ExpectedStreamRevision;
     use streams::tombstone_req::Options;
     use streams::tombstone_resp::PositionOption;
@@ -1049,16 +1043,18 @@ pub async fn tombstone_stream<S: AsRef<str>>(
     let stream_identifier = Some(StreamIdentifier {
         stream_name: stream.as_ref().to_string().into_bytes(),
     });
-    let options = Options {
+    let req_options = Options {
         stream_identifier,
         expected_stream_revision,
     };
 
-    let mut req = Request::new(streams::TombstoneReq {
-        options: Some(options),
-    });
-
-    configure_auth_req(&mut req, credentials);
+    let req = new_request(
+        connection.connection_settings(),
+        options,
+        streams::TombstoneReq {
+            options: Some(req_options),
+        },
+    );
 
     connection
         .execute(|channel| async {
@@ -1094,14 +1090,14 @@ pub struct Subscription {
     retry_enabled: bool,
     delay: std::time::Duration,
     options: streams::read_req::Options,
-    credentials: Option<Credentials>,
+    metadata: tonic::metadata::MetadataMap,
 }
 
 impl Subscription {
     fn new(
         connection: GrpcClient,
         retry: Option<RetryOptions>,
-        credentials: Option<Credentials>,
+        metadata: tonic::metadata::MetadataMap,
         options: streams::read_req::Options,
     ) -> Self {
         let (limit, delay, retry_enabled) = if let Some(retry) = retry {
@@ -1117,9 +1113,9 @@ impl Subscription {
             delay,
             retry_enabled,
             options,
-            credentials,
             stream: None,
             attempts: 1,
+            metadata,
         }
     }
 
@@ -1253,7 +1249,7 @@ impl Subscription {
                     options: Some(self.options.clone()),
                 });
 
-                configure_auth_req(&mut req, self.credentials.as_ref().cloned());
+                *req.metadata_mut() = self.metadata.clone();
 
                 match client.read(req).await {
                     Err(status) => {
@@ -1324,12 +1320,7 @@ pub fn subscribe_to_stream<S: AsRef<str>>(
         content: Some(options::uuid_option::Content::String(Empty {})),
     };
 
-    let credentials = options
-        .credentials
-        .clone()
-        .or_else(|| connection.default_credentials());
-
-    let options = Options {
+    let req_options = Options {
         stream_option: Some(StreamOption::Stream(stream_options)),
         resolve_links: options.resolve_link_tos,
         filter_option: Some(options::FilterOption::NoFilter(Empty {})),
@@ -1339,7 +1330,11 @@ pub fn subscribe_to_stream<S: AsRef<str>>(
         read_direction,
     };
 
-    Subscription::new(connection, retry, credentials, options)
+    let metadata = build_request_metadata(
+        connection.connection_settings(),
+        options.common_operation_options(),
+    );
+    Subscription::new(connection, retry, metadata, req_options)
 }
 
 pub fn subscribe_to_all(connection: GrpcClient, options: &SubscribeToAllOptions) -> Subscription {
@@ -1372,12 +1367,7 @@ pub fn subscribe_to_all(connection: GrpcClient, options: &SubscribeToAllOptions)
         None => options::FilterOption::NoFilter(Empty {}),
     };
 
-    let credentials = options
-        .credentials
-        .clone()
-        .or_else(|| connection.default_credentials());
-
-    let options = Options {
+    let req_options = Options {
         stream_option: Some(StreamOption::All(stream_options)),
         resolve_links: options.resolve_link_tos,
         filter_option: Some(filter_option),
@@ -1387,17 +1377,19 @@ pub fn subscribe_to_all(connection: GrpcClient, options: &SubscribeToAllOptions)
         read_direction,
     };
 
-    Subscription::new(connection, retry, credentials, options)
+    let metadata = build_request_metadata(
+        connection.connection_settings(),
+        options.common_operation_options(),
+    );
+    Subscription::new(connection, retry, metadata, req_options)
 }
 
 /// This trait is used to avoid code duplication when introducing persistent subscription to $all. It
 /// allows us to re-use most of regular persistent subscription code.
-pub(crate) trait PsSettings {
+pub(crate) trait PsSettings: crate::options::Options {
     type Pos: PsPosition;
 
     fn settings(&self) -> PersistentSubscriptionSettings<Self::Pos>;
-
-    fn credentials(&self) -> Option<Credentials>;
 
     fn to_create_options(
         &self,
@@ -1415,10 +1407,6 @@ impl PsSettings for PersistentSubscriptionOptions {
 
     fn settings(&self) -> PersistentSubscriptionSettings<Self::Pos> {
         self.setts
-    }
-
-    fn credentials(&self) -> Option<Credentials> {
-        self.credentials.clone()
     }
 
     fn to_create_options(
@@ -1467,10 +1455,6 @@ impl PsSettings for PersistentSubscriptionToAllOptions {
 
     fn settings(&self) -> PersistentSubscriptionSettings<Self::Pos> {
         self.setts
-    }
-
-    fn credentials(&self) -> Option<Credentials> {
-        self.credentials.clone()
     }
 
     fn to_create_options(
@@ -1544,12 +1528,8 @@ where
         stream_name: stream.as_ref().to_string().into_bytes(),
     };
 
-    let credentials = options
-        .credentials()
-        .or_else(|| connection.default_credentials());
-
     #[allow(deprecated)]
-    let options = Options {
+    let req_options = Options {
         stream_option: Some(options.to_create_options(stream_identifier.clone())),
         stream_identifier: Some(stream_identifier),
         group_name: group.as_ref().to_string(),
@@ -1557,13 +1537,10 @@ where
     };
 
     let req = CreateReq {
-        options: Some(options),
+        options: Some(req_options),
     };
 
-    let mut req = Request::new(req);
-
-    configure_auth_req(&mut req, credentials);
-    req.set_timeout(defaults::DEFAULT_WRITE_DEADLINE);
+    let req = new_request(connection.connection_settings(), options, req);
 
     connection
         .execute(|channel| async {
@@ -1592,12 +1569,8 @@ where
         stream_name: stream.as_ref().to_string().into_bytes(),
     };
 
-    let credentials = options
-        .credentials()
-        .or_else(|| connection.default_credentials());
-
     #[allow(deprecated)]
-    let options = Options {
+    let req_options = Options {
         group_name: group.as_ref().to_string(),
         stream_option: Some(options.to_update_options(stream_identifier.clone())),
         stream_identifier: Some(stream_identifier),
@@ -1605,13 +1578,10 @@ where
     };
 
     let req = UpdateReq {
-        options: Some(options),
+        options: Some(req_options),
     };
 
-    let mut req = Request::new(req);
-
-    configure_auth_req(&mut req, credentials);
-    req.set_timeout(defaults::DEFAULT_WRITE_DEADLINE);
+    let req = new_request(connection.connection_settings(), options, req);
 
     connection
         .execute(|channel| async {
@@ -1642,24 +1612,16 @@ pub async fn delete_persistent_subscription<S: AsRef<str>>(
 
     let stream_option = Some(stream_option);
 
-    let credentials = options
-        .credentials
-        .clone()
-        .or_else(|| connection.default_credentials());
-
-    let options = Options {
+    let req_options = Options {
         stream_option,
         group_name: group_name.as_ref().to_string(),
     };
 
     let req = persistent::DeleteReq {
-        options: Some(options),
+        options: Some(req_options),
     };
 
-    let mut req = Request::new(req);
-
-    configure_auth_req(&mut req, credentials);
-    req.set_timeout(defaults::DEFAULT_WRITE_DEADLINE);
+    let req = new_request(connection.connection_settings(), options, req);
 
     connection
         .execute(|channel| async {
@@ -1677,7 +1639,7 @@ pub async fn subscribe_to_persistent_subscription<S: AsRef<str>>(
     connection: &GrpcClient,
     stream_id: S,
     group_name: S,
-    options: &SubscribeToPersistentSubscriptionn,
+    options: &SubscribeToPersistentSubscriptionOptions,
     to_all: bool,
 ) -> crate::Result<PersistentSubscription> {
     use futures::channel::mpsc;
@@ -1702,12 +1664,7 @@ pub async fn subscribe_to_persistent_subscription<S: AsRef<str>>(
 
     let stream_option = Some(stream_option);
 
-    let credentials = options
-        .credentials
-        .clone()
-        .or_else(|| connection.default_credentials());
-
-    let options = Options {
+    let req_options = Options {
         stream_option,
         group_name: group_name.as_ref().to_string(),
         buffer_size: options.buffer_size as i32,
@@ -1715,12 +1672,10 @@ pub async fn subscribe_to_persistent_subscription<S: AsRef<str>>(
     };
 
     let read_req = ReadReq {
-        content: Some(read_req::Content::Options(options)),
+        content: Some(read_req::Content::Options(req_options)),
     };
 
-    let mut req = Request::new(recv);
-
-    configure_auth_req(&mut req, credentials);
+    let req = new_request(connection.connection_settings(), options, recv);
 
     let _ = sender.send(read_req).await;
     let stream_id = stream_id.as_ref().to_string();

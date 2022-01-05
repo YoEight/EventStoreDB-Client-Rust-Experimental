@@ -932,17 +932,16 @@ impl std::fmt::Debug for Msg {
 #[derive(Clone)]
 pub struct GrpcClient {
     pub(crate) sender: futures::channel::mpsc::UnboundedSender<Msg>,
-    default_credentials: Option<Credentials>,
+    connection_settings: ClientSettings,
 }
 
 impl GrpcClient {
-    pub fn create(conn_setts: ClientSettings) -> Self {
-        let default_credentials = conn_setts.default_user_name.clone();
-        let sender = connection_state_machine(conn_setts);
+    pub fn create(connection_settings: ClientSettings) -> Self {
+        let sender = connection_state_machine(connection_settings.clone());
 
         GrpcClient {
             sender,
-            default_credentials,
+            connection_settings,
         }
     }
 
@@ -994,8 +993,8 @@ impl GrpcClient {
         Ok(handle)
     }
 
-    pub fn default_credentials(&self) -> Option<Credentials> {
-        self.default_credentials.clone()
+    pub fn connection_settings(&self) -> &ClientSettings {
+        &self.connection_settings
     }
 }
 

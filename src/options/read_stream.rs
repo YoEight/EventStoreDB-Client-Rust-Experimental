@@ -1,23 +1,26 @@
-use crate::{Credentials, ReadDirection, StreamPosition};
+use crate::options::CommonOperationOptions;
+use crate::{impl_options_trait, ReadDirection, StreamPosition};
 
 #[derive(Clone)]
 pub struct ReadStreamOptions {
-    pub(crate) credentials: Option<Credentials>,
     pub(crate) direction: ReadDirection,
     pub(crate) position: StreamPosition<u64>,
     pub(crate) resolve_link_tos: bool,
+    pub(crate) common_operation_options: CommonOperationOptions,
 }
 
 impl Default for ReadStreamOptions {
     fn default() -> Self {
         Self {
-            credentials: None,
             direction: ReadDirection::Forward,
             position: StreamPosition::Start,
             resolve_link_tos: false,
+            common_operation_options: Default::default(),
         }
     }
 }
+
+impl_options_trait!(ReadStreamOptions);
 
 impl ReadStreamOptions {
     /// Asks the command to read forward (toward the end of the stream).
@@ -33,14 +36,6 @@ impl ReadStreamOptions {
     pub fn backwards(self) -> Self {
         Self {
             direction: ReadDirection::Backward,
-            ..self
-        }
-    }
-
-    /// Performs the command with the given credentials.
-    pub fn authenticated(self, value: Credentials) -> Self {
-        Self {
-            credentials: Some(value),
             ..self
         }
     }
