@@ -6,8 +6,6 @@ use std::fmt::Formatter;
 use std::time::Duration;
 
 use crate::gossip::VNodeState;
-use crate::private::Sealed;
-use async_trait::async_trait;
 use bytes::Bytes;
 use serde::{de::Visitor, ser::SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -1422,58 +1420,6 @@ pub enum GrpcConnectionError {
 }
 
 pub type Result<A> = std::result::Result<A, Error>;
-
-#[async_trait]
-pub trait ToCount: Sealed {
-    type Selection;
-    fn to_count(&self) -> usize;
-    async fn select(self, stream: crate::ReadStream) -> Self::Selection;
-}
-
-#[async_trait]
-impl ToCount for usize {
-    type Selection = crate::ReadStream;
-
-    fn to_count(&self) -> usize {
-        *self
-    }
-
-    async fn select(self, stream: crate::ReadStream) -> Self::Selection {
-        stream
-    }
-}
-
-/// Get all the stream's events.
-pub struct All;
-
-#[async_trait]
-impl ToCount for All {
-    type Selection = crate::ReadStream;
-
-    fn to_count(&self) -> usize {
-        usize::MAX
-    }
-
-    async fn select(self, stream: crate::ReadStream) -> Self::Selection {
-        stream
-    }
-}
-
-/// Get only one stream's event.
-pub struct Single;
-
-#[async_trait]
-impl ToCount for Single {
-    type Selection = crate::Result<Option<ResolvedEvent>>;
-
-    fn to_count(&self) -> usize {
-        1
-    }
-
-    async fn select(self, mut stream: crate::ReadStream) -> Self::Selection {
-        stream.next().await
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct SubscriptionFilter {
