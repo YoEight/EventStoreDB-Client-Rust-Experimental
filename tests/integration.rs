@@ -6,7 +6,7 @@ extern crate serde_json;
 mod images;
 
 use eventstore::{
-    Acl, Client, ClientSettings, EventData, ProjectionClient, Single, StreamAclBuilder,
+    Acl, Client, ClientSettings, EventData, ProjectionClient, StreamAclBuilder,
     StreamMetadataBuilder, StreamMetadataResult,
 };
 use futures::channel::oneshot;
@@ -53,7 +53,11 @@ async fn test_write_events(client: &Client) -> Result<(), Box<dyn Error>> {
 // We read all stream events by batch.
 async fn test_read_all_stream_events(client: &Client) -> Result<(), Box<dyn Error>> {
     // Eventstore should always have "some" events in $all, since eventstore itself uses streams, ouroboros style.
-    client.read_all(&Default::default(), Single).await??;
+    client
+        .read_all(&Default::default(), 1)
+        .await?
+        .next()
+        .await?;
 
     Ok(())
 }
@@ -145,8 +149,10 @@ async fn test_read_stream_events_non_existent(client: &Client) -> Result<(), Box
     let stream_id = fresh_stream_id("read_stream_events");
 
     let result = client
-        .read_stream(stream_id.as_str(), &Default::default(), Single)
-        .await?;
+        .read_stream(stream_id.as_str(), &Default::default(), 1)
+        .await?
+        .next()
+        .await;
 
     if let Err(eventstore::Error::ResourceNotFound) = result {
         return Ok(());
@@ -677,7 +683,7 @@ async fn test_batch_append(client: &Client) -> eventstore::Result<()> {
             .forwards()
             .position(eventstore::StreamPosition::Start);
         let mut stream = client
-            .read_stream(stream_id.as_str(), &options, eventstore::All)
+            .read_stream(stream_id.as_str(), &options, usize::MAX)
             .await?;
 
         let mut cpt = 0usize;
@@ -794,10 +800,10 @@ async fn wait_for_admin_to_be_available(client: &eventstore::Client) -> eventsto
         count += 1;
 
         debug!("Checking if admin user is available...{}/50", count);
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(1),
-            client.read_stream("$users", &Default::default(), Single),
-        )
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), async move {
+            let mut stream = client.read_stream("$users", &Default::default(), 1).await?;
+            stream.next().await
+        })
         .await;
 
         match result {
@@ -806,7 +812,7 @@ async fn wait_for_admin_to_be_available(client: &eventstore::Client) -> eventsto
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
 
-            Ok(result) => match result.and_then(|r| r) {
+            Ok(result) => match result {
                 Err(e) if can_retry(&e) => {
                     debug!("Not available: {:?}, retrying...", e);
                     tokio::time::sleep(Duration::from_millis(500)).await;
