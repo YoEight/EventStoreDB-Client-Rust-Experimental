@@ -9,7 +9,7 @@ use crate::{
     GetPersistentSubscriptionInfoOptions, ListPersistentSubscriptionsOptions,
     PersistentSubscription, PersistentSubscriptionInfo, PersistentSubscriptionToAllOptions,
     Position, ReplayParkedMessagesOptions, StreamMetadata, StreamMetadataResult,
-    SubscribeToAllOptions, SubscribeToPersistentSubscriptionn, Subscription, ToCount,
+    SubscribeToAllOptions, SubscribeToPersistentSubscriptionOptions, Subscription, ToCount,
     TombstoneStreamOptions, VersionedMetadata, WriteResult, WrongExpectedVersion,
 };
 use crate::{
@@ -310,7 +310,7 @@ impl Client {
         &self,
         stream_name: impl AsRef<str>,
         group_name: impl AsRef<str>,
-        options: &SubscribeToPersistentSubscriptionn,
+        options: &SubscribeToPersistentSubscriptionOptions,
     ) -> crate::Result<PersistentSubscription> {
         commands::subscribe_to_persistent_subscription(
             &self.client,
@@ -326,7 +326,7 @@ impl Client {
     pub async fn subscribe_to_persistent_subscription_to_all(
         &self,
         group_name: impl AsRef<str>,
-        options: &SubscribeToPersistentSubscriptionn,
+        options: &SubscribeToPersistentSubscriptionOptions,
     ) -> crate::Result<PersistentSubscription> {
         commands::subscribe_to_persistent_subscription(
             &self.client,

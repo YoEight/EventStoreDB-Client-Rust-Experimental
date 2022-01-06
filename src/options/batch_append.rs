@@ -1,15 +1,9 @@
-use crate::Credentials;
+use crate::impl_options_trait;
+use crate::options::CommonOperationOptions;
 
 #[derive(Clone, Default)]
 pub struct BatchAppendOptions {
-    pub(crate) credentials: Option<Credentials>,
+    pub(crate) common_operation_options: CommonOperationOptions,
 }
 
-impl BatchAppendOptions {
-    /// Performs the command with the given credentials.
-    pub fn authenticated(self, credentials: Credentials) -> Self {
-        Self {
-            credentials: Some(credentials),
-        }
-    }
-}
+impl_options_trait!(BatchAppendOptions);
