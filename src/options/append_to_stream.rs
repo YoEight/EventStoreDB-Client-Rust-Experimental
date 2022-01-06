@@ -3,9 +3,6 @@ use crate::event_store::client::streams::append_req::options::ExpectedStreamRevi
 use crate::options::CommonOperationOptions;
 use crate::private::Sealed;
 use crate::{impl_options_trait, EventData, ExpectedRevision};
-use futures::future::Ready;
-use futures::stream::{Iter, Once};
-use futures::Stream;
 
 #[derive(Clone)]
 /// Options of the append to stream command.
@@ -40,34 +37,34 @@ impl AppendToStreamOptions {
     }
 }
 
-pub struct Streaming<S>(S);
+pub struct Streaming<I>(pub I);
 
 pub trait ToEvents: Sealed {
-    type Events: Stream<Item = EventData> + Send + Sync;
+    type Events: Iterator<Item = EventData> + Send + 'static;
     fn into_events(self) -> Self::Events;
 }
 
 impl ToEvents for EventData {
-    type Events = Once<Ready<EventData>>;
+    type Events = std::option::IntoIter<EventData>;
 
     fn into_events(self) -> Self::Events {
-        futures::stream::once(futures::future::ready(self))
+        Some(self).into_iter()
     }
 }
 
 impl ToEvents for Vec<EventData> {
-    type Events = Iter<std::vec::IntoIter<EventData>>;
+    type Events = std::vec::IntoIter<EventData>;
 
     fn into_events(self) -> Self::Events {
-        futures::stream::iter(self)
+        self.into_iter()
     }
 }
 
-impl<S> ToEvents for Streaming<S>
+impl<I> ToEvents for Streaming<I>
 where
-    S: Stream<Item = EventData> + Send + Sync,
+    I: Iterator<Item = EventData> + Send + 'static,
 {
-    type Events = S;
+    type Events = I;
 
     fn into_events(self) -> Self::Events {
         self.0

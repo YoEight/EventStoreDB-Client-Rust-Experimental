@@ -2,6 +2,7 @@
 //! Common types used across the library.
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::fmt::Formatter;
 use std::time::Duration;
 
 use crate::gossip::VNodeState;
@@ -120,6 +121,12 @@ pub enum ExpectedRevision {
     /// States that the last event written to the stream should have an event
     /// number matching your expected value.
     Exact(u64),
+}
+
+impl std::fmt::Display for ExpectedRevision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 /// A structure referring to a potential logical record position in the
@@ -1266,6 +1273,12 @@ pub enum CurrentRevision {
     NoStream,
 }
 
+impl std::fmt::Display for CurrentRevision {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 #[derive(Clone, Debug, Copy, Eq, PartialEq)]
 pub struct WrongExpectedVersion {
     pub current: CurrentRevision,
@@ -1323,6 +1336,11 @@ pub enum Error {
     InitializationError(String),
     #[error("Illegal state error: {0}")]
     IllegalStateError(String),
+    #[error("Wrong expected version: expected '{expected}' but got '{current}'")]
+    WrongExpectedVersion {
+        expected: ExpectedRevision,
+        current: CurrentRevision,
+    },
 }
 
 impl Error {
