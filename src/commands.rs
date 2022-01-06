@@ -1,13 +1,11 @@
 #![allow(clippy::large_enum_variant)]
 //! Commands this client supports.
-use futures::{stream, TryStreamExt};
-use futures::{Stream, StreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
 
 use crate::event_store::client::{persistent, shared, streams};
 use crate::types::{
     EventData, ExpectedRevision, PersistentSubscriptionSettings, Position, ReadDirection,
     RecordedEvent, ResolvedEvent, StreamPosition, SubscriptionEvent, WriteResult,
-    WrongExpectedVersion,
 };
 
 use async_stream::try_stream;
@@ -484,84 +482,90 @@ where
 }
 
 /// Sends asynchronously the write command to the server.
-pub async fn append_to_stream<S, Events>(
+pub async fn append_to_stream(
     connection: &GrpcClient,
-    stream: S,
+    stream: impl AsRef<str>,
     options: &AppendToStreamOptions,
-    events: Events,
-) -> crate::Result<Result<WriteResult, WrongExpectedVersion>>
-where
-    S: AsRef<str>,
-    Events: Stream<Item = EventData> + Send + Sync + 'static,
-{
+    mut events: impl Iterator<Item = EventData> + Send + 'static,
+) -> crate::Result<WriteResult> {
     use streams::append_req::{self, Content};
     use streams::AppendReq;
 
     let stream = stream.as_ref().to_string();
+    let stream_identifier = Some(StreamIdentifier {
+        stream_name: stream.into_bytes(),
+    });
+    let header = Content::Options(append_req::Options {
+        stream_identifier,
+        expected_stream_revision: Some(options.version.clone()),
+    });
+    let header = AppendReq {
+        content: Some(header),
+    };
 
-    connection.execute(move |channel| async move {
-        let stream_identifier = Some(StreamIdentifier {
-            stream_name: stream.into_bytes(),
-        });
-        let header = Content::Options(append_req::Options {
-            stream_identifier, expected_stream_revision: Some(options.version.clone()),
-        });
-        let header = AppendReq {
-            content: Some(header),
-        };
-        let header = stream::once(async move { header });
-        let events = events.map(convert_event_data);
-        let payload = header.chain(events);
-        let req = new_request(connection.connection_settings(), options, payload);
+    let payload = async_stream::stream! {
+        yield header;
 
-        let mut client = StreamsClient::new(channel.channel);
-        let resp = client.append(req).await?.into_inner();
-
-        match resp.result.unwrap() {
-            streams::append_resp::Result::Success(success) => {
-                let next_expected_version = match success.current_revision_option.unwrap() {
-                    streams::append_resp::success::CurrentRevisionOption::CurrentRevision(rev) => {
-                        rev
-                    }
-                    streams::append_resp::success::CurrentRevisionOption::NoStream(_) => 0,
-                };
-
-                let position = match success.position_option.unwrap() {
-                    streams::append_resp::success::PositionOption::Position(pos) => Position {
-                        commit: pos.commit_position,
-                        prepare: pos.prepare_position,
-                    },
-
-                    streams::append_resp::success::PositionOption::NoPosition(_) => {
-                        Position::start()
-                    }
-                };
-
-                let write_result = WriteResult {
-                    next_expected_version,
-                    position,
-                };
-
-                Ok(Ok(write_result))
-            }
-
-            streams::append_resp::Result::WrongExpectedVersion(error) => {
-                let current = match error.current_revision_option.unwrap() {
-                    streams::append_resp::wrong_expected_version::CurrentRevisionOption::CurrentRevision(rev) => CurrentRevision::Current(rev),
-                    streams::append_resp::wrong_expected_version::CurrentRevisionOption::CurrentNoStream(_) => CurrentRevision::NoStream,
-                };
-
-                let expected = match error.expected_revision_option.unwrap() {
-                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedRevision(rev) => ExpectedRevision::Exact(rev),
-                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedAny(_) => ExpectedRevision::Any,
-                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedStreamExists(_) => ExpectedRevision::StreamExists,
-                    streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedNoStream(_) => ExpectedRevision::NoStream,
-                };
-
-                Ok(Err(WrongExpectedVersion { current, expected }))
-            }
+        while let Some(event) = events.next() {
+            yield convert_event_data(event);
         }
-    }).await
+    };
+
+    let handle = connection.current_selected_node().await?;
+    let handle_id = handle.id();
+    let req = new_request(connection.connection_settings(), options, payload);
+    let mut client = StreamsClient::new(handle.channel);
+    let resp = match client.append(req).await {
+        Err(e) => {
+            let e = crate::Error::from_grpc(e);
+            handle_error(&connection.sender, handle_id, &e).await;
+
+            return Err(e);
+        }
+
+        Ok(resp) => resp.into_inner(),
+    };
+
+    match resp.result.unwrap() {
+        streams::append_resp::Result::Success(success) => {
+            let next_expected_version = match success.current_revision_option.unwrap() {
+                streams::append_resp::success::CurrentRevisionOption::CurrentRevision(rev) => rev,
+                streams::append_resp::success::CurrentRevisionOption::NoStream(_) => 0,
+            };
+
+            let position = match success.position_option.unwrap() {
+                streams::append_resp::success::PositionOption::Position(pos) => Position {
+                    commit: pos.commit_position,
+                    prepare: pos.prepare_position,
+                },
+
+                streams::append_resp::success::PositionOption::NoPosition(_) => Position::start(),
+            };
+
+            let write_result = WriteResult {
+                next_expected_version,
+                position,
+            };
+
+            Ok(write_result)
+        }
+
+        streams::append_resp::Result::WrongExpectedVersion(error) => {
+            let current = match error.current_revision_option.unwrap() {
+                streams::append_resp::wrong_expected_version::CurrentRevisionOption::CurrentRevision(rev) => CurrentRevision::Current(rev),
+                streams::append_resp::wrong_expected_version::CurrentRevisionOption::CurrentNoStream(_) => CurrentRevision::NoStream,
+            };
+
+            let expected = match error.expected_revision_option.unwrap() {
+                streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedRevision(rev) => ExpectedRevision::Exact(rev),
+                streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedAny(_) => ExpectedRevision::Any,
+                streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedStreamExists(_) => ExpectedRevision::StreamExists,
+                streams::append_resp::wrong_expected_version::ExpectedRevisionOption::ExpectedNoStream(_) => ExpectedRevision::NoStream,
+            };
+
+            Err(crate::Error::WrongExpectedVersion { current, expected })
+        }
+    }
 }
 
 pub fn batch_append(connection: &GrpcClient, options: &BatchAppendOptions) -> BatchAppendClient {

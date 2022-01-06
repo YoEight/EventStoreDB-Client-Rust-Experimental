@@ -617,11 +617,9 @@ async fn test_replay_parked_messages(
 
     let events = generate_events("foobar", 2);
 
-    let write_result = client
+    client
         .append_to_stream(stream_name.as_str(), &Default::default(), events)
         .await?;
-
-    assert!(write_result.is_ok());
 
     let outcome = tokio::time::timeout(Duration::from_secs(30), async move {
         for _ in 0..event_count {
@@ -1338,11 +1336,9 @@ async fn projection_state(
     let events = generate_events("testing", 10);
     let stream_name = gen_name.next().unwrap();
 
-    let write_result = stream_client
+    stream_client
         .append_to_stream(stream_name, &Default::default(), events)
         .await?;
-
-    assert!(write_result.is_ok());
 
     // This is the state of the projection, see tests/fixtures/projection.js.
     #[derive(Deserialize, Debug)]
@@ -1389,11 +1385,9 @@ async fn projection_result(
     let events = generate_events("testing", 10);
     let stream_name = gen_name.next().unwrap();
 
-    let write_result = stream_client
+    stream_client
         .append_to_stream(stream_name, &Default::default(), events)
         .await?;
-
-    assert!(write_result.is_ok());
 
     // This is the state of the projection, see tests/fixtures/projection.js.
     #[derive(Deserialize, Debug)]
