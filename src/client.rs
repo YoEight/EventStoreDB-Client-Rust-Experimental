@@ -33,7 +33,14 @@ pub struct Client {
 impl Client {
     /// Creates a gRPC client to an EventStoreDB database.
     pub fn new(settings: ClientSettings) -> crate::Result<Self> {
-        let client = GrpcClient::create(settings.clone());
+        Client::with_runtime_handle(tokio::runtime::Handle::current(), settings)
+    }
+
+    pub fn with_runtime_handle(
+        handle: tokio::runtime::Handle,
+        settings: ClientSettings,
+    ) -> crate::Result<Self> {
+        let client = GrpcClient::create(handle, settings.clone());
 
         let http_client = reqwest::Client::builder()
             .danger_accept_invalid_certs(!settings.is_tls_certificate_verification_enabled())
@@ -47,7 +54,6 @@ impl Client {
             settings,
         })
     }
-
     /// Sends events to a given stream.
     pub async fn append_to_stream<Events>(
         &self,

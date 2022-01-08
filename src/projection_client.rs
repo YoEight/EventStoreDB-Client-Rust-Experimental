@@ -45,10 +45,14 @@ pub struct ProjectionClient {
 }
 
 impl ProjectionClient {
-    pub fn new(settings: ClientSettings) -> Self {
-        let client = GrpcClient::create(settings);
+    pub fn with_runtime_handle(handle: tokio::runtime::Handle, settings: ClientSettings) -> Self {
+        let client = GrpcClient::create(handle, settings);
 
         ProjectionClient { client }
+    }
+
+    pub fn new(settings: ClientSettings) -> Self {
+        ProjectionClient::with_runtime_handle(tokio::runtime::Handle::current(), settings)
     }
 
     pub async fn create<Name>(
