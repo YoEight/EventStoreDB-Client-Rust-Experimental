@@ -84,6 +84,7 @@ pub use grpc::{ClientSettings, ClientSettingsParseError};
 pub use options::append_to_stream::*;
 pub use options::delete_stream::*;
 pub use options::persistent_subscription::*;
+pub use options::projections::*;
 pub use options::read_all::*;
 pub use options::read_stream::*;
 pub use options::retry::*;
@@ -100,6 +101,7 @@ pub mod prelude {
     pub use crate::options::append_to_stream::*;
     pub use crate::options::delete_stream::*;
     pub use crate::options::persistent_subscription::*;
+    pub use crate::options::projections::*;
     pub use crate::options::read_all::*;
     pub use crate::options::read_stream::*;
     pub use crate::options::retry::*;
