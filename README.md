@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // provides great additional value if you do so.
     let evt = EventData::json("language-poll", &payload)?;
 
-    let _ = client
+    client
         .append_to_stream("language-stream", &Default::default(), evt)
         .await?;
 

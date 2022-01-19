@@ -10,7 +10,7 @@ use crate::{
     PersistentSubscription, PersistentSubscriptionInfo, PersistentSubscriptionToAllOptions,
     Position, ReplayParkedMessagesOptions, StreamMetadata, StreamMetadataResult,
     SubscribeToAllOptions, SubscribeToPersistentSubscriptionOptions, Subscription, ToCount,
-    TombstoneStreamOptions, VersionedMetadata, WriteResult, WrongExpectedVersion,
+    TombstoneStreamOptions, VersionedMetadata, WriteResult,
 };
 use crate::{
     grpc::{ClientSettings, GrpcClient},
@@ -57,9 +57,9 @@ impl Client {
         stream_name: impl AsRef<str>,
         options: &AppendToStreamOptions,
         events: Events,
-    ) -> crate::Result<Result<WriteResult, WrongExpectedVersion>>
+    ) -> crate::Result<WriteResult>
     where
-        Events: ToEvents + 'static,
+        Events: ToEvents,
     {
         commands::append_to_stream(&self.client, stream_name, options, events.into_events()).await
     }
@@ -70,7 +70,7 @@ impl Client {
         stream_name: impl AsRef<str>,
         options: &AppendToStreamOptions,
         metadata: StreamMetadata,
-    ) -> crate::Result<Result<WriteResult, WrongExpectedVersion>> {
+    ) -> crate::Result<WriteResult> {
         let event = EventData::json("$metadata", metadata)
             .map_err(|e| crate::Error::InternalParsingError(e.to_string()))?;
 
