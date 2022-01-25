@@ -1326,8 +1326,8 @@ pub enum Error {
     ResourceNotFound,
     #[error("The resource you asked for was deleted")]
     ResourceDeleted,
-    #[error("The operation is unimplemented on the server")]
-    Unimplemented,
+    #[error("The operation is unsupported by the server")]
+    UnsupportedFeature,
     #[error("Unexpected internal client error. Please fill an issue on GitHub")]
     InternalClientError,
     #[error("Deadline exceeded")]
@@ -1402,7 +1402,7 @@ impl Error {
         }
 
         if status.code() == Code::Unimplemented {
-            return Error::Unimplemented;
+            return Error::UnsupportedFeature;
         }
 
         Error::Grpc {

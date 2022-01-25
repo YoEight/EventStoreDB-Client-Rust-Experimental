@@ -79,8 +79,11 @@ impl Client {
     }
 
     // Creates a batch-append client.
-    pub fn batch_append(&self, options: &BatchAppendOptions) -> BatchAppendClient {
-        commands::batch_append(&self.client, options)
+    pub async fn batch_append(
+        &self,
+        options: &BatchAppendOptions,
+    ) -> crate::Result<BatchAppendClient> {
+        commands::batch_append(&self.client, options).await
     }
 
     /// Reads events from a given stream. The reading can be done forward and

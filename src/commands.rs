@@ -22,6 +22,7 @@ use crate::options::read_all::ReadAllOptions;
 use crate::options::read_stream::ReadStreamOptions;
 use crate::options::subscribe_to_stream::SubscribeToStreamOptions;
 use crate::options::{CommonOperationOptions, Options};
+use crate::server_features::Features;
 use crate::{
     ClientSettings, CurrentRevision, DeletePersistentSubscriptionOptions, DeleteStreamOptions,
     NakAction, PersistentSubscriptionEvent, PersistentSubscriptionToAllOptions, RetryOptions,
@@ -568,7 +569,10 @@ pub async fn append_to_stream(
     }
 }
 
-pub fn batch_append(connection: &GrpcClient, options: &BatchAppendOptions) -> BatchAppendClient {
+pub async fn batch_append(
+    connection: &GrpcClient,
+    options: &BatchAppendOptions,
+) -> crate::Result<BatchAppendClient> {
     use futures::SinkExt;
     use streams::{
         batch_append_req::{options::ExpectedStreamPosition, Options, ProposedMessage},
@@ -580,6 +584,12 @@ pub fn batch_append(connection: &GrpcClient, options: &BatchAppendOptions) -> Ba
     };
 
     let connection = connection.clone();
+    let handle = connection.current_selected_node().await?;
+
+    if !handle.supports_feature(Features::BATCH_APPEND) {
+        return Err(crate::Error::UnsupportedFeature);
+    }
+
     let (forward, receiver) = futures::channel::mpsc::unbounded::<crate::batch::Req>();
     let (batch_sender, batch_receiver) = futures::channel::mpsc::unbounded();
     let mut cloned_batch_sender = batch_sender.clone();
@@ -625,23 +635,17 @@ pub fn batch_append(connection: &GrpcClient, options: &BatchAppendOptions) -> Ba
 
     let req = new_request(connection.connection_settings(), options, receiver);
     tokio::spawn(async move {
-        let result = connection
-            .execute(move |handle| async move {
-                let mut client = StreamsClient::new(handle.channel.clone());
-                let resp = client.batch_append(req).await?;
-
-                Ok((handle, resp.into_inner()))
-            })
-            .await;
-
-        match result {
+        let mut client = StreamsClient::new(handle.channel.clone());
+        match client.batch_append(req).await {
             Err(e) => {
                 let _ = cloned_batch_sender
-                    .send(crate::batch::BatchMsg::Error(e))
+                    .send(crate::batch::BatchMsg::Error(crate::Error::from_grpc(e)))
                     .await;
             }
 
-            Ok((handle, resp_stream)) => {
+            Ok(resp) => {
+                let resp_stream = resp.into_inner();
+
                 let mut resp_stream = resp_stream.map_ok(|resp| {
                     let stream_name =
                         String::from_utf8(resp.stream_identifier.unwrap().stream_name)
@@ -735,12 +739,12 @@ pub fn batch_append(connection: &GrpcClient, options: &BatchAppendOptions) -> Ba
                     }
                 });
             }
-        }
+        };
 
         Ok::<(), crate::Error>(())
     });
 
-    batch_client
+    Ok(batch_client)
 }
 
 pub enum ReadEvent {
@@ -1527,14 +1531,25 @@ where
     use persistent::create_req::Options;
     use persistent::CreateReq;
 
+    let handle = connection.current_selected_node().await?;
     let settings = convert_settings_create(options.settings());
     let stream_identifier = StreamIdentifier {
         stream_name: stream.as_ref().to_string().into_bytes(),
     };
 
+    let req_options = options.to_create_options(stream_identifier.clone());
+    let is_to_all = matches!(
+        req_options,
+        persistent::create_req::options::StreamOption::All(_)
+    );
+
+    if is_to_all && !handle.supports_feature(Features::PERSISTENT_SUBSCRIPITON_TO_ALL) {
+        return Err(crate::Error::UnsupportedFeature);
+    }
+
     #[allow(deprecated)]
     let req_options = Options {
-        stream_option: Some(options.to_create_options(stream_identifier.clone())),
+        stream_option: Some(req_options),
         stream_identifier: Some(stream_identifier),
         group_name: group.as_ref().to_string(),
         settings: Some(settings),
@@ -1546,14 +1561,16 @@ where
 
     let req = new_request(connection.connection_settings(), options, req);
 
-    connection
-        .execute(|channel| async {
-            let mut client = PersistentSubscriptionsClient::new(channel.channel);
-            client.create(req).await?;
+    let id = handle.id();
+    let mut client = PersistentSubscriptionsClient::new(handle.channel);
+    if let Err(e) = client.create(req).await {
+        let e = crate::Error::from_grpc(e);
+        handle_error(&connection.sender, id, &e).await;
 
-            Ok(())
-        })
-        .await
+        return Err(e);
+    };
+
+    Ok(())
 }
 
 pub(crate) async fn update_persistent_subscription<S: AsRef<str>, Options>(
@@ -1568,15 +1585,26 @@ where
     use persistent::update_req::Options;
     use persistent::UpdateReq;
 
+    let handle = connection.current_selected_node().await?;
     let settings = convert_settings_update(options.settings());
     let stream_identifier = StreamIdentifier {
         stream_name: stream.as_ref().to_string().into_bytes(),
     };
 
+    let req_options = options.to_update_options(stream_identifier.clone());
+    let is_to_all = matches!(
+        req_options,
+        persistent::update_req::options::StreamOption::All(_)
+    );
+
+    if is_to_all && !handle.supports_feature(Features::PERSISTENT_SUBSCRIPITON_TO_ALL) {
+        return Err(crate::Error::UnsupportedFeature);
+    }
+
     #[allow(deprecated)]
     let req_options = Options {
         group_name: group.as_ref().to_string(),
-        stream_option: Some(options.to_update_options(stream_identifier.clone())),
+        stream_option: Some(req_options),
         stream_identifier: Some(stream_identifier),
         settings: Some(settings),
     };
@@ -1586,15 +1614,16 @@ where
     };
 
     let req = new_request(connection.connection_settings(), options, req);
+    let id = handle.id();
+    let mut client = PersistentSubscriptionsClient::new(handle.channel);
+    if let Err(e) = client.update(req).await {
+        let e = crate::Error::from_grpc(e);
+        handle_error(&connection.sender, id, &e).await;
 
-    connection
-        .execute(|channel| async {
-            let mut client = PersistentSubscriptionsClient::new(channel.channel);
-            client.update(req).await?;
+        return Err(e);
+    }
 
-            Ok(())
-        })
-        .await
+    Ok(())
 }
 
 pub async fn delete_persistent_subscription<S: AsRef<str>>(
@@ -1605,6 +1634,12 @@ pub async fn delete_persistent_subscription<S: AsRef<str>>(
     to_all: bool,
 ) -> crate::Result<()> {
     use persistent::delete_req::{options::StreamOption, Options};
+
+    let handle = connection.current_selected_node().await?;
+
+    if to_all && !handle.supports_feature(Features::PERSISTENT_SUBSCRIPITON_TO_ALL) {
+        return Err(crate::Error::UnsupportedFeature);
+    };
 
     let stream_option = if !to_all {
         StreamOption::StreamIdentifier(StreamIdentifier {
@@ -1626,15 +1661,17 @@ pub async fn delete_persistent_subscription<S: AsRef<str>>(
     };
 
     let req = new_request(connection.connection_settings(), options, req);
+    let id = handle.id();
+    let mut client = PersistentSubscriptionsClient::new(handle.channel);
 
-    connection
-        .execute(|channel| async {
-            let mut client = PersistentSubscriptionsClient::new(channel.channel);
-            client.delete(req).await?;
+    if let Err(e) = client.delete(req).await {
+        let e = crate::Error::from_grpc(e);
+        handle_error(&connection.sender, id, &e).await;
 
-            Ok(())
-        })
-        .await
+        return Err(e);
+    }
+
+    Ok(())
 }
 
 /// Sends the persistent subscription connection request to the server
@@ -1651,6 +1688,12 @@ pub async fn subscribe_to_persistent_subscription<S: AsRef<str>>(
     use persistent::read_req::options::{self, UuidOption};
     use persistent::read_req::{self, options::StreamOption, Options};
     use persistent::ReadReq;
+
+    let handle = connection.current_selected_node().await?;
+
+    if to_all && !handle.supports_feature(Features::PERSISTENT_SUBSCRIPITON_TO_ALL) {
+        return Err(crate::Error::UnsupportedFeature);
+    }
 
     let (mut sender, recv) = mpsc::channel(500);
 
@@ -1684,7 +1727,6 @@ pub async fn subscribe_to_persistent_subscription<S: AsRef<str>>(
     let _ = sender.send(read_req).await;
     let stream_id = stream_id.as_ref().to_string();
     let group_name = group_name.as_ref().to_string();
-    let handle = connection.current_selected_node().await?;
     let channel_id = handle.id();
     let mut client = PersistentSubscriptionsClient::new(handle.channel);
 

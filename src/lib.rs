@@ -70,6 +70,7 @@ mod grpc;
 mod options;
 mod private;
 mod projection_client;
+mod server_features;
 mod types;
 
 pub(crate) mod google {
