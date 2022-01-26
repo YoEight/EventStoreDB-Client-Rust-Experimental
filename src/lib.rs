@@ -64,6 +64,7 @@ mod commands;
 mod event_store;
 mod gossip;
 mod grpc;
+mod http;
 mod options;
 mod private;
 mod projection_client;

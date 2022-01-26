@@ -9,9 +9,10 @@ use crate::{
     commands, DeletePersistentSubscriptionOptions, DeleteStreamOptions,
     GetPersistentSubscriptionInfoOptions, ListPersistentSubscriptionsOptions,
     PersistentSubscription, PersistentSubscriptionInfo, PersistentSubscriptionToAllOptions,
-    Position, ReadStream, ReplayParkedMessagesOptions, StreamMetadata, StreamMetadataResult,
-    SubscribeToAllOptions, SubscribeToPersistentSubscriptionOptions, Subscription,
-    TombstoneStreamOptions, VersionedMetadata, WriteResult,
+    Position, ReadStream, ReplayParkedMessagesOptions, RestartPersistentSubscriptionSubsystem,
+    StreamMetadata, StreamMetadataResult, SubscribeToAllOptions,
+    SubscribeToPersistentSubscriptionOptions, Subscription, TombstoneStreamOptions,
+    VersionedMetadata, WriteResult,
 };
 use crate::{
     options::append_to_stream::{AppendToStreamOptions, ToEvents},
@@ -25,9 +26,8 @@ use crate::{
 /// or a single thread can make many asynchronous requests.
 #[derive(Clone)]
 pub struct Client {
-    http_client: reqwest::Client,
-    client: GrpcClient,
-    settings: ClientSettings,
+    pub(crate) http_client: reqwest::Client,
+    pub(crate) client: GrpcClient,
 }
 
 impl Client {
@@ -52,7 +52,6 @@ impl Client {
         Ok(Client {
             http_client,
             client,
-            settings,
         })
     }
 
@@ -337,34 +336,30 @@ impl Client {
         group_name: impl AsRef<str>,
         options: &ReplayParkedMessagesOptions,
     ) -> crate::Result<()> {
-        let handle = self.client.current_selected_node().await?;
+        commands::replay_parked_messages(
+            &self.client,
+            &self.http_client,
+            commands::StreamName::Regular(stream_name.as_ref().to_string()),
+            group_name,
+            options,
+        )
+        .await
+    }
 
-        let mut builder = self
-            .http_client
-            .post(format!(
-                "{}/subscriptions/{}/{}/replayParked",
-                handle.url(),
-                stream_name.as_ref(),
-                group_name.as_ref(),
-            ))
-            .header("content-type", "application/json")
-            .header("content-length", "0");
-
-        if let Some(stop_at) = options.stop_at {
-            builder = builder.query(&[("stop_at", stop_at.as_secs().to_string().as_str())])
-        }
-
-        builder = http_configure_auth(
-            builder,
-            options
-                .credentials
-                .as_ref()
-                .or_else(|| self.settings.default_authenticated_user().as_ref()),
-        );
-
-        http_execute_request(builder).await?;
-
-        Ok(())
+    /// Replays a persistent subscriptions to $all parked events.
+    pub async fn replay_parked_messages_to_all(
+        &self,
+        group_name: impl AsRef<str>,
+        options: &ReplayParkedMessagesOptions,
+    ) -> crate::Result<()> {
+        commands::replay_parked_messages(
+            &self.client,
+            &self.http_client,
+            commands::StreamName::All,
+            group_name,
+            options,
+        )
+        .await
     }
 
     /// Lists all persistent subscriptions to date.
@@ -372,29 +367,7 @@ impl Client {
         &self,
         options: &ListPersistentSubscriptionsOptions,
     ) -> crate::Result<Vec<PersistentSubscriptionInfo>> {
-        let handle = self.client.current_selected_node().await?;
-
-        let mut builder = self
-            .http_client
-            .get(format!("{}/subscriptions", handle.url()))
-            .header("content-type", "application/json");
-
-        builder = http_configure_auth(
-            builder,
-            options
-                .credentials
-                .as_ref()
-                .or_else(|| self.settings.default_authenticated_user().as_ref()),
-        );
-
-        let resp = http_execute_request(builder).await?;
-
-        resp.json::<Vec<PersistentSubscriptionInfo>>()
-            .await
-            .map_err(|e| {
-                error!("Error when listing persistent subscriptions: {}", e);
-                crate::Error::InternalParsingError(e.to_string())
-            })
+        commands::list_all_persistent_subscriptions(&self.client, &self.http_client, options).await
     }
 
     /// List all persistent subscriptions of a specific stream.
@@ -403,33 +376,27 @@ impl Client {
         stream_name: impl AsRef<str>,
         options: &ListPersistentSubscriptionsOptions,
     ) -> crate::Result<Vec<PersistentSubscriptionInfo>> {
-        let handle = self.client.current_selected_node().await?;
+        commands::list_persistent_subscriptions_for_stream(
+            &self.client,
+            &self.http_client,
+            commands::StreamName::Regular(stream_name.as_ref().to_string()),
+            options,
+        )
+        .await
+    }
 
-        let mut builder = self
-            .http_client
-            .get(format!(
-                "{}/subscriptions/{}",
-                handle.url(),
-                stream_name.as_ref()
-            ))
-            .header("content-type", "application/json");
-
-        builder = http_configure_auth(
-            builder,
-            options
-                .credentials
-                .as_ref()
-                .or_else(|| self.settings.default_authenticated_user().as_ref()),
-        );
-
-        let resp = http_execute_request(builder).await?;
-
-        resp.json::<Vec<PersistentSubscriptionInfo>>()
-            .await
-            .map_err(|e| {
-                error!("Error when listing persistent subscriptions: {}", e);
-                crate::Error::InternalParsingError(e.to_string())
-            })
+    /// List all persistent subscriptions of the $all stream.
+    pub async fn list_persistent_subscriptions_to_all(
+        &self,
+        options: &ListPersistentSubscriptionsOptions,
+    ) -> crate::Result<Vec<PersistentSubscriptionInfo>> {
+        commands::list_persistent_subscriptions_for_stream(
+            &self.client,
+            &self.http_client,
+            commands::StreamName::All,
+            options,
+        )
+        .await
     }
 
     // Gets a specific persistent subscription info.
@@ -439,99 +406,42 @@ impl Client {
         group_name: impl AsRef<str>,
         options: &GetPersistentSubscriptionInfoOptions,
     ) -> crate::Result<PersistentSubscriptionInfo> {
-        let handle = self.client.current_selected_node().await?;
-
-        let mut builder = self
-            .http_client
-            .get(format!(
-                "{}/subscriptions/{}/{}/info",
-                handle.url(),
-                stream_name.as_ref(),
-                group_name.as_ref(),
-            ))
-            .header("content-type", "application/json");
-
-        builder = http_configure_auth(
-            builder,
-            options
-                .credentials
-                .as_ref()
-                .or_else(|| self.settings.default_authenticated_user().as_ref()),
-        );
-
-        let resp = http_execute_request(builder).await?;
-
-        resp.json::<PersistentSubscriptionInfo>()
-            .await
-            .map_err(|e| {
-                error!("Error when listing persistent subscriptions: {}", e);
-                crate::Error::InternalParsingError(e.to_string())
-            })
-    }
-}
-
-fn http_configure_auth(
-    builder: reqwest::RequestBuilder,
-    creds_opt: Option<&crate::Credentials>,
-) -> reqwest::RequestBuilder {
-    if let Some(creds) = creds_opt {
-        builder.basic_auth(
-            unsafe { std::str::from_utf8_unchecked(creds.login.as_ref()) },
-            unsafe { Some(std::str::from_utf8_unchecked(creds.password.as_ref())) },
+        commands::get_persistent_subscription_info(
+            &self.client,
+            &self.http_client,
+            commands::StreamName::Regular(stream_name.as_ref().to_string()),
+            group_name,
+            options,
         )
-    } else {
-        builder
-    }
-}
-
-async fn http_execute_request(
-    builder: reqwest::RequestBuilder,
-) -> crate::Result<reqwest::Response> {
-    let resp = builder.send().await.map_err(|e| {
-        if let Some(status) = e.status() {
-            match status {
-                http::StatusCode::UNAUTHORIZED => crate::Error::AccessDenied,
-                http::StatusCode::NOT_FOUND => crate::Error::ResourceNotFound,
-                code if code.is_server_error() => crate::Error::ServerError(e.to_string()),
-                code => {
-                    error!(
-                        "Unexpected error when dealing with HTTP request to the server: Code={:?}, {}",
-                        code,
-                        e
-                    );
-                    crate::Error::InternalClientError
-                }
-            }
-        } else {
-            error!(
-                "Unexpected error when dealing with HTTP request to the server: {}",
-                e,
-            );
-
-            crate::Error::InternalClientError
-        }
-    })?;
-
-    if resp.status().is_success() {
-        return Ok(resp);
+        .await
     }
 
-    let code = resp.status();
-    let msg = resp.text().await.unwrap_or_else(|_| "".to_string());
+    // Gets a specific persistent subscription info to $all.
+    pub async fn get_persistent_subscription_info_to_all(
+        &self,
+        group_name: impl AsRef<str>,
+        options: &GetPersistentSubscriptionInfoOptions,
+    ) -> crate::Result<PersistentSubscriptionInfo> {
+        commands::get_persistent_subscription_info(
+            &self.client,
+            &self.http_client,
+            commands::StreamName::All,
+            group_name,
+            options,
+        )
+        .await
+    }
 
-    match code {
-        http::StatusCode::UNAUTHORIZED => Err(crate::Error::AccessDenied),
-        http::StatusCode::NOT_FOUND => Err(crate::Error::ResourceNotFound),
-        code if code.is_server_error() => Err(crate::Error::ServerError(format!(
-            "unexpected server error, reason: {:?}",
-            code.canonical_reason()
-        ))),
-        code => {
-            error!(
-                "Unexpected error when dealing with HTTP request to the server: Code={:?}: {}",
-                code, msg,
-            );
-            Err(crate::Error::InternalClientError)
-        }
+    // Restarts the server persistent subscription subsystem.
+    pub async fn restart_persistent_subscription_subsystem(
+        &self,
+        options: &RestartPersistentSubscriptionSubsystem,
+    ) -> crate::Result<()> {
+        commands::restart_persistent_subscription_subsystem(
+            &self.client,
+            &self.http_client,
+            options,
+        )
+        .await
     }
 }

@@ -562,6 +562,42 @@ async fn test_list_persistent_subscriptions_for_stream(
     Ok(())
 }
 
+async fn test_list_persistent_subscriptions_to_all(
+    client: &Client,
+    names: &mut names::Generator<'_>,
+) -> eventstore::Result<()> {
+    let mut count = 0;
+    let mut expected_set = std::collections::HashSet::new();
+
+    while let Some(group_name) = names.next() {
+        count += 1;
+        client
+            .create_persistent_subscription_to_all(group_name.as_str(), &Default::default())
+            .await?;
+
+        expected_set.insert(group_name);
+        if count > 2 {
+            break;
+        }
+    }
+
+    let mut actual_set = std::collections::HashSet::new();
+
+    let ps = client
+        .list_persistent_subscriptions_to_all(&Default::default())
+        .await?;
+
+    for info in ps {
+        if expected_set.contains(info.group_name.as_str()) {
+            actual_set.insert(info.group_name);
+        }
+    }
+
+    assert_eq!(expected_set, actual_set);
+
+    Ok(())
+}
+
 async fn test_get_persistent_subscription_info(
     client: &Client,
     names: &mut names::Generator<'_>,
@@ -586,6 +622,26 @@ async fn test_get_persistent_subscription_info(
         .await?;
 
     assert_eq!(info.event_stream_id, stream_name);
+    assert_eq!(info.group_name, group_name);
+    assert!(info.config.is_some());
+
+    Ok(())
+}
+
+async fn test_get_persistent_subscription_info_to_all(
+    client: &Client,
+    names: &mut names::Generator<'_>,
+) -> eventstore::Result<()> {
+    let group_name = names.next().unwrap();
+
+    client
+        .create_persistent_subscription_to_all(group_name.as_str(), &Default::default())
+        .await?;
+
+    let info = client
+        .get_persistent_subscription_info_to_all(group_name.as_str(), &Default::default())
+        .await?;
+
     assert_eq!(info.group_name, group_name);
     assert!(info.config.is_some());
 
@@ -659,6 +715,122 @@ async fn test_replay_parked_messages(
             Ok(())
         }
     }
+}
+
+async fn test_replay_parked_messages_to_all(
+    client: &Client,
+    names: &mut names::Generator<'_>,
+) -> eventstore::Result<()> {
+    let stream_name = names.next().unwrap();
+    let group_name = names.next().unwrap();
+    let event_count = 2;
+
+    client
+        .create_persistent_subscription_to_all(group_name.as_str(), &Default::default())
+        .await?;
+
+    let mut sub = client
+        .subscribe_to_persistent_subscription_to_all(group_name.as_str(), &Default::default())
+        .await?;
+
+    let events = generate_events("foobar", 2);
+
+    client
+        .append_to_stream(stream_name.as_str(), &Default::default(), events)
+        .await?;
+
+    let outcome = tokio::time::timeout(Duration::from_secs(30), async move {
+        let mut count = 0;
+        loop {
+            let event = sub.next().await?;
+
+            if event.get_original_stream_id() == stream_name.as_str() {
+                sub.nack(event, eventstore::NakAction::Park, "because reasons")
+                    .await?;
+
+                count += 1;
+                if count == event_count {
+                    break;
+                }
+            } else {
+                sub.ack(event).await?;
+            }
+        }
+
+        debug!("We let the server the time to write those parked event in the stream...");
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        debug!("done.");
+
+        debug!("Before replaying parked messages...");
+        client
+            .replay_parked_messages_to_all(group_name, &Default::default())
+            .await?;
+        debug!("done.");
+
+        count = 0;
+        loop {
+            debug!("Waiting on parked event to be replayed...");
+            let event = sub.next().await?;
+            debug!("done.");
+
+            let event_stream_id = event.event.as_ref().unwrap().stream_id.to_string();
+            sub.ack(event).await?;
+
+            if event_stream_id == stream_name.as_str() {
+                count += 1;
+                if count == event_count {
+                    break;
+                }
+            }
+        }
+
+        Ok::<(), eventstore::Error>(())
+    })
+    .await;
+
+    match outcome {
+        Err(_) => panic!("test_replay_parked_messages_to_all timed out!"),
+        Ok(outcome) => {
+            assert!(outcome.is_ok());
+
+            Ok(())
+        }
+    }
+}
+
+async fn test_restart_persistent_subscription_subsystem(client: &Client) -> eventstore::Result<()> {
+    client
+        .restart_persistent_subscription_subsystem(&Default::default())
+        .await
+}
+
+async fn test_persistent_subscription_encoding(
+    client: &Client,
+    names: &mut names::Generator<'_>,
+) -> eventstore::Result<()> {
+    let stream_name = format!("/{}/foo", names.next().unwrap());
+    let group_name = format!("/{}/foo", names.next().unwrap());
+
+    client
+        .create_persistent_subscription(
+            stream_name.as_str(),
+            group_name.as_str(),
+            &Default::default(),
+        )
+        .await?;
+
+    let info = client
+        .get_persistent_subscription_info(
+            stream_name.as_str(),
+            group_name.as_str(),
+            &Default::default(),
+        )
+        .await?;
+
+    assert_eq!(info.event_stream_id, stream_name);
+    assert_eq!(info.group_name, group_name);
+
+    Ok(())
 }
 
 async fn test_batch_append(client: &Client) -> eventstore::Result<()> {
@@ -1042,11 +1214,54 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
     debug!("Before test_list_persistent_subscriptions_for_stream...");
     test_list_persistent_subscriptions_for_stream(&client, &mut name_generator).await?;
     debug!("Complete");
+    debug!("Before test_list_persistent_subscriptions_to_all...");
+    if let Err(e) = test_list_persistent_subscriptions_to_all(&client, &mut name_generator).await {
+        if let eventstore::Error::UnsupportedFeature = e {
+            warn!(
+                "Persistent subscription to $all is not supported on the server we are targeting"
+            );
+            Ok(())
+        } else {
+            Err(e)
+        }?;
+    }
+    debug!("Complete");
     debug!("Before test_get_persistent_subscription_info...");
     test_get_persistent_subscription_info(&client, &mut name_generator).await?;
     debug!("Complete");
+    debug!("Before test_get_persistent_subscription_info_to_all...");
+    if let Err(e) = test_get_persistent_subscription_info_to_all(&client, &mut name_generator).await
+    {
+        if let eventstore::Error::UnsupportedFeature = e {
+            warn!(
+                "Persistent subscription to $all is not supported on the server we are targeting"
+            );
+            Ok(())
+        } else {
+            Err(e)
+        }?;
+    }
+    debug!("Complete");
     debug!("Before test_replay_parked_messages...");
     test_replay_parked_messages(&client, &mut name_generator).await?;
+    debug!("Complete");
+    debug!("Before test_replay_parked_messages_to_all...");
+    if let Err(e) = test_replay_parked_messages_to_all(&client, &mut name_generator).await {
+        if let eventstore::Error::UnsupportedFeature = e {
+            warn!(
+                "Persistent subscription to $all is not supported on the server we are targeting"
+            );
+            Ok(())
+        } else {
+            Err(e)
+        }?;
+    }
+    debug!("Complete");
+    debug!("Before test_restart_persistent_subscription_subsystem...");
+    test_restart_persistent_subscription_subsystem(&client).await?;
+    debug!("Complete");
+    debug!("Before test_persistent_subscription_encoding...");
+    test_persistent_subscription_encoding(&client, &mut name_generator).await?;
     debug!("Complete");
     debug!("Before test_batch_append");
     if let Err(e) = test_batch_append(&client).await {
