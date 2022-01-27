@@ -1,3 +1,39 @@
+# Changelog
+All notable changes to this project will be documented in this file.
+
+## [Unreleased]
+
+### Changed
+- Rename StreamPosition::Point to StreamPosition::Position. [EventStoreDB-Client-Rust#76](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/76)
+- Migrate to Rust 2021 edition. [EventStoreDB-Client-Rust#94](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/94)
+- Improve integration testing. [EventStoreDB-Client-Rust#95](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/95)
+- Remove `StreamName` and `GroupName` generic types. [EventStoreDB-Client-Rust#107](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/107)
+- Improve streaming API for read operations. [EventStoreDB-Client-Rust#110](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/110)
+- Refactor node discovery process. [EventStoreDB-Client-Rust#113](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/113)
+- Expose projection-related options. [EventStoreDB-Client-Rust#117](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/117)
+- Improve `append_to_stream` usability. [EventStoreDB-Client-Rust#116](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/116)
+
+### Fixed
+- Fix automatic reconnection process for stream operations. [EventStoreDB-Client-Rust#56](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/56)
+- Improve server-side error management. [EventStoreDB-Client-Rust#74](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/74)
+- Fix test flakeyness. [EventStoreDB-Client-Rust#85](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/85)
+- Introduce more randomness when selecting a node based upon preference. [EventStoreDB-Client-Rust#88](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/88)
+
+### Added
+- Implement keep-alive [EventStoreDB-Client-Rust#53](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/53)
+- Add single node tests using testcontainers. [EventStoreDB-Client-Rust#57](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/57)
+- Implement auto-resubscribe when connection is dropped. [EventStoreDB-Client-Rust#58](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/58)
+- Implement stream metadata operations. [EventStoreDB-Client-Rust#62](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/62)
+- Implement maximum discover attempts for single node connections. [EventStoreDB-Client-Rust#67](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/67)
+- Implement projection API. [EventStoreDB-Client-Rust#60](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/60)
+- Implement batch-append API. [EventStoreDB-Client-Rust#77](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/77)
+- Add first-class support for stream deleted error. [EventStoreDB-Client-Rust#89](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/89)
+- Add timeouts when running projection tests. [EventStoreDB-Client-Rust#91](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/91)
+- Send feedback to user when `batch_append` is not supported by the server. [EventStoreDB-Client-Rust#93](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/93)
+- Implement Persistent Subscription to `$all`. [EventStoreDB-Client-Rust#98](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/98)
+- Implement server features detection. [EventStoreDB-Client-Rust#118](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/118)
+
+## Previous versions
 1.0.0
 ======
 * Support Tokio 1.* and Tonic 0.4.
