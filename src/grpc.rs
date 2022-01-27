@@ -1,4 +1,5 @@
 use crate::gossip::{Gossip, MemberInfo, VNodeState};
+use crate::server_features::{Features, ServerInfo};
 use crate::types::{Endpoint, GrpcConnectionError};
 use crate::{Credentials, DnsClusterSettings, NodePreference};
 use futures::channel::mpsc::UnboundedSender;
@@ -21,7 +22,7 @@ use std::cmp::Ordering;
 use std::str::FromStr;
 use std::time::Duration;
 use tonic::transport::Channel;
-use tonic::Status;
+use tonic::{Code, Status};
 use uuid::Uuid;
 
 struct NoVerification;
@@ -657,6 +658,7 @@ pub(crate) struct HandleInfo {
     pub(crate) channel: Channel,
     pub(crate) endpoint: Endpoint,
     pub(crate) secure: bool,
+    pub(crate) server_info: Option<ServerInfo>,
 }
 
 impl NodeConnection {
@@ -731,12 +733,34 @@ impl NodeConnection {
                     match new_channel(&self.settings, self.tls_setts.clone(), &selected_node).await
                     {
                         Ok(channel) => {
+                            let server_info =
+                                match crate::server_features::supported_methods(channel.clone())
+                                    .await
+                                {
+                                    Ok(fs) => Some(fs),
+                                    Err(status) => {
+                                        if status.code() == Code::NotFound
+                                            || status.code() == Code::Unimplemented
+                                        {
+                                            None
+                                        } else {
+                                            error!(
+                                            "Unexpected error when fetching server features: {}",
+                                            status
+                                        );
+                                            return Err(GrpcConnectionError::Grpc(
+                                                status.to_string(),
+                                            ));
+                                        }
+                                    }
+                                };
                             self.id = Uuid::new_v4();
                             let handle = HandleInfo {
                                 id: self.id,
                                 endpoint: selected_node,
                                 secure: self.settings.secure,
                                 channel,
+                                server_info,
                             };
 
                             self.handle = Some(handle.clone());
@@ -815,6 +839,7 @@ fn connection_state_machine(settings: ClientSettings) -> UnboundedSender<Msg> {
                                 endpoint: info.endpoint,
                                 secure: info.secure,
                                 sender: sender.clone(),
+                                server_info: info.server_info,
                             };
 
                             handle_opt = Some(handle.clone());
@@ -841,6 +866,7 @@ fn connection_state_machine(settings: ClientSettings) -> UnboundedSender<Msg> {
                                 endpoint: info.endpoint,
                                 secure: info.secure,
                                 sender: sender.clone(),
+                                server_info: info.server_info,
                             };
 
                             handle_opt = Some(handle);
@@ -886,6 +912,7 @@ pub(crate) struct Handle {
     pub(crate) channel: Channel,
     pub(crate) endpoint: Endpoint,
     pub(crate) secure: bool,
+    pub(crate) server_info: Option<ServerInfo>,
     sender: futures::channel::mpsc::UnboundedSender<Msg>,
 }
 
@@ -910,6 +937,14 @@ impl Handle {
             "{}://{}:{}",
             protocol, self.endpoint.host, self.endpoint.port
         )
+    }
+
+    pub(crate) fn supports_feature(&self, feats: Features) -> bool {
+        if let Some(info) = self.server_info.as_ref() {
+            return info.features.contains(feats);
+        }
+
+        false
     }
 }
 

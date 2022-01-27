@@ -662,7 +662,7 @@ async fn test_replay_parked_messages(
 }
 
 async fn test_batch_append(client: &Client) -> eventstore::Result<()> {
-    let batch_client = client.batch_append(&Default::default());
+    let batch_client = client.batch_append(&Default::default()).await?;
 
     for _ in 0..3 {
         let stream_id = fresh_stream_id("batch-append");
@@ -986,7 +986,7 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
     debug!("Complete");
     debug!("Before test_create_persistent_subscription_to_all");
     if let Err(e) = test_create_persistent_subscription_to_all(&client, &mut name_generator).await {
-        if let eventstore::Error::DeadlineExceeded = e {
+        if let eventstore::Error::UnsupportedFeature = e {
             warn!(
                 "Persistent subscription to $all is not supported on the server we are targeting"
             );
@@ -998,7 +998,7 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
     debug!("Complete");
     debug!("Before test_update_persistent_subscription_to_all");
     if let Err(e) = test_update_persistent_subscription_to_all(&client, &mut name_generator).await {
-        if let eventstore::Error::DeadlineExceeded = e {
+        if let eventstore::Error::UnsupportedFeature = e {
             warn!(
                 "Persistent subscription to $all is not supported on the server we are targeting"
             );
@@ -1013,7 +1013,7 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
     debug!("Complete");
     debug!("Before test_delete_persistent_subscription_to_all");
     if let Err(e) = test_delete_persistent_subscription_to_all(&client, &mut name_generator).await {
-        if let eventstore::Error::DeadlineExceeded = e {
+        if let eventstore::Error::UnsupportedFeature = e {
             warn!(
                 "Persistent subscription to $all is not supported on the server we are targeting"
             );
@@ -1028,7 +1028,7 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
     debug!("Complete");
     debug!("Before test_persistent_subscription_to_all");
     if let Err(e) = test_persistent_subscription_to_all(&client, &mut name_generator).await {
-        if let eventstore::Error::DeadlineExceeded = e {
+        if let eventstore::Error::UnsupportedFeature = e {
             warn!(
                 "Persistent subscription to $all is not supported on the server we are targeting"
             );
@@ -1052,7 +1052,7 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
     debug!("Complete");
     debug!("Before test_batch_append");
     if let Err(e) = test_batch_append(&client).await {
-        if let eventstore::Error::Unimplemented = e {
+        if let eventstore::Error::UnsupportedFeature = e {
             warn!("batch_append is not supported on the server we are targeting");
             Ok(())
         } else {
