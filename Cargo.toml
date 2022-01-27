@@ -43,7 +43,6 @@ webpki = "0.21"
 base64 = "0.13"
 nom = "7"
 thiserror = "1"
-async-trait = "0.1"
 async-stream = "0.3"
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots", "json"] }
 bitflags = "1.3"

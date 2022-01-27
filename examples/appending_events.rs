@@ -5,7 +5,7 @@
 
 use eventstore::{
     AppendToStreamOptions, Client, Credentials, EventData, ExpectedRevision, ReadStreamOptions,
-    Single, StreamPosition,
+    StreamPosition,
 };
 use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
@@ -94,10 +94,11 @@ pub async fn append_with_concurrency_check(client: Client) -> Result<()> {
     let options = ReadStreamOptions::default().position(StreamPosition::End);
 
     let last_event = client
-        .read_stream("concurrency-stream", &options, Single)
+        .read_stream("concurrency-stream", &options)
         .await?
-        .expect("we expect the stream to at least exist.")
-        .expect("we expect the stream to have at least one event.");
+        .next()
+        .await?
+        .expect("the stream to at least exist.");
 
     let data = TestEvent {
         id: "1".to_string(),

@@ -6,7 +6,7 @@ extern crate serde_json;
 mod images;
 
 use eventstore::{
-    Acl, Client, ClientSettings, EventData, ProjectionClient, Single, StreamAclBuilder,
+    Acl, Client, ClientSettings, EventData, ProjectionClient, StreamAclBuilder,
     StreamMetadataBuilder, StreamMetadataResult,
 };
 use futures::channel::oneshot;
@@ -54,7 +54,9 @@ async fn test_write_events(client: &Client) -> Result<(), Box<dyn Error>> {
 // We read all stream events by batch.
 async fn test_read_all_stream_events(client: &Client) -> Result<(), Box<dyn Error>> {
     // Eventstore should always have "some" events in $all, since eventstore itself uses streams, ouroboros style.
-    client.read_all(&Default::default(), Single).await??;
+    let result = client.read_all(&Default::default()).await?.next().await?;
+
+    assert!(result.is_some());
 
     Ok(())
 }
@@ -72,9 +74,7 @@ async fn test_read_stream_events(client: &Client) -> Result<(), Box<dyn Error>> 
     let mut pos = 0usize;
     let mut idx = 0i64;
 
-    let mut stream = client
-        .read_stream(stream_id, &Default::default(), 10)
-        .await?;
+    let mut stream = client.read_stream(stream_id, &Default::default()).await?;
 
     while let Some(event) = stream.next().await? {
         let event = event.get_original_event();
@@ -145,11 +145,11 @@ async fn test_metadata_not_exist(client: &Client) -> Result<(), Box<dyn Error>> 
 async fn test_read_stream_events_non_existent(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("read_stream_events");
 
-    let result = client
-        .read_stream(stream_id.as_str(), &Default::default(), Single)
+    let mut stream = client
+        .read_stream(stream_id.as_str(), &Default::default())
         .await?;
 
-    if let Err(eventstore::Error::ResourceNotFound) = result {
+    if let Err(eventstore::Error::ResourceNotFound) = stream.next().await {
         return Ok(());
     }
 
@@ -191,7 +191,7 @@ async fn test_tombstone_stream(client: &Client) -> Result<(), Box<dyn Error>> {
     debug!("Tombstone stream [{}] result: {:?}", stream_id, result);
 
     let result = client
-        .read_stream(stream_id.as_str(), &Default::default(), 1)
+        .read_stream(stream_id.as_str(), &Default::default())
         .await;
 
     if let Err(eventstore::Error::ResourceDeleted) = result {
@@ -677,9 +677,7 @@ async fn test_batch_append(client: &Client) -> eventstore::Result<()> {
         let options = eventstore::ReadStreamOptions::default()
             .forwards()
             .position(eventstore::StreamPosition::Start);
-        let mut stream = client
-            .read_stream(stream_id.as_str(), &options, eventstore::All)
-            .await?;
+        let mut stream = client.read_stream(stream_id.as_str(), &options).await?;
 
         let mut cpt = 0usize;
 
@@ -795,10 +793,10 @@ async fn wait_for_admin_to_be_available(client: &eventstore::Client) -> eventsto
         count += 1;
 
         debug!("Checking if admin user is available...{}/50", count);
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(1),
-            client.read_stream("$users", &Default::default(), Single),
-        )
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), async move {
+            let mut stream = client.read_stream("$users", &Default::default()).await?;
+            stream.next().await
+        })
         .await;
 
         match result {
@@ -807,7 +805,7 @@ async fn wait_for_admin_to_be_available(client: &eventstore::Client) -> eventsto
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
 
-            Ok(result) => match result.and_then(|r| r) {
+            Ok(result) => match result {
                 Err(e) if can_retry(&e) => {
                     debug!("Not available: {:?}, retrying...", e);
                     tokio::time::sleep(Duration::from_millis(500)).await;

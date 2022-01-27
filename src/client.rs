@@ -1,4 +1,5 @@
 use crate::batch::BatchAppendClient;
+use crate::grpc::{ClientSettings, GrpcClient};
 use crate::options::batch_append::BatchAppendOptions;
 use crate::options::persistent_subscription::PersistentSubscriptionOptions;
 use crate::options::read_all::ReadAllOptions;
@@ -8,13 +9,9 @@ use crate::{
     commands, DeletePersistentSubscriptionOptions, DeleteStreamOptions,
     GetPersistentSubscriptionInfoOptions, ListPersistentSubscriptionsOptions,
     PersistentSubscription, PersistentSubscriptionInfo, PersistentSubscriptionToAllOptions,
-    Position, ReplayParkedMessagesOptions, StreamMetadata, StreamMetadataResult,
-    SubscribeToAllOptions, SubscribeToPersistentSubscriptionOptions, Subscription, ToCount,
+    Position, ReadStream, ReplayParkedMessagesOptions, StreamMetadata, StreamMetadataResult,
+    SubscribeToAllOptions, SubscribeToPersistentSubscriptionOptions, Subscription,
     TombstoneStreamOptions, VersionedMetadata, WriteResult,
-};
-use crate::{
-    grpc::{ClientSettings, GrpcClient},
-    Single,
 };
 use crate::{
     options::append_to_stream::{AppendToStreamOptions, ToEvents},
@@ -88,40 +85,24 @@ impl Client {
 
     /// Reads events from a given stream. The reading can be done forward and
     /// backward.
-    pub async fn read_stream<Count>(
+    pub async fn read_stream(
         &self,
         stream_name: impl AsRef<str>,
         options: &ReadStreamOptions,
-        count: Count,
-    ) -> crate::Result<Count::Selection>
-    where
-        Count: ToCount,
-    {
-        let stream = commands::read_stream(
+    ) -> crate::Result<ReadStream> {
+        commands::read_stream(
             self.client.clone(),
             options,
             stream_name,
-            count.to_count() as u64,
+            options.max_count as u64,
         )
-        .await?;
-
-        Ok(count.select(stream).await)
+        .await
     }
 
     /// Reads events for the system stream `$all`. The reading can be done
     /// forward and backward.
-    pub async fn read_all<Count>(
-        &self,
-        options: &ReadAllOptions,
-        count: Count,
-    ) -> crate::Result<Count::Selection>
-    where
-        Count: ToCount,
-    {
-        let stream =
-            commands::read_all(self.client.clone(), options, count.to_count() as u64).await?;
-
-        Ok(count.select(stream).await)
+    pub async fn read_all(&self, options: &ReadAllOptions) -> crate::Result<ReadStream> {
+        commands::read_all(self.client.clone(), options, options.max_count as u64).await
     }
 
     /// Reads a stream metadata.
@@ -130,11 +111,11 @@ impl Client {
         stream_name: impl AsRef<str>,
         options: &ReadStreamOptions,
     ) -> crate::Result<StreamMetadataResult> {
-        let result = self
-            .read_stream(format!("$${}", stream_name.as_ref()), options, Single)
+        let mut stream = self
+            .read_stream(format!("$${}", stream_name.as_ref()), options)
             .await?;
 
-        match result {
+        match stream.next().await {
             Ok(event) => {
                 let event = event.expect("to be defined");
                 let metadata = event

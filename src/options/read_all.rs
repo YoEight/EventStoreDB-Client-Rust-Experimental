@@ -7,6 +7,7 @@ pub struct ReadAllOptions {
     pub(crate) position: StreamPosition<Position>,
     pub(crate) resolve_link_tos: bool,
     pub(crate) common_operation_options: CommonOperationOptions,
+    pub(crate) max_count: usize,
 }
 
 impl Default for ReadAllOptions {
@@ -16,6 +17,7 @@ impl Default for ReadAllOptions {
             position: StreamPosition::Start,
             resolve_link_tos: false,
             common_operation_options: Default::default(),
+            max_count: usize::MAX,
         }
     }
 }
@@ -67,5 +69,9 @@ impl ReadAllOptions {
             resolve_link_tos: true,
             ..self
         }
+    }
+
+    pub fn max_count(self, max_count: usize) -> Self {
+        Self { max_count, ..self }
     }
 }
