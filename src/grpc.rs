@@ -809,11 +809,14 @@ impl NodeConnection {
     }
 }
 
-fn connection_state_machine(settings: ClientSettings) -> UnboundedSender<Msg> {
+fn connection_state_machine(
+    handle: tokio::runtime::Handle,
+    settings: ClientSettings,
+) -> UnboundedSender<Msg> {
     let (sender, mut consumer) = futures::channel::mpsc::unbounded::<Msg>();
     let dup_sender = sender.clone();
 
-    tokio::spawn(async move {
+    handle.spawn(async move {
         let mut connection = NodeConnection::new(settings);
         let mut handle_opt: Option<Handle> = None;
 
@@ -971,8 +974,8 @@ pub struct GrpcClient {
 }
 
 impl GrpcClient {
-    pub fn create(connection_settings: ClientSettings) -> Self {
-        let sender = connection_state_machine(connection_settings.clone());
+    pub fn create(handle: tokio::runtime::Handle, connection_settings: ClientSettings) -> Self {
+        let sender = connection_state_machine(handle, connection_settings.clone());
 
         GrpcClient {
             sender,
