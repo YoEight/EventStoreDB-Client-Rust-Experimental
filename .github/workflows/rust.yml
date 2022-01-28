@@ -33,7 +33,7 @@ jobs:
     needs: build
     strategy:
       matrix:
-        version: [ 21.6.0, 20.10.5 ]
+        version: [ 20.10.5-focal, 21.10.0-focal, ci ]
 
     runs-on: ubuntu-18.04
 
@@ -46,7 +46,7 @@ jobs:
       - name: Test on single-node EventStoreDB ${{ matrix.version }}
         run: cargo test --package eventstore --test integration single_node
         env:
-          CONTAINER_IMAGE_VERSION: ${{ matrix.version }}-buster-slim
+          CONTAINER_IMAGE_VERSION: ${{ matrix.version }}
           RUST_LOG: integration=debug,eventstore=debug
           RUST_BACKTRACE: 1
 
@@ -58,7 +58,7 @@ jobs:
           cargo test --package eventstore --test integration -- cluster
           docker-compose down
         env:
-          CONTAINER_IMAGE_VERSION: ${{ matrix.version }}-buster-slim
+          CONTAINER_IMAGE_VERSION: ${{ matrix.version }}
           RUST_LOG: integration=debug,eventstore=debug
           RUST_BACKTRACE: 1
 
