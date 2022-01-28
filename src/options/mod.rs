@@ -16,6 +16,7 @@ pub mod tombstone_stream;
 
 pub(crate) trait Options {
     fn common_operation_options(&self) -> &CommonOperationOptions;
+    fn kind(&self) -> OperationKind;
 }
 
 #[derive(Clone)]
@@ -35,14 +36,29 @@ impl Default for CommonOperationOptions {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OperationKind {
+    Regular,
+    Streaming,
+}
+
 // TODO - Use procedural macros instead. It will need a separate crate
 // though.
 #[macro_export]
 macro_rules! impl_options_trait {
-    ($typ:ty) => {
+    ($typ:ty $(,$kind:expr)?) => {
         impl crate::options::Options for $typ {
             fn common_operation_options(&self) -> &crate::options::CommonOperationOptions {
                 &self.common_operation_options
+            }
+
+            fn kind(&self) -> crate::options::OperationKind {
+                #[allow(unused_mut, unused_assignments)]
+                let mut kind = crate::options::OperationKind::Regular;
+
+                $( kind = $kind; )?
+
+                kind
             }
         }
 

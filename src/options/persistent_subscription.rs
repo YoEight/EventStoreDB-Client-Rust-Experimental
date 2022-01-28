@@ -238,7 +238,10 @@ impl Default for SubscribeToPersistentSubscriptionOptions {
     }
 }
 
-impl_options_trait!(SubscribeToPersistentSubscriptionOptions);
+impl_options_trait!(
+    SubscribeToPersistentSubscriptionOptions,
+    super::OperationKind::Streaming
+);
 
 impl SubscribeToPersistentSubscriptionOptions {
     /// The buffer size to use  for the persistent subscription.
