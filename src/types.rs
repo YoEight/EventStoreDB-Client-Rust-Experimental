@@ -1225,7 +1225,7 @@ pub enum NodePreference {
 
 impl Default for NodePreference {
     fn default() -> Self {
-        NodePreference::Random
+        NodePreference::Leader
     }
 }
 
