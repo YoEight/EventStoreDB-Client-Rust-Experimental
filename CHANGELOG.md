@@ -32,6 +32,7 @@ All notable changes to this project will be documented in this file.
 - Send feedback to user when `batch_append` is not supported by the server. [EventStoreDB-Client-Rust#93](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/93)
 - Implement Persistent Subscription to `$all`. [EventStoreDB-Client-Rust#98](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/98)
 - Implement server features detection. [EventStoreDB-Client-Rust#118](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/118)
+- Allow passing an external Tokio runtime when creating a new client. [EventStoreDB-Client-Rust#124](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/124)
 
 ## Previous versions
 1.0.0
