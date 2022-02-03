@@ -5,7 +5,7 @@
 #![allow(dead_code)]
 use eventstore::{
     Client, PersistentSubscriptionEvent, PersistentSubscriptionOptions,
-    PersistentSubscriptionToAllOptions, SubscriptionFilter,
+    PersistentSubscriptionToAllOptions, ReplayParkedMessagesOptions, SubscriptionFilter,
 };
 
 async fn create_persistent_subscription(client: &Client) -> eventstore::Result<()> {
@@ -90,5 +90,110 @@ async fn delete_persistent_subscription(client: &Client) -> eventstore::Result<(
         .await?;
     // #endregion delete-persistent-subscription
 
+    Ok(())
+}
+
+async fn get_persistent_subscription_to_stream_info(client: &Client) -> eventstore::Result<()> {
+    // #region get-persistent-subscription-to-stream-info
+    let info = client
+        .get_persistent_subscription_info("test-stream", "subscription-group", &Default::default())
+        .await?;
+
+    println!(
+        "GroupName: {}, EventStreamId: {}, Status: {:?}",
+        info.group_name, info.event_stream_id, info.status
+    );
+    // #endregion get-persistent-subscription-to-stream-info
+    Ok(())
+}
+
+async fn get_persistent_subscription_to_all_info(client: &Client) -> eventstore::Result<()> {
+    // #region get-persistent-subscription-to-all-info
+    let info = client
+        .get_persistent_subscription_info_to_all("subscription-group", &Default::default())
+        .await?;
+
+    println!(
+        "GroupName: {}, EventStreamId: {}, Status: {:?}",
+        info.group_name, info.event_stream_id, info.status
+    );
+    // #endregion get-persistent-subscription-to-all-info
+    Ok(())
+}
+
+async fn replay_parked_to_stream(client: &Client) -> eventstore::Result<()> {
+    // #region replay-parked-of-persistent-subscription-to-stream
+    let options = ReplayParkedMessagesOptions::default().stop_at(10);
+    client
+        .replay_parked_messages("test-stream", "subscription-group", &options)
+        .await?;
+    // #endregion replay-parked-of-persistent-subscription-to-stream
+    Ok(())
+}
+
+async fn replay_parked_to_all(client: &Client) -> eventstore::Result<()> {
+    // #region replay-parked-of-persistent-subscription-to-all
+    let options = ReplayParkedMessagesOptions::default().stop_at(10);
+    client
+        .replay_parked_messages_to_all("subscription-group", &options)
+        .await?;
+    // #endregion replay-parked-of-persistent-subscription-to-all
+    Ok(())
+}
+
+async fn list_persistent_subscription_to_stream(client: &Client) -> eventstore::Result<()> {
+    // #region list-persistent-subscriptions-to-stream
+    let subscriptions = client
+        .list_persistent_subscriptions_for_stream("test-stream", &Default::default())
+        .await?;
+
+    for s in subscriptions {
+        println!(
+            "GroupName: {}, EventStreamId: {}, Status: {:?}",
+            s.group_name, s.event_stream_id, s.status
+        );
+    }
+    // #endregion list-persistent-subscriptions-to-stream
+    Ok(())
+}
+
+async fn list_persistent_subscription_to_all(client: &Client) -> eventstore::Result<()> {
+    // #region list-persistent-subscriptions-to-all
+    let subscriptions = client
+        .list_persistent_subscriptions_to_all(&Default::default())
+        .await?;
+
+    for s in subscriptions {
+        println!(
+            "GroupName: {}, EventStreamId: {}, Status: {:?}",
+            s.group_name, s.event_stream_id, s.status
+        );
+    }
+    // #endregion list-persistent-subscriptions-to-all
+    Ok(())
+}
+
+async fn list_all_persistent_subscription(client: &Client) -> eventstore::Result<()> {
+    // #region list-persistent-subscriptions
+    let subscriptions = client
+        .list_all_persistent_subscriptions(&Default::default())
+        .await?;
+
+    for s in subscriptions {
+        println!(
+            "GroupName: {}, EventStreamId: {}, Status: {:?}",
+            s.group_name, s.event_stream_id, s.status
+        );
+    }
+    // #endregion list-persistent-subscriptions
+    Ok(())
+}
+
+async fn restart_persistent_subscription_subsystem(client: &Client) -> eventstore::Result<()> {
+    // #region restart-persistent-subscription-subsystem
+    client
+        .restart_persistent_subscription_subsystem(&Default::default())
+        .await?;
+    // #endregion restart-persistent-subscription-subsystem
     Ok(())
 }

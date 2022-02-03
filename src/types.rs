@@ -1067,7 +1067,7 @@ pub enum NakAction {
 }
 
 /// System supported consumer strategies for use with persistent subscriptions.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum SystemConsumerStrategy {
     /// Distributes events to a single client until the bufferSize is reached.
     /// After which the next client is selected in a round robin style,
@@ -1090,10 +1090,40 @@ pub enum SystemConsumerStrategy {
     /// This is not a guarantee, and you should handle the usual ordering
     /// and concurrency issues.
     Pinned,
+
+    PinnedByCorrelation,
+
+    Custom(String),
+}
+
+impl SystemConsumerStrategy {
+    pub(crate) fn from_string(str: String) -> Self {
+        match str.as_str() {
+            "DispatchToSingle" => SystemConsumerStrategy::DispatchToSingle,
+            "RoundRobin" => SystemConsumerStrategy::RoundRobin,
+            "Pinned" => SystemConsumerStrategy::Pinned,
+            "PinnedByCorrelation" => SystemConsumerStrategy::PinnedByCorrelation,
+            _ => SystemConsumerStrategy::Custom(str),
+        }
+    }
+}
+
+impl std::fmt::Display for SystemConsumerStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
+            SystemConsumerStrategy::DispatchToSingle => "DispatchToSingle",
+            SystemConsumerStrategy::RoundRobin => "RoundRobin",
+            SystemConsumerStrategy::Pinned => "Pinned",
+            SystemConsumerStrategy::PinnedByCorrelation => "PinnedByCorrelation",
+            SystemConsumerStrategy::Custom(value) => value.as_str(),
+        };
+
+        write!(f, "{}", value)
+    }
 }
 
 /// Gathers every persistent subscription property.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct PersistentSubscriptionSettings<A> {
     /// Whether or not the persistent subscription should resolve link
     /// events to their linked events.
@@ -1466,7 +1496,7 @@ impl SubscriptionFilter {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum PersistentSubscriptionStatus {
     NotReady,
@@ -1474,6 +1504,20 @@ pub enum PersistentSubscriptionStatus {
     OutstandingPageRequest,
     ReplayingParkedMessages,
     Live,
+    Unknown(String),
+}
+
+impl PersistentSubscriptionStatus {
+    pub(crate) fn from_string(str: String) -> Self {
+        match str.as_str() {
+            "NotReady" => PersistentSubscriptionStatus::NotReady,
+            "Behind" => PersistentSubscriptionStatus::Behind,
+            "OutstandingPageRequest" => PersistentSubscriptionStatus::OutstandingPageRequest,
+            "ReplayingParkedMessages" => PersistentSubscriptionStatus::ReplayingParkedMessages,
+            "Live" => PersistentSubscriptionStatus::Live,
+            _ => PersistentSubscriptionStatus::Unknown(str),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1490,6 +1534,18 @@ pub struct PersistentSubscriptionInfo {
     pub connection_count: usize,
     pub total_in_flight_messages: usize,
     pub config: Option<PersistentSubscriptionConfig>,
+    #[serde(default)]
+    pub connections: Vec<PersistentSubscriptionConnectionInfo>,
+    #[serde(default)]
+    pub read_buffer_count: usize,
+    #[serde(default)]
+    pub retry_buffer_count: usize,
+    #[serde(default)]
+    pub live_buffer_count: usize,
+    #[serde(default)]
+    pub outstanding_messages_count: usize,
+    #[serde(default)]
+    pub parked_message_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1512,4 +1568,25 @@ pub struct PersistentSubscriptionConfig {
     pub max_checkpoint_count: i64,
     pub max_subscriber_count: i64,
     pub named_consumer_strategy: SystemConsumerStrategy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistentSubscriptionConnectionInfo {
+    pub from: String,
+    pub username: String,
+    pub average_items_per_second: f64,
+    pub total_items_processed: usize,
+    pub count_since_last_measurement: usize,
+    pub available_slots: usize,
+    pub in_flight_messages: usize,
+    pub connection_name: String,
+    pub extra_statistics: Vec<PersistentSubscriptionMeasurement>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistentSubscriptionMeasurement {
+    pub key: String,
+    pub value: i64,
 }

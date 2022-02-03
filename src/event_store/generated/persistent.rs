@@ -290,8 +290,11 @@ pub mod create_req {
         pub read_batch_size: i32,
         #[prost(int32, tag = "12")]
         pub history_buffer_size: i32,
+        #[deprecated]
         #[prost(enumeration = "ConsumerStrategy", tag = "13")]
         pub named_consumer_strategy: i32,
+        #[prost(string, tag = "16")]
+        pub consumer_strategy: ::prost::alloc::string::String,
         #[prost(oneof = "settings::MessageTimeout", tags = "4, 14")]
         pub message_timeout: ::core::option::Option<settings::MessageTimeout>,
         #[prost(oneof = "settings::CheckpointAfter", tags = "6, 15")]
@@ -480,6 +483,205 @@ pub mod delete_req {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteResp {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetInfoReq {
+    #[prost(message, optional, tag = "1")]
+    pub options: ::core::option::Option<get_info_req::Options>,
+}
+/// Nested message and enum types in `GetInfoReq`.
+pub mod get_info_req {
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Options {
+        #[prost(string, tag = "3")]
+        pub group_name: ::prost::alloc::string::String,
+        #[prost(oneof = "options::StreamOption", tags = "1, 2")]
+        pub stream_option: ::core::option::Option<options::StreamOption>,
+    }
+    /// Nested message and enum types in `Options`.
+    pub mod options {
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum StreamOption {
+            #[prost(message, tag = "1")]
+            StreamIdentifier(super::super::super::StreamIdentifier),
+            #[prost(message, tag = "2")]
+            All(super::super::super::Empty),
+        }
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetInfoResp {
+    #[prost(message, optional, tag = "1")]
+    pub subscription_info: ::core::option::Option<SubscriptionInfo>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SubscriptionInfo {
+    #[prost(string, tag = "1")]
+    pub event_source: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub group_name: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub status: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "4")]
+    pub connections: ::prost::alloc::vec::Vec<subscription_info::ConnectionInfo>,
+    #[prost(int32, tag = "5")]
+    pub average_per_second: i32,
+    #[prost(int64, tag = "6")]
+    pub total_items: i64,
+    #[prost(int64, tag = "7")]
+    pub count_since_last_measurement: i64,
+    #[prost(string, tag = "8")]
+    pub last_checkpointed_event_position: ::prost::alloc::string::String,
+    #[prost(string, tag = "9")]
+    pub last_known_event_position: ::prost::alloc::string::String,
+    #[prost(bool, tag = "10")]
+    pub resolve_link_tos: bool,
+    #[prost(string, tag = "11")]
+    pub start_from: ::prost::alloc::string::String,
+    #[prost(int32, tag = "12")]
+    pub message_timeout_milliseconds: i32,
+    #[prost(bool, tag = "13")]
+    pub extra_statistics: bool,
+    #[prost(int32, tag = "14")]
+    pub max_retry_count: i32,
+    #[prost(int32, tag = "15")]
+    pub live_buffer_size: i32,
+    #[prost(int32, tag = "16")]
+    pub buffer_size: i32,
+    #[prost(int32, tag = "17")]
+    pub read_batch_size: i32,
+    #[prost(int32, tag = "18")]
+    pub check_point_after_milliseconds: i32,
+    #[prost(int32, tag = "19")]
+    pub min_check_point_count: i32,
+    #[prost(int32, tag = "20")]
+    pub max_check_point_count: i32,
+    #[prost(int32, tag = "21")]
+    pub read_buffer_count: i32,
+    #[prost(int64, tag = "22")]
+    pub live_buffer_count: i64,
+    #[prost(int32, tag = "23")]
+    pub retry_buffer_count: i32,
+    #[prost(int32, tag = "24")]
+    pub total_in_flight_messages: i32,
+    #[prost(int32, tag = "25")]
+    pub outstanding_messages_count: i32,
+    #[prost(string, tag = "26")]
+    pub named_consumer_strategy: ::prost::alloc::string::String,
+    #[prost(int32, tag = "27")]
+    pub max_subscriber_count: i32,
+    #[prost(int64, tag = "28")]
+    pub parked_message_count: i64,
+}
+/// Nested message and enum types in `SubscriptionInfo`.
+pub mod subscription_info {
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct ConnectionInfo {
+        #[prost(string, tag = "1")]
+        pub from: ::prost::alloc::string::String,
+        #[prost(string, tag = "2")]
+        pub username: ::prost::alloc::string::String,
+        #[prost(int32, tag = "3")]
+        pub average_items_per_second: i32,
+        #[prost(int64, tag = "4")]
+        pub total_items: i64,
+        #[prost(int64, tag = "5")]
+        pub count_since_last_measurement: i64,
+        #[prost(message, repeated, tag = "6")]
+        pub observed_measurements: ::prost::alloc::vec::Vec<Measurement>,
+        #[prost(int32, tag = "7")]
+        pub available_slots: i32,
+        #[prost(int32, tag = "8")]
+        pub in_flight_messages: i32,
+        #[prost(string, tag = "9")]
+        pub connection_name: ::prost::alloc::string::String,
+    }
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Measurement {
+        #[prost(string, tag = "1")]
+        pub key: ::prost::alloc::string::String,
+        #[prost(int64, tag = "2")]
+        pub value: i64,
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReplayParkedReq {
+    #[prost(message, optional, tag = "1")]
+    pub options: ::core::option::Option<replay_parked_req::Options>,
+}
+/// Nested message and enum types in `ReplayParkedReq`.
+pub mod replay_parked_req {
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Options {
+        #[prost(string, tag = "1")]
+        pub group_name: ::prost::alloc::string::String,
+        #[prost(oneof = "options::StreamOption", tags = "2, 3")]
+        pub stream_option: ::core::option::Option<options::StreamOption>,
+        #[prost(oneof = "options::StopAtOption", tags = "4, 5")]
+        pub stop_at_option: ::core::option::Option<options::StopAtOption>,
+    }
+    /// Nested message and enum types in `Options`.
+    pub mod options {
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum StreamOption {
+            #[prost(message, tag = "2")]
+            StreamIdentifier(super::super::super::StreamIdentifier),
+            #[prost(message, tag = "3")]
+            All(super::super::super::Empty),
+        }
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum StopAtOption {
+            #[prost(int64, tag = "4")]
+            StopAt(i64),
+            #[prost(message, tag = "5")]
+            NoLimit(super::super::super::Empty),
+        }
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReplayParkedResp {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListReq {
+    #[prost(message, optional, tag = "1")]
+    pub options: ::core::option::Option<list_req::Options>,
+}
+/// Nested message and enum types in `ListReq`.
+pub mod list_req {
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Options {
+        #[prost(oneof = "options::ListOption", tags = "1, 2")]
+        pub list_option: ::core::option::Option<options::ListOption>,
+    }
+    /// Nested message and enum types in `Options`.
+    pub mod options {
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum ListOption {
+            #[prost(message, tag = "1")]
+            ListAllSubscriptions(super::super::super::Empty),
+            #[prost(message, tag = "2")]
+            ListForStream(super::StreamOption),
+        }
+    }
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct StreamOption {
+        #[prost(oneof = "stream_option::StreamOption", tags = "1, 2")]
+        pub stream_option: ::core::option::Option<stream_option::StreamOption>,
+    }
+    /// Nested message and enum types in `StreamOption`.
+    pub mod stream_option {
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum StreamOption {
+            #[prost(message, tag = "1")]
+            Stream(super::super::super::StreamIdentifier),
+            #[prost(message, tag = "2")]
+            All(super::super::super::Empty),
+        }
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListResp {
+    #[prost(message, repeated, tag = "1")]
+    pub subscriptions: ::prost::alloc::vec::Vec<SubscriptionInfo>,
+}
 #[doc = r" Generated client implementations."]
 pub mod persistent_subscriptions_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -606,6 +808,68 @@ pub mod persistent_subscriptions_client {
             self.inner
                 .streaming(request.into_streaming_request(), path, codec)
                 .await
+        }
+        pub async fn get_info(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetInfoReq>,
+        ) -> Result<tonic::Response<super::GetInfoResp>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/event_store.client.persistent_subscriptions.PersistentSubscriptions/GetInfo",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn replay_parked(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ReplayParkedReq>,
+        ) -> Result<tonic::Response<super::ReplayParkedResp>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/event_store.client.persistent_subscriptions.PersistentSubscriptions/ReplayParked",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn list(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListReq>,
+        ) -> Result<tonic::Response<super::ListResp>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/event_store.client.persistent_subscriptions.PersistentSubscriptions/List",
+            );
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn restart_subsystem(
+            &mut self,
+            request: impl tonic::IntoRequest<super::super::Empty>,
+        ) -> Result<tonic::Response<super::super::Empty>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http :: uri :: PathAndQuery :: from_static ("/event_store.client.persistent_subscriptions.PersistentSubscriptions/RestartSubsystem") ;
+            self.inner.unary(request.into_request(), path, codec).await
         }
     }
 }

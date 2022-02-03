@@ -1,6 +1,6 @@
 use crate::options::CommonOperationOptions;
 use crate::{
-    impl_options_trait, Credentials, PersistentSubscriptionSettings, Position, StreamPosition,
+    impl_options_trait, PersistentSubscriptionSettings, Position, StreamPosition,
     SubscriptionFilter, SystemConsumerStrategy,
 };
 use std::time::Duration;
@@ -255,20 +255,14 @@ impl SubscribeToPersistentSubscriptionOptions {
 
 #[derive(Clone, Default)]
 pub struct ReplayParkedMessagesOptions {
-    pub(crate) credentials: Option<Credentials>,
-    pub(crate) stop_at: Option<Duration>,
+    pub(crate) common_operation_options: CommonOperationOptions,
+    pub(crate) stop_at: Option<usize>,
 }
 
-impl ReplayParkedMessagesOptions {
-    /// Performs the command with the given credentials.
-    pub fn authenticated(self, creds: Credentials) -> Self {
-        Self {
-            credentials: Some(creds),
-            ..self
-        }
-    }
+impl_options_trait!(ReplayParkedMessagesOptions);
 
-    pub fn stop_at(self, value: Duration) -> Self {
+impl ReplayParkedMessagesOptions {
+    pub fn stop_at(self, value: usize) -> Self {
         Self {
             stop_at: Some(value),
             ..self
@@ -278,26 +272,21 @@ impl ReplayParkedMessagesOptions {
 
 #[derive(Clone, Default)]
 pub struct ListPersistentSubscriptionsOptions {
-    pub(crate) credentials: Option<Credentials>,
+    pub(crate) common_operation_options: CommonOperationOptions,
 }
 
-impl ListPersistentSubscriptionsOptions {
-    pub fn authenticated(self, creds: Credentials) -> Self {
-        Self {
-            credentials: Some(creds),
-        }
-    }
-}
+impl_options_trait!(ListPersistentSubscriptionsOptions);
 
 #[derive(Clone, Default)]
 pub struct GetPersistentSubscriptionInfoOptions {
-    pub(crate) credentials: Option<Credentials>,
+    pub(crate) common_operation_options: CommonOperationOptions,
 }
 
-impl GetPersistentSubscriptionInfoOptions {
-    pub fn authenticated(self, creds: Credentials) -> Self {
-        Self {
-            credentials: Some(creds),
-        }
-    }
+impl_options_trait!(GetPersistentSubscriptionInfoOptions);
+
+#[derive(Clone, Default)]
+pub struct RestartPersistentSubscriptionSubsystem {
+    pub(crate) common_operation_options: CommonOperationOptions,
 }
+
+impl_options_trait!(RestartPersistentSubscriptionSubsystem);

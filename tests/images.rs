@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use testcontainers::{Container, Docker, Image, WaitForMessage};
 
 const CONTAINER_IDENTIFIER: &str = "ghcr.io/eventstore/eventstore/eventstore";
-const DEFAULT_TAG: &str = "21.6.0-buster-slim";
+const DEFAULT_TAG: &str = "ci";
 
 #[derive(Debug, Default, Clone)]
 pub struct ESDBArgs;
