@@ -53,9 +53,8 @@ pub async fn run() -> Result<()> {
     // endregion overriding-user-credentials
 
     // region readStream
-    let mut stream = client
-        .read_stream("some-stream", &Default::default(), 10)
-        .await?;
+    let options = ReadStreamOptions::default().max_count(10);
+    let mut stream = client.read_stream("some-stream", &options).await?;
 
     while let Some(event) = stream.next().await? {
         // Doing something productive with the events.

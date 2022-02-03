@@ -18,7 +18,7 @@ Server setup instructions can be found here [EventStoreDB Docs], follow the dock
 # Example
 
 ```rust
-use eventstore::{ All, Client, EventData, ReadResult };
+use eventstore::{ Client, EventData };
 use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Creates a client settings for a single node configuration.
     let settings = "esdb://admin:changeit@localhost:2113".parse()?;
-    let client = Client::new(settings).await?;
+    let client = Client::new(settings)?;
 
     let payload = Foo {
         is_rust_a_nice_language: true,
@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     let result = client
-        .read_stream("language-stream", &Default::default(), All)
+        .read_stream("language-stream", &Default::default())
         .await?;
 
 	while let Some(event) = stream.next().await? {
