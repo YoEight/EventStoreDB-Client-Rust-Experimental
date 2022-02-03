@@ -15,7 +15,7 @@ use nom::{bytes::complete::tag, IResult};
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{RngCore, SeedableRng};
-use serde::de::Visitor;
+use serde::de::{Error, Visitor};
 use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use std::cmp::Ordering;
@@ -54,8 +54,8 @@ fn test_connection_string() {
         mockups: Vec<Mockup>,
     }
 
-    let mockups = std::fs::read("tests/fixtures/connection_string/mockups.toml").unwrap();
-    let fixtures: Mockups = toml::from_slice(mockups.as_slice()).unwrap();
+    let mockups = include_bytes!("../tests/fixtures/connection_string/mockups.toml");
+    let fixtures: Mockups = toml::from_slice(mockups).unwrap();
 
     for mockup in fixtures.mockups {
         match mockup.string.as_str().parse::<ClientSettings>() {
@@ -108,6 +108,30 @@ impl<'de> Visitor<'de> for DurationVisitor {
     }
 }
 
+struct OptionalDurationVisitor;
+
+impl<'de> Visitor<'de> for OptionalDurationVisitor {
+    type Value = Option<Duration>;
+
+    fn expecting(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "duration in milliseconds")
+    }
+
+    fn visit_none<E>(self) -> Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        Ok(None)
+    }
+
+    fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(Some(deserializer.deserialize_i64(DurationVisitor)?))
+    }
+}
+
 fn serialize_duration<S>(value: &Duration, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -120,6 +144,27 @@ where
     D: Deserializer<'de>,
 {
     deserializer.deserialize_any(DurationVisitor)
+}
+
+fn serialize_optional_duration<S>(
+    value: &Option<Duration>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    if let Some(value) = value.as_ref() {
+        serialize_duration(value, serializer)
+    } else {
+        serializer.serialize_none()
+    }
+}
+
+fn deserialize_optional_duration<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_option(OptionalDurationVisitor)
 }
 
 fn default_max_discover_attempts() -> usize {
@@ -257,6 +302,12 @@ pub struct ClientSettings {
         deserialize_with = "deserialize_duration"
     )]
     pub(crate) keep_alive_timeout: Duration,
+    #[serde(
+        default,
+        serialize_with = "serialize_optional_duration",
+        deserialize_with = "deserialize_optional_duration"
+    )]
+    pub(crate) default_deadline: Option<Duration>,
 }
 
 impl ClientSettings {
@@ -550,6 +601,33 @@ impl ClientSettings {
                             }
                         }
 
+                        "defaultdeadline" => {
+                            let value = values.as_slice()[1];
+
+                            if let Ok(int) = value.parse::<i64>() {
+                                if int == -1 {
+                                    result.default_deadline = Some(Duration::from_millis(u64::MAX));
+                                    continue;
+                                }
+
+                                if int < -1 {
+                                    error!("Invalid defaultDeadline of {}. Please provide a positive integer, or -1 to disable", int);
+
+                                    return Err(nom::Err::Failure(nom::error::Error::new(
+                                        value,
+                                        ErrorKind::Fail,
+                                    )));
+                                }
+
+                                result.default_deadline = Some(Duration::from_millis(int as u64));
+                            } else {
+                                return Err(nom::Err::Failure(nom::error::Error::new(
+                                    value,
+                                    ErrorKind::Fail,
+                                )));
+                            }
+                        }
+
                         ignored => {
                             warn!("Ignored connection string parameter: {}", ignored);
                             continue;
@@ -622,6 +700,7 @@ impl Default for ClientSettings {
             default_user_name: None,
             keep_alive_interval: Duration::from_millis(self::defaults::KEEP_ALIVE_INTERVAL_IN_MS),
             keep_alive_timeout: Duration::from_millis(self::defaults::KEEP_ALIVE_TIMEOUT_IN_MS),
+            default_deadline: None,
         }
     }
 }

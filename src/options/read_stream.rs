@@ -22,7 +22,7 @@ impl Default for ReadStreamOptions {
     }
 }
 
-impl_options_trait!(ReadStreamOptions);
+impl_options_trait!(ReadStreamOptions, super::OperationKind::Streaming);
 
 impl ReadStreamOptions {
     /// Asks the command to read forward (toward the end of the stream).

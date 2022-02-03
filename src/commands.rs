@@ -1,6 +1,7 @@
 #![allow(clippy::large_enum_variant)]
 //! Commands this client supports.
 use futures::{Stream, StreamExt, TryStreamExt};
+use std::time::Duration;
 
 use crate::event_store::client::{persistent, shared, streams};
 use crate::types::{
@@ -471,12 +472,17 @@ where
     Opts: crate::options::Options,
 {
     let mut req = tonic::Request::new(message);
+    let kind = options.kind();
     let options = options.common_operation_options();
 
     *req.metadata_mut() = build_request_metadata(settings, options);
 
     if let Some(duration) = options.deadline {
         req.set_timeout(duration);
+    } else if let Some(duration) = settings.default_deadline {
+        req.set_timeout(duration);
+    } else if kind == crate::options::OperationKind::Regular {
+        req.set_timeout(Duration::from_secs(10));
     }
 
     req

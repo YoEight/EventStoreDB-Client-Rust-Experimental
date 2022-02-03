@@ -23,7 +23,7 @@ impl Default for SubscribeToAllOptions {
     }
 }
 
-impl_options_trait!(SubscribeToAllOptions);
+impl_options_trait!(SubscribeToAllOptions, super::OperationKind::Streaming);
 
 impl SubscribeToAllOptions {
     /// Starting point in the transaction journal log. By default, it will start at

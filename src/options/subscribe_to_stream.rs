@@ -21,7 +21,7 @@ impl Default for SubscribeToStreamOptions {
     }
 }
 
-impl_options_trait!(SubscribeToStreamOptions);
+impl_options_trait!(SubscribeToStreamOptions, super::OperationKind::Streaming);
 
 impl SubscribeToStreamOptions {
     /// For example, if a starting point of 50 is specified when a stream has
