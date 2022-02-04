@@ -12,6 +12,9 @@ All notable changes to this project will be documented in this file.
 - Refactor node discovery process. [EventStoreDB-Client-Rust#113](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/113)
 - Expose projection-related options. [EventStoreDB-Client-Rust#117](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/117)
 - Improve `append_to_stream` usability. [EventStoreDB-Client-Rust#116](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/116)
+- Apply gRPC deadlines RFC. [EventStoreDB-Client-Rust#126](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/126)
+- Default `NodePreference` to `Leader`. [EventStoreDB-Client-Rust#126](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/126)
+- Simplify `read_stream` and `read_all` API. [EventStoreDB-Client-Rust#123](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/123)
 
 ### Fixed
 - Fix automatic reconnection process for stream operations. [EventStoreDB-Client-Rust#56](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/56)
@@ -33,6 +36,7 @@ All notable changes to this project will be documented in this file.
 - Implement Persistent Subscription to `$all`. [EventStoreDB-Client-Rust#98](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/98)
 - Implement server features detection. [EventStoreDB-Client-Rust#118](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/118)
 - Allow passing an external Tokio runtime when creating a new client. [EventStoreDB-Client-Rust#124](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/124)
+- Implement persistent subscription management gRPC API. [EventStoreDB-Client-Rust#122](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/122)
 
 ## Previous versions
 1.0.0
