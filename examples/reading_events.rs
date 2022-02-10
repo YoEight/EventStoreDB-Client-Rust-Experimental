@@ -39,12 +39,12 @@ pub async fn read_from_stream(client: &Client) -> Result<()> {
 }
 
 pub async fn read_from_stream_position(client: &Client) -> Result<()> {
-    // region read-from-position
+    // region read-from-stream-position
     let options = ReadStreamOptions::default()
         .position(StreamPosition::Position(10))
         .max_count(20);
     let mut stream = client.read_stream("some-stream", &options).await?;
-    // endregion read-from-position
+    // endregion read-from-stream-position
 
     // region iterate-stream
     while let Some(event) = stream.next().await? {

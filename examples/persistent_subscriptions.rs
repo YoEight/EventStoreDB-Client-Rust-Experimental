@@ -33,8 +33,21 @@ async fn connect_to_persistent_subscription_to_stream(client: &Client) -> events
         // Doing some productive work with the event...
         sub.ack(event).await?;
     }
-
     // #endregion subscribe-to-persistent-subscription-to-stream
+}
+
+async fn connect_to_persistent_subscription_to_all(client: &Client) -> eventstore::Result<()> {
+    // #region subscribe-to-persistent-subscription-to-all
+    let mut sub = client
+        .subscribe_to_persistent_subscription_to_all("subscription-group", &Default::default())
+        .await?;
+
+    loop {
+        let event = sub.next().await?;
+        // Doing some productive work with the event...
+        sub.ack(event).await?;
+    }
+    // #endregion subscribe-to-persistent-subscription-to-all
 }
 
 async fn create_persistent_subscription_to_all(client: &Client) -> eventstore::Result<()> {
