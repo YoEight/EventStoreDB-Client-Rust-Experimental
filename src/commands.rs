@@ -22,7 +22,7 @@ use crate::options::persistent_subscription::PersistentSubscriptionOptions;
 use crate::options::read_all::ReadAllOptions;
 use crate::options::read_stream::ReadStreamOptions;
 use crate::options::subscribe_to_stream::SubscribeToStreamOptions;
-use crate::options::{CommonOperationOptions, Options};
+use crate::options::{CommonOperationOptions, OperationKind, Options};
 use crate::server_features::Features;
 use crate::{
     ClientSettings, CurrentRevision, DeletePersistentSubscriptionOptions, DeleteStreamOptions,
@@ -498,7 +498,9 @@ where
     if let Some(duration) = options.deadline {
         req.set_timeout(duration);
     } else if let Some(duration) = settings.default_deadline {
-        req.set_timeout(duration);
+        if kind != OperationKind::Streaming {
+            req.set_timeout(duration);
+        }
     } else if kind == crate::options::OperationKind::Regular {
         req.set_timeout(Duration::from_secs(10));
     }
