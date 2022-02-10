@@ -27,12 +27,12 @@ use crate::server_features::Features;
 use crate::{
     ClientSettings, CurrentRevision, DeletePersistentSubscriptionOptions, DeleteStreamOptions,
     GetPersistentSubscriptionInfoOptions, ListPersistentSubscriptionsOptions, NakAction,
-    PersistentSubscriptionConfig, PersistentSubscriptionConnectionInfo,
-    PersistentSubscriptionEvent, PersistentSubscriptionInfo, PersistentSubscriptionMeasurement,
-    PersistentSubscriptionStatus, PersistentSubscriptionToAllOptions, ReplayParkedMessagesOptions,
-    RestartPersistentSubscriptionSubsystem, RetryOptions, SubscribeToAllOptions,
-    SubscribeToPersistentSubscriptionOptions, SubscriptionFilter, SystemConsumerStrategy,
-    TombstoneStreamOptions,
+    PersistentSubscriptionConnectionInfo, PersistentSubscriptionEvent, PersistentSubscriptionInfo,
+    PersistentSubscriptionMeasurements, PersistentSubscriptionStats,
+    PersistentSubscriptionToAllOptions, ReplayParkedMessagesOptions,
+    RestartPersistentSubscriptionSubsystem, RetryOptions, RevisionOrPosition,
+    SubscribeToAllOptions, SubscribeToPersistentSubscriptionOptions, SubscriptionFilter,
+    SystemConsumerStrategy, TombstoneStreamOptions,
 };
 use tonic::{Request, Streaming};
 
@@ -1923,25 +1923,68 @@ fn to_proto_uuid(id: uuid::Uuid) -> Uuid {
     }
 }
 
-pub(crate) enum StreamName {
-    Regular(String),
-    All,
+pub(crate) struct RegularStream(pub(crate) String);
+pub(crate) struct AllStream;
+pub(crate) struct BothTypeOfStream;
+
+pub(crate) trait StreamPositionTypeSelector {
+    type Value;
+
+    fn select(&self, value: RevisionOrPosition) -> Self::Value;
 }
 
-impl StreamName {
-    pub(crate) fn is_all(&self) -> bool {
-        if let StreamName::All = self {
-            return true;
-        }
+pub(crate) trait StreamKind {
+    fn is_all(&self) -> bool;
+    fn name(&self) -> &str;
+}
 
+impl StreamPositionTypeSelector for AllStream {
+    type Value = Position;
+
+    fn select(&self, value: RevisionOrPosition) -> Self::Value {
+        match value {
+            RevisionOrPosition::Position(p) => p,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl StreamKind for AllStream {
+    fn is_all(&self) -> bool {
+        true
+    }
+
+    fn name(&self) -> &str {
+        "$all"
+    }
+}
+
+impl StreamKind for RegularStream {
+    fn is_all(&self) -> bool {
         false
     }
 
-    pub(crate) fn into_string(self) -> String {
-        match self {
-            StreamName::All => "$all".to_string(),
-            StreamName::Regular(name) => name,
+    fn name(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl StreamPositionTypeSelector for RegularStream {
+    type Value = u64;
+
+    fn select(&self, value: RevisionOrPosition) -> Self::Value {
+        match value {
+            RevisionOrPosition::Revision(r) => r,
+            _ => unreachable!(),
         }
+    }
+}
+
+impl StreamPositionTypeSelector for BothTypeOfStream {
+    type Value = RevisionOrPosition;
+
+    fn select(&self, value: RevisionOrPosition) -> Self::Value {
+        value
     }
 }
 
@@ -1949,7 +1992,7 @@ pub async fn list_all_persistent_subscriptions(
     connection: &GrpcClient,
     http_client: &reqwest::Client,
     op_options: &ListPersistentSubscriptionsOptions,
-) -> crate::Result<Vec<PersistentSubscriptionInfo>> {
+) -> crate::Result<Vec<PersistentSubscriptionInfo<RevisionOrPosition>>> {
     use crate::event_store::generated::persistent::list_req;
 
     let handle = connection.current_selected_node().await?;
@@ -1970,17 +2013,21 @@ pub async fn list_all_persistent_subscriptions(
         connection.connection_settings(),
         handle,
         op_options,
+        BothTypeOfStream,
         list_option,
     )
     .await
 }
 
-pub(crate) async fn list_persistent_subscriptions_for_stream(
+pub(crate) async fn list_persistent_subscriptions_for_stream<StreamName>(
     connection: &GrpcClient,
     http_client: &reqwest::Client,
     stream_name: StreamName,
     op_options: &ListPersistentSubscriptionsOptions,
-) -> crate::Result<Vec<PersistentSubscriptionInfo>> {
+) -> crate::Result<Vec<PersistentSubscriptionInfo<<StreamName as StreamPositionTypeSelector>::Value>>>
+where
+    StreamName: StreamKind + StreamPositionTypeSelector,
+{
     use crate::event_store::generated::persistent::list_req;
 
     let handle = connection.current_selected_node().await?;
@@ -1992,8 +2039,6 @@ pub(crate) async fn list_persistent_subscriptions_for_stream(
             return Err(crate::Error::UnsupportedFeature);
         }
 
-        let stream_name = stream_name.into_string();
-
         return crate::http::persistent_subscriptions::list_persistent_subscriptions_for_stream(
             &handle,
             http_client,
@@ -2004,13 +2049,12 @@ pub(crate) async fn list_persistent_subscriptions_for_stream(
         .await;
     }
 
-    let stream_option = match stream_name {
-        StreamName::All => list_req::stream_option::StreamOption::All(Empty {}),
-        StreamName::Regular(stream_name) => {
-            list_req::stream_option::StreamOption::Stream(StreamIdentifier {
-                stream_name: stream_name.into_bytes(),
-            })
-        }
+    let stream_option = if stream_name.is_all() {
+        list_req::stream_option::StreamOption::All(Empty {})
+    } else {
+        list_req::stream_option::StreamOption::Stream(StreamIdentifier {
+            stream_name: stream_name.name().to_string().into_bytes(),
+        })
     };
 
     let list_option = list_req::options::ListOption::ListForStream(list_req::StreamOption {
@@ -2021,17 +2065,22 @@ pub(crate) async fn list_persistent_subscriptions_for_stream(
         connection.connection_settings(),
         handle,
         op_options,
+        stream_name,
         list_option,
     )
     .await
 }
 
-async fn internal_list_persistent_subscriptions(
+async fn internal_list_persistent_subscriptions<Selector>(
     settings: &ClientSettings,
     handle: Handle,
     op_options: &ListPersistentSubscriptionsOptions,
+    selector: Selector,
     list_option: crate::event_store::generated::persistent::list_req::options::ListOption,
-) -> crate::Result<Vec<PersistentSubscriptionInfo>> {
+) -> crate::Result<Vec<PersistentSubscriptionInfo<<Selector as StreamPositionTypeSelector>::Value>>>
+where
+    Selector: StreamPositionTypeSelector,
+{
     use crate::event_store::generated::persistent::{list_req, ListReq};
 
     let options = list_req::Options {
@@ -2055,80 +2104,143 @@ async fn internal_list_persistent_subscriptions(
 
         Ok(resp) => {
             let resp = resp.into_inner();
+            let mut infos = Vec::with_capacity(resp.subscriptions.capacity());
 
-            Ok(resp
-                .subscriptions
-                .into_iter()
-                .map(subscription_info_from_wire)
-                .collect())
+            for sub in resp.subscriptions {
+                infos.push(subscription_info_from_wire(&selector, sub)?);
+            }
+
+            Ok(infos)
         }
     }
 }
 
-fn subscription_info_from_wire(
+fn parse_position_start_from(input: &str) -> nom::IResult<&str, Position> {
+    use nom::bytes::complete::tag;
+
+    let (input, _) = tag("C:")(input)?;
+    let (input, commit) = nom::character::complete::u64(input)?;
+    let (input, _) = tag("/P:")(input)?;
+    let (input, prepare) = nom::character::complete::u64(input)?;
+
+    Ok((input, Position { commit, prepare }))
+}
+
+pub(crate) fn parse_revision_or_position(input: &str) -> crate::Result<RevisionOrPosition> {
+    if let Ok(v) = input.parse::<u64>() {
+        Ok(RevisionOrPosition::Revision(v))
+    } else if let Ok(pos) = parse_position(input) {
+        Ok(RevisionOrPosition::Position(pos))
+    } else {
+        Err(crate::Error::InternalParsingError(format!(
+            "Failed to parse either a stream revision or a transaction log position: '{}'",
+            input
+        )))
+    }
+}
+
+pub(crate) fn parse_position(input: &str) -> crate::Result<Position> {
+    if let Ok((_, pos)) = nom::combinator::complete(parse_position_start_from)(input) {
+        Ok(pos)
+    } else {
+        Err(crate::Error::InternalParsingError(format!(
+            "Failed to parse a transaction log position: '{}'",
+            input
+        )))
+    }
+}
+
+pub(crate) fn parse_stream_position(
+    input: &str,
+) -> crate::Result<StreamPosition<RevisionOrPosition>> {
+    if input == "-1" || input == "C:-1/P:-1" {
+        return Ok(StreamPosition::End);
+    } else if input == "0" || input == "C:0/P:0" {
+        return Ok(StreamPosition::Start);
+    }
+
+    Ok(StreamPosition::Position(parse_revision_or_position(input)?))
+}
+
+fn subscription_info_from_wire<Selector>(
+    selector: &Selector,
     info: crate::event_store::generated::persistent::SubscriptionInfo,
-) -> PersistentSubscriptionInfo {
+) -> crate::Result<PersistentSubscriptionInfo<<Selector as StreamPositionTypeSelector>::Value>>
+where
+    Selector: StreamPositionTypeSelector,
+{
     let named_consumer_strategy = SystemConsumerStrategy::from_string(info.named_consumer_strategy);
-    let prefer_round_robin = SystemConsumerStrategy::RoundRobin == named_consumer_strategy;
-    let connection_count = info.connections.len();
     let connections = info
         .connections
         .into_iter()
         .map(connection_from_wire)
         .collect();
-    let status = PersistentSubscriptionStatus::from_string(info.status);
-    let last_known_event_number = if let Ok(value) = info.last_known_event_position.parse() {
-        value
+    let status = info.status;
+    let mut last_known_position = None;
+    let mut last_known_event_number = None;
+    let mut last_processed_event_number = None;
+    let mut last_processed_position = None;
+
+    if let Ok(value) = parse_revision_or_position(info.last_known_event_position.as_str()) {
+        match value {
+            RevisionOrPosition::Position(p) => last_known_position = Some(p),
+            RevisionOrPosition::Revision(r) => last_known_event_number = Some(r),
+        }
+    }
+
+    if let Ok(value) = parse_revision_or_position(info.last_checkpointed_event_position.as_str()) {
+        match value {
+            RevisionOrPosition::Position(p) => last_processed_position = Some(p),
+            RevisionOrPosition::Revision(r) => last_processed_event_number = Some(r),
+        }
+    }
+    let start_from = if let Ok(pos) = parse_stream_position(info.start_from.as_str()) {
+        pos.map(|p| selector.select(p))
     } else {
-        0
-    };
-    let last_processed_event_number =
-        if let Ok(value) = info.last_checkpointed_event_position.parse() {
-            value
-        } else {
-            0
-        };
-    let start_from = if let Ok(value) = info.start_from.parse() {
-        value
-    } else {
-        -1
+        return Err(crate::Error::InternalParsingError(format!(
+            "Can't parse stream position: {}",
+            info.start_from
+        )));
     };
 
-    let config = PersistentSubscriptionConfig {
-        resolve_linktos: info.resolve_link_tos,
-        start_from,
-        message_timeout_milliseconds: info.message_timeout_milliseconds as i64,
-        extra_statistics: info.extra_statistics,
-        max_retry_count: info.max_retry_count as i64,
-        live_buffer_size: info.live_buffer_count,
-        buffer_size: info.buffer_size as i64,
-        read_batch_size: info.read_batch_size as i64,
-        prefer_round_robin,
-        checkpoint_after_milliseconds: info.check_point_after_milliseconds as i64,
-        min_checkpoint_count: info.min_check_point_count as i64,
-        max_checkpoint_count: info.max_check_point_count as i64,
-        max_subscriber_count: info.max_subscriber_count as i64,
-        named_consumer_strategy,
-    };
-
-    PersistentSubscriptionInfo {
-        event_stream_id: info.event_source,
-        group_name: info.group_name,
-        status,
-        average_items_per_second: info.average_per_second as f64,
-        total_items_processed: info.total_items as usize,
-        last_processed_event_number,
-        last_known_event_number,
-        connection_count,
-        total_in_flight_messages: info.total_in_flight_messages as usize,
-        config: Some(config),
-        connections,
+    let stats = PersistentSubscriptionStats {
+        average_per_second: info.average_per_second as f64,
+        total_items: info.total_items as usize,
+        count_since_last_measurement: info.count_since_last_measurement as usize,
+        last_checkpointed_event_revision: last_processed_event_number,
+        last_known_event_revision: last_known_event_number,
+        last_checkpointed_position: last_processed_position,
+        last_known_position,
         read_buffer_count: info.read_buffer_count as usize,
-        retry_buffer_count: info.retry_buffer_count as usize,
         live_buffer_count: info.live_buffer_count as usize,
+        retry_buffer_count: info.retry_buffer_count as usize,
+        total_in_flight_messages: info.total_in_flight_messages as usize,
         outstanding_messages_count: info.outstanding_messages_count as usize,
         parked_message_count: info.parked_message_count as usize,
-    }
+    };
+
+    Ok(PersistentSubscriptionInfo {
+        event_source: info.event_source,
+        group_name: info.group_name,
+        status,
+        connections,
+        settings: Some(PersistentSubscriptionSettings {
+            resolve_link_tos: info.resolve_link_tos,
+            start_from,
+            extra_statistics: info.extra_statistics,
+            message_timeout: Duration::from_millis(info.message_timeout_milliseconds as u64),
+            max_retry_count: info.max_retry_count,
+            live_buffer_size: info.live_buffer_size,
+            read_batch_size: info.read_batch_size,
+            history_buffer_size: info.buffer_size,
+            checkpoint_after: Duration::from_millis(info.check_point_after_milliseconds as u64),
+            checkpoint_lower_bound: info.min_check_point_count,
+            checkpoint_upper_bound: info.max_check_point_count,
+            max_subscriber_count: info.max_subscriber_count,
+            consumer_strategy_name: named_consumer_strategy,
+        }),
+        stats,
+    })
 }
 
 fn connection_from_wire(
@@ -2138,29 +2250,30 @@ fn connection_from_wire(
         from: conn.from,
         username: conn.username,
         average_items_per_second: conn.average_items_per_second as f64,
-        total_items_processed: conn.total_items as usize,
+        total_items: conn.total_items as usize,
         count_since_last_measurement: conn.count_since_last_measurement as usize,
         available_slots: conn.available_slots as usize,
         in_flight_messages: conn.in_flight_messages as usize,
         connection_name: conn.connection_name,
-        extra_statistics: conn
-            .observed_measurements
-            .into_iter()
-            .map(|m| PersistentSubscriptionMeasurement {
-                key: m.key,
-                value: m.value,
-            })
-            .collect(),
+        extra_statistics: PersistentSubscriptionMeasurements(
+            conn.observed_measurements
+                .into_iter()
+                .map(|m| (m.key, m.value))
+                .collect(),
+        ),
     }
 }
 
-pub(crate) async fn replay_parked_messages(
+pub(crate) async fn replay_parked_messages<StreamName>(
     connection: &GrpcClient,
     http_client: &reqwest::Client,
     stream_name: StreamName,
     group_name: impl AsRef<str>,
     op_options: &ReplayParkedMessagesOptions,
-) -> crate::Result<()> {
+) -> crate::Result<()>
+where
+    StreamName: StreamKind,
+{
     use crate::event_store::generated::persistent::{replay_parked_req, ReplayParkedReq};
 
     let handle = connection.current_selected_node().await?;
@@ -2172,25 +2285,23 @@ pub(crate) async fn replay_parked_messages(
             return Err(crate::Error::UnsupportedFeature);
         }
 
-        let stream_name = stream_name.into_string();
         return crate::http::persistent_subscriptions::replay_parked_messages(
             &handle,
             http_client,
             connection.connection_settings(),
-            stream_name,
+            stream_name.name(),
             group_name,
             op_options,
         )
         .await;
     }
 
-    let stream_option = match stream_name {
-        StreamName::All => replay_parked_req::options::StreamOption::All(Empty {}),
-        StreamName::Regular(stream_name) => {
-            replay_parked_req::options::StreamOption::StreamIdentifier(StreamIdentifier {
-                stream_name: stream_name.into_bytes(),
-            })
-        }
+    let stream_option = if stream_name.is_all() {
+        replay_parked_req::options::StreamOption::All(Empty {})
+    } else {
+        replay_parked_req::options::StreamOption::StreamIdentifier(StreamIdentifier {
+            stream_name: stream_name.name().to_string().into_bytes(),
+        })
     };
 
     let stop_at_option = if let Some(value) = op_options.stop_at {
@@ -2222,13 +2333,16 @@ pub(crate) async fn replay_parked_messages(
     Ok(())
 }
 
-pub(crate) async fn get_persistent_subscription_info(
+pub(crate) async fn get_persistent_subscription_info<StreamName>(
     connection: &GrpcClient,
     http_client: &reqwest::Client,
     stream_name: StreamName,
     group_name: impl AsRef<str>,
     op_options: &GetPersistentSubscriptionInfoOptions,
-) -> crate::Result<PersistentSubscriptionInfo> {
+) -> crate::Result<PersistentSubscriptionInfo<<StreamName as StreamPositionTypeSelector>::Value>>
+where
+    StreamName: StreamKind + StreamPositionTypeSelector,
+{
     use crate::event_store::generated::persistent::{get_info_req, GetInfoReq};
     let handle = connection.current_selected_node().await?;
 
@@ -2239,7 +2353,6 @@ pub(crate) async fn get_persistent_subscription_info(
             return Err(crate::Error::UnsupportedFeature);
         }
 
-        let stream_name = stream_name.into_string();
         return crate::http::persistent_subscriptions::get_persistent_subscription_info(
             &handle,
             http_client,
@@ -2251,13 +2364,12 @@ pub(crate) async fn get_persistent_subscription_info(
         .await;
     }
 
-    let stream_option = match stream_name {
-        StreamName::All => get_info_req::options::StreamOption::All(Empty {}),
-        StreamName::Regular(stream_name) => {
-            get_info_req::options::StreamOption::StreamIdentifier(StreamIdentifier {
-                stream_name: stream_name.into_bytes(),
-            })
-        }
+    let stream_option = if stream_name.is_all() {
+        get_info_req::options::StreamOption::All(Empty {})
+    } else {
+        get_info_req::options::StreamOption::StreamIdentifier(StreamIdentifier {
+            stream_name: stream_name.name().to_string().into_bytes(),
+        })
     };
     let options = get_info_req::Options {
         group_name: group_name.as_ref().to_string(),
@@ -2283,7 +2395,7 @@ pub(crate) async fn get_persistent_subscription_info(
             let resp = resp.into_inner();
 
             if let Some(info) = resp.subscription_info {
-                Ok(subscription_info_from_wire(info))
+                subscription_info_from_wire(&stream_name, info)
             } else {
                 Err(crate::Error::ResourceNotFound)
             }
