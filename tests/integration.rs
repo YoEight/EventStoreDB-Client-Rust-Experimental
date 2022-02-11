@@ -1009,7 +1009,7 @@ async fn wait_for_admin_to_be_available(client: &eventstore::Client) -> eventsto
 #[tokio::test(flavor = "multi_thread")]
 async fn cluster() -> Result<(), Box<dyn std::error::Error>> {
     let _ = pretty_env_logger::try_init();
-    let settings = "esdb://admin:changeit@localhost:2111,localhost:2112,localhost:2113?tlsVerifyCert=false&nodePreference=leader&maxdiscoverattempts=50"
+    let settings = "esdb://admin:changeit@localhost:2111,localhost:2112,localhost:2113?tlsVerifyCert=false&nodePreference=leader&maxdiscoverattempts=50&defaultDeadline=60000"
         .parse::<ClientSettings>()?;
 
     let client = Client::new(settings)?;
@@ -1033,7 +1033,7 @@ async fn single_node() -> Result<(), Box<dyn std::error::Error>> {
     wait_node_is_alive(container.get_host_port(2_113).unwrap()).await?;
 
     let settings = format!(
-        "esdb://localhost:{}?tls=false",
+        "esdb://localhost:{}?tls=false&defaultDeadline=60000",
         container.get_host_port(2_113).unwrap(),
     )
     .parse::<ClientSettings>()?;
