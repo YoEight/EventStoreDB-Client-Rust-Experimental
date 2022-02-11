@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 - Improve server-side error management. [EventStoreDB-Client-Rust#74](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/74)
 - Fix test flakeyness. [EventStoreDB-Client-Rust#85](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/85)
 - Introduce more randomness when selecting a node based upon preference. [EventStoreDB-Client-Rust#88](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/88)
+- Fix read from stream position snippet name. [EventStoreDB-Client-Rust#129](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/129)
 
 ### Added
 - Implement keep-alive [EventStoreDB-Client-Rust#53](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/53)
@@ -37,6 +38,7 @@ All notable changes to this project will be documented in this file.
 - Implement server features detection. [EventStoreDB-Client-Rust#118](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/118)
 - Allow passing an external Tokio runtime when creating a new client. [EventStoreDB-Client-Rust#124](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/124)
 - Implement persistent subscription management gRPC API. [EventStoreDB-Client-Rust#122](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/122)
+- Added missing subscribe-to-persistent-subscription-to-all snippet [EventStoreDB-Client-Rust#129](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/129)
 
 ## Previous versions
 1.0.0
