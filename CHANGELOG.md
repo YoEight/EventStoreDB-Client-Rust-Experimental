@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 - Fix test flakeyness. [EventStoreDB-Client-Rust#85](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/85)
 - Introduce more randomness when selecting a node based upon preference. [EventStoreDB-Client-Rust#88](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/88)
 - Fix read from stream position snippet name. [EventStoreDB-Client-Rust#129](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/129)
+- Do not apply `defaultDeadline` from the connection string on streaming operations. [EventStoreDB-Client-Rust#130](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/130)
 
 ### Added
 - Implement keep-alive [EventStoreDB-Client-Rust#53](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/53)
