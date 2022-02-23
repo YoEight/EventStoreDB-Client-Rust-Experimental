@@ -393,3 +393,21 @@ default_deadline = 100_000
 [[mockups.expected.hosts]]
 host = "localhost"
 port = 2_113
+
+[[mockups]]
+string = "esdb://localhost?connectionName=foobar"
+[mockups.expected]
+dns_discover = false
+max_discover_attempts = 3
+discovery_interval = 500
+gossip_timeout = 3_000
+preference = "Leader"
+secure = true
+tls_verify_cert = true
+throw_on_append_failure = true
+keep_alive_interval = 10_000
+keep_alive_timeout = 10_000
+connection_name = "foobar"
+[[mockups.expected.hosts]]
+host = "localhost"
+port = 2_113

@@ -308,6 +308,7 @@ pub struct ClientSettings {
         deserialize_with = "deserialize_optional_duration"
     )]
     pub(crate) default_deadline: Option<Duration>,
+    pub(crate) connection_name: Option<String>,
 }
 
 impl ClientSettings {
@@ -628,6 +629,11 @@ impl ClientSettings {
                             }
                         }
 
+                        "connectionname" => {
+                            let value = values.as_slice()[1];
+                            result.connection_name = Some(value.to_string());
+                        }
+
                         ignored => {
                             warn!("Ignored connection string parameter: {}", ignored);
                             continue;
@@ -701,6 +707,7 @@ impl Default for ClientSettings {
             keep_alive_interval: Duration::from_millis(self::defaults::KEEP_ALIVE_INTERVAL_IN_MS),
             keep_alive_timeout: Duration::from_millis(self::defaults::KEEP_ALIVE_TIMEOUT_IN_MS),
             default_deadline: None,
+            connection_name: None,
         }
     }
 }
