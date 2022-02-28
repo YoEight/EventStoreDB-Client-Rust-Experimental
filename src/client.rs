@@ -10,7 +10,7 @@ use crate::{
     GetPersistentSubscriptionInfoOptions, ListPersistentSubscriptionsOptions,
     PersistentSubscription, PersistentSubscriptionInfo, PersistentSubscriptionToAllOptions,
     Position, ReadStream, ReplayParkedMessagesOptions, RestartPersistentSubscriptionSubsystem,
-    StreamMetadata, StreamMetadataResult, SubscribeToAllOptions,
+    RevisionOrPosition, StreamMetadata, StreamMetadataResult, SubscribeToAllOptions,
     SubscribeToPersistentSubscriptionOptions, Subscription, TombstoneStreamOptions,
     VersionedMetadata, WriteResult,
 };
@@ -339,7 +339,7 @@ impl Client {
         commands::replay_parked_messages(
             &self.client,
             &self.http_client,
-            commands::StreamName::Regular(stream_name.as_ref().to_string()),
+            commands::RegularStream(stream_name.as_ref().to_string()),
             group_name,
             options,
         )
@@ -355,7 +355,7 @@ impl Client {
         commands::replay_parked_messages(
             &self.client,
             &self.http_client,
-            commands::StreamName::All,
+            commands::AllStream,
             group_name,
             options,
         )
@@ -366,7 +366,7 @@ impl Client {
     pub async fn list_all_persistent_subscriptions(
         &self,
         options: &ListPersistentSubscriptionsOptions,
-    ) -> crate::Result<Vec<PersistentSubscriptionInfo>> {
+    ) -> crate::Result<Vec<PersistentSubscriptionInfo<RevisionOrPosition>>> {
         commands::list_all_persistent_subscriptions(&self.client, &self.http_client, options).await
     }
 
@@ -375,11 +375,11 @@ impl Client {
         &self,
         stream_name: impl AsRef<str>,
         options: &ListPersistentSubscriptionsOptions,
-    ) -> crate::Result<Vec<PersistentSubscriptionInfo>> {
+    ) -> crate::Result<Vec<PersistentSubscriptionInfo<u64>>> {
         commands::list_persistent_subscriptions_for_stream(
             &self.client,
             &self.http_client,
-            commands::StreamName::Regular(stream_name.as_ref().to_string()),
+            commands::RegularStream(stream_name.as_ref().to_string()),
             options,
         )
         .await
@@ -389,11 +389,11 @@ impl Client {
     pub async fn list_persistent_subscriptions_to_all(
         &self,
         options: &ListPersistentSubscriptionsOptions,
-    ) -> crate::Result<Vec<PersistentSubscriptionInfo>> {
+    ) -> crate::Result<Vec<PersistentSubscriptionInfo<Position>>> {
         commands::list_persistent_subscriptions_for_stream(
             &self.client,
             &self.http_client,
-            commands::StreamName::All,
+            commands::AllStream,
             options,
         )
         .await
@@ -405,11 +405,11 @@ impl Client {
         stream_name: impl AsRef<str>,
         group_name: impl AsRef<str>,
         options: &GetPersistentSubscriptionInfoOptions,
-    ) -> crate::Result<PersistentSubscriptionInfo> {
+    ) -> crate::Result<PersistentSubscriptionInfo<u64>> {
         commands::get_persistent_subscription_info(
             &self.client,
             &self.http_client,
-            commands::StreamName::Regular(stream_name.as_ref().to_string()),
+            commands::RegularStream(stream_name.as_ref().to_string()),
             group_name,
             options,
         )
@@ -421,11 +421,11 @@ impl Client {
         &self,
         group_name: impl AsRef<str>,
         options: &GetPersistentSubscriptionInfoOptions,
-    ) -> crate::Result<PersistentSubscriptionInfo> {
+    ) -> crate::Result<PersistentSubscriptionInfo<Position>> {
         commands::get_persistent_subscription_info(
             &self.client,
             &self.http_client,
-            commands::StreamName::All,
+            commands::AllStream,
             group_name,
             options,
         )

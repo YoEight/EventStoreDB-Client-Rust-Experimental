@@ -114,7 +114,7 @@ async fn get_persistent_subscription_to_stream_info(client: &Client) -> eventsto
 
     println!(
         "GroupName: {}, EventStreamId: {}, Status: {:?}",
-        info.group_name, info.event_stream_id, info.status
+        info.group_name, info.event_source, info.status
     );
     // #endregion get-persistent-subscription-to-stream-info
     Ok(())
@@ -128,7 +128,7 @@ async fn get_persistent_subscription_to_all_info(client: &Client) -> eventstore:
 
     println!(
         "GroupName: {}, EventStreamId: {}, Status: {:?}",
-        info.group_name, info.event_stream_id, info.status
+        info.group_name, info.event_source, info.status
     );
     // #endregion get-persistent-subscription-to-all-info
     Ok(())
@@ -163,7 +163,7 @@ async fn list_persistent_subscription_to_stream(client: &Client) -> eventstore::
     for s in subscriptions {
         println!(
             "GroupName: {}, EventStreamId: {}, Status: {:?}",
-            s.group_name, s.event_stream_id, s.status
+            s.group_name, s.event_source, s.status
         );
     }
     // #endregion list-persistent-subscriptions-to-stream
@@ -179,7 +179,7 @@ async fn list_persistent_subscription_to_all(client: &Client) -> eventstore::Res
     for s in subscriptions {
         println!(
             "GroupName: {}, EventStreamId: {}, Status: {:?}",
-            s.group_name, s.event_stream_id, s.status
+            s.group_name, s.event_source, s.status
         );
     }
     // #endregion list-persistent-subscriptions-to-all
@@ -195,7 +195,7 @@ async fn list_all_persistent_subscription(client: &Client) -> eventstore::Result
     for s in subscriptions {
         println!(
             "GroupName: {}, EventStreamId: {}, Status: {:?}",
-            s.group_name, s.event_stream_id, s.status
+            s.group_name, s.event_source, s.status
         );
     }
     // #endregion list-persistent-subscriptions

@@ -5,8 +5,10 @@ use std::collections::HashMap;
 use std::fmt::Formatter;
 use std::time::Duration;
 
+use crate::commands;
 use crate::gossip::VNodeState;
 use bytes::Bytes;
+use serde::de::SeqAccess;
 use serde::{de::Visitor, ser::SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
@@ -138,6 +140,12 @@ pub struct Position {
     pub prepare: u64,
 }
 
+impl std::fmt::Display for Position {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "C:{}/P:{}", self.commit, self.prepare)
+    }
+}
+
 impl Position {
     /// Points to the begin of the transaction file.
     pub fn start() -> Self {
@@ -180,11 +188,24 @@ pub struct WriteResult {
     pub position: Position,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamPosition<A> {
     Start,
     End,
     Position(A),
+}
+
+impl<A> StreamPosition<A> {
+    pub fn map<F, B>(self, f: F) -> StreamPosition<B>
+    where
+        F: FnOnce(A) -> B,
+    {
+        match self {
+            StreamPosition::Start => StreamPosition::Start,
+            StreamPosition::End => StreamPosition::End,
+            StreamPosition::Position(a) => StreamPosition::Position(f(a)),
+        }
+    }
 }
 
 /// Enumeration detailing the possible outcomes of reading a stream.
@@ -1496,63 +1517,113 @@ impl SubscriptionFilter {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub enum PersistentSubscriptionStatus {
-    NotReady,
-    Behind,
-    OutstandingPageRequest,
-    ReplayingParkedMessages,
-    Live,
-    Unknown(String),
-}
-
-impl PersistentSubscriptionStatus {
-    pub(crate) fn from_string(str: String) -> Self {
-        match str.as_str() {
-            "NotReady" => PersistentSubscriptionStatus::NotReady,
-            "Behind" => PersistentSubscriptionStatus::Behind,
-            "OutstandingPageRequest" => PersistentSubscriptionStatus::OutstandingPageRequest,
-            "ReplayingParkedMessages" => PersistentSubscriptionStatus::ReplayingParkedMessages,
-            "Live" => PersistentSubscriptionStatus::Live,
-            _ => PersistentSubscriptionStatus::Unknown(str),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PersistentSubscriptionInfo {
+pub(crate) struct PersistentSubscriptionInfoHttpJson {
     pub event_stream_id: String,
     pub group_name: String,
-    pub status: PersistentSubscriptionStatus,
+    pub status: String,
     pub average_items_per_second: f64,
     pub total_items_processed: usize,
     pub last_processed_event_number: i64,
+    pub last_checkpointed_event_position: Option<String>,
+    pub last_known_event_position: Option<String>,
     pub last_known_event_number: i64,
     #[serde(default)]
     pub connection_count: usize,
     pub total_in_flight_messages: usize,
     pub config: Option<PersistentSubscriptionConfig>,
     #[serde(default)]
-    pub connections: Vec<PersistentSubscriptionConnectionInfo>,
-    #[serde(default)]
     pub read_buffer_count: usize,
     #[serde(default)]
-    pub retry_buffer_count: usize,
-    #[serde(default)]
     pub live_buffer_count: usize,
+    #[serde(default)]
+    pub retry_buffer_count: usize,
     #[serde(default)]
     pub outstanding_messages_count: usize,
     #[serde(default)]
     pub parked_message_count: usize,
+    #[serde(default)]
+    pub count_since_last_measurement: usize,
+    #[serde(default)]
+    pub connections: Vec<PersistentSubscriptionConnectionInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PersistentSubscriptionInfo<A> {
+    pub event_source: String,
+    pub group_name: String,
+    pub status: String,
+    pub connections: Vec<PersistentSubscriptionConnectionInfo>,
+    pub settings: Option<PersistentSubscriptionSettings<A>>,
+    pub stats: PersistentSubscriptionStats,
+}
+
+#[derive(Debug, Clone)]
+pub enum RevisionOrPosition {
+    Revision(u64),
+    Position(Position),
+}
+
+impl serde::Serialize for RevisionOrPosition {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            RevisionOrPosition::Revision(rev) => serializer.serialize_u64(*rev),
+            RevisionOrPosition::Position(pos) => {
+                serializer.serialize_str(format!("C:{}/P:{}", pos.commit, pos.prepare).as_str())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistentSubscriptionStats {
+    pub average_per_second: f64,
+    pub total_items: usize,
+    pub count_since_last_measurement: usize,
+    pub last_checkpointed_event_revision: Option<u64>,
+    pub last_known_event_revision: Option<u64>,
+    pub last_checkpointed_position: Option<Position>,
+    pub last_known_position: Option<Position>,
+    pub read_buffer_count: usize,
+    pub live_buffer_count: usize,
+    pub retry_buffer_count: usize,
+    pub total_in_flight_messages: usize,
+    pub outstanding_messages_count: usize,
+    pub parked_message_count: usize,
+}
+
+impl Default for PersistentSubscriptionStats {
+    fn default() -> Self {
+        Self {
+            average_per_second: 0.0,
+            total_items: 0,
+            count_since_last_measurement: 0,
+            last_checkpointed_event_revision: None,
+            last_known_event_revision: None,
+            last_checkpointed_position: None,
+            last_known_position: None,
+            read_buffer_count: 0,
+            live_buffer_count: 0,
+            retry_buffer_count: 0,
+            total_in_flight_messages: 0,
+            outstanding_messages_count: 0,
+            parked_message_count: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistentSubscriptionConfig {
     pub resolve_linktos: bool,
-    pub start_from: i64,
+    pub start_from: StreamPosition<RevisionOrPosition>,
+    #[serde(default)]
+    pub start_position: String,
     pub message_timeout_milliseconds: i64,
     pub extra_statistics: bool,
     pub max_retry_count: i64,
@@ -1570,23 +1641,194 @@ pub struct PersistentSubscriptionConfig {
     pub named_consumer_strategy: SystemConsumerStrategy,
 }
 
+impl Serialize for StreamPosition<RevisionOrPosition> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            StreamPosition::Start => serializer.serialize_i64(0),
+            StreamPosition::Position(or) => match or {
+                RevisionOrPosition::Revision(rev) => serializer.serialize_u64(*rev),
+                RevisionOrPosition::Position(p) => serializer.serialize_str(p.to_string().as_str()),
+            },
+            StreamPosition::End => serializer.serialize_i64(-1),
+        }
+    }
+}
+
+struct PositionVisitor;
+
+impl<'de> serde::de::Visitor<'de> for PositionVisitor {
+    type Value = Position;
+
+    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+        write!(formatter, "Expected a transaction log position")
+    }
+
+    fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        if let Ok(v) = commands::parse_position(v) {
+            Ok(v)
+        } else {
+            Err(serde::de::Error::custom(format!(
+                "can't parse a transaction log position out of this: '{}'",
+                v,
+            )))
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Position {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(PositionVisitor)
+    }
+}
+
+impl Serialize for Position {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for StreamPosition<RevisionOrPosition> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(StreamRevOrPosVisitor)
+    }
+}
+
+struct StreamRevOrPosVisitor;
+
+impl<'de> serde::de::Visitor<'de> for StreamRevOrPosVisitor {
+    type Value = StreamPosition<RevisionOrPosition>;
+
+    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+        write!(
+            formatter,
+            "Expecting a revision number or a transaction log position"
+        )
+    }
+
+    fn visit_i64<E>(self, v: i64) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        if v == -1 {
+            return Ok(StreamPosition::End);
+        } else if v == 0 {
+            return Ok(StreamPosition::Start);
+        }
+
+        // This usecase should not happen.
+        Ok(StreamPosition::Position(RevisionOrPosition::Revision(
+            v as u64,
+        )))
+    }
+
+    fn visit_u64<E>(self, v: u64) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        if v == 0 {
+            return Ok(StreamPosition::Start);
+        }
+
+        Ok(StreamPosition::Position(RevisionOrPosition::Revision(v)))
+    }
+
+    fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        if let Ok(v) = commands::parse_stream_position(v) {
+            Ok(v)
+        } else {
+            Err(serde::de::Error::custom(format!(
+                "can't parse a revision or a position out of this: '{}'",
+                v,
+            )))
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PersistentSubscriptionConnectionInfo {
     pub from: String,
     pub username: String,
     pub average_items_per_second: f64,
-    pub total_items_processed: usize,
+    #[serde(rename = "totalItemsProcessed")]
+    pub total_items: usize,
     pub count_since_last_measurement: usize,
     pub available_slots: usize,
     pub in_flight_messages: usize,
     pub connection_name: String,
-    pub extra_statistics: Vec<PersistentSubscriptionMeasurement>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_measurements",
+        skip_serializing
+    )]
+    pub extra_statistics: PersistentSubscriptionMeasurements,
+}
+
+fn deserialize_measurements<'de, D>(
+    deserializer: D,
+) -> std::result::Result<PersistentSubscriptionMeasurements, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_seq(Measurements)
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PersistentSubscriptionMeasurements(pub(crate) HashMap<String, i64>);
+
+impl PersistentSubscriptionMeasurements {
+    pub fn entries(self) -> impl Iterator<Item = (String, i64)> {
+        self.0.into_iter()
+    }
+
+    pub fn get(&self, key: impl AsRef<str>) -> Option<i64> {
+        self.0.get(key.as_ref()).copied()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PersistentSubscriptionMeasurement {
-    pub key: String,
-    pub value: i64,
+struct KeyValue {
+    key: String,
+    value: i64,
+}
+
+struct Measurements;
+
+impl<'de> serde::de::Visitor<'de> for Measurements {
+    type Value = PersistentSubscriptionMeasurements;
+
+    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+        write!(formatter, "a list of key-values")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> std::result::Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut map = HashMap::new();
+        while let Some(obj) = seq.next_element::<KeyValue>()? {
+            map.insert(obj.key, obj.value);
+        }
+
+        Ok(PersistentSubscriptionMeasurements(map))
+    }
 }

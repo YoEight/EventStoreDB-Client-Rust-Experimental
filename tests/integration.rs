@@ -7,7 +7,7 @@ mod images;
 
 use eventstore::{
     Acl, Client, ClientSettings, EventData, ProjectionClient, StreamAclBuilder,
-    StreamMetadataBuilder, StreamMetadataResult,
+    StreamMetadataBuilder, StreamMetadataResult, StreamPosition,
 };
 use futures::channel::oneshot;
 use std::collections::HashMap;
@@ -374,11 +374,9 @@ async fn test_delete_persistent_subscription_to_all(
 async fn test_persistent_subscription(client: &Client) -> eventstore::Result<()> {
     let stream_id = fresh_stream_id("persistent_subscription");
     let events = generate_events("es6-persistent-subscription-test".to_string(), 5);
-    let options =
-        eventstore::PersistentSubscriptionOptions::default().deadline(Duration::from_secs(2));
 
     client
-        .create_persistent_subscription(stream_id.as_str(), "a_group_name", &options)
+        .create_persistent_subscription(stream_id.as_str(), "a_group_name", &Default::default())
         .await?;
 
     let _ = client
@@ -441,8 +439,7 @@ async fn test_persistent_subscription_to_all(
     let group_name = names.next().unwrap();
 
     let options = eventstore::PersistentSubscriptionToAllOptions::default()
-        .start_from(eventstore::StreamPosition::Start)
-        .deadline(Duration::from_secs(2));
+        .start_from(eventstore::StreamPosition::Start);
 
     client
         .create_persistent_subscription_to_all(group_name.as_str(), &options)
@@ -507,8 +504,8 @@ async fn test_list_persistent_subscriptions(
         .await?;
 
     for info in ps {
-        if expected_set.contains(info.event_stream_id.as_str()) {
-            actual_set.insert(info.event_stream_id);
+        if expected_set.contains(info.event_source.as_str()) {
+            actual_set.insert(info.event_source);
         }
     }
 
@@ -548,7 +545,7 @@ async fn test_list_persistent_subscriptions_for_stream(
         .await?;
 
     for info in ps {
-        if info.event_stream_id != stream_name {
+        if info.event_source != stream_name {
             continue;
         }
 
@@ -621,9 +618,12 @@ async fn test_get_persistent_subscription_info(
         )
         .await?;
 
-    assert_eq!(info.event_stream_id, stream_name);
+    assert_eq!(info.event_source, stream_name);
     assert_eq!(info.group_name, group_name);
-    assert!(info.config.is_some());
+
+    if let Some(setts) = info.settings {
+        assert_eq!(setts.start_from, StreamPosition::End);
+    }
 
     Ok(())
 }
@@ -643,7 +643,10 @@ async fn test_get_persistent_subscription_info_to_all(
         .await?;
 
     assert_eq!(info.group_name, group_name);
-    assert!(info.config.is_some());
+
+    if let Some(setts) = info.settings {
+        assert_eq!(setts.start_from, StreamPosition::End);
+    }
 
     Ok(())
 }
@@ -811,6 +814,10 @@ async fn test_persistent_subscription_encoding(
     let stream_name = format!("/{}/foo", names.next().unwrap());
     let group_name = format!("/{}/foo", names.next().unwrap());
 
+    debug!(
+        "encoding - before create_persistent_subscription: '{}' :: '{}'",
+        stream_name, group_name
+    );
     client
         .create_persistent_subscription(
             stream_name.as_str(),
@@ -818,6 +825,68 @@ async fn test_persistent_subscription_encoding(
             &Default::default(),
         )
         .await?;
+    debug!("encoding - after create_persistent_subscription");
+
+    debug!("encoding - before get_persistent_subscription_info");
+    let info = client
+        .get_persistent_subscription_info(
+            stream_name.as_str(),
+            group_name.as_str(),
+            &Default::default(),
+        )
+        .await?;
+
+    debug!("encoding - after get_persistent_subscription_info");
+    assert_eq!(info.event_source, stream_name);
+    assert_eq!(info.group_name, group_name);
+
+    Ok(())
+}
+
+async fn test_persistent_subscription_info_with_connection_details(
+    client: &Client,
+    names: &mut names::Generator<'_>,
+) -> eventstore::Result<()> {
+    let stream_name = names.next().unwrap();
+    let group_name = names.next().unwrap();
+
+    client
+        .create_persistent_subscription(
+            stream_name.as_str(),
+            group_name.as_str(),
+            &Default::default(),
+        )
+        .await?;
+
+    let mut sub = client
+        .subscribe_to_persistent_subscription(
+            stream_name.as_str(),
+            group_name.as_str(),
+            &Default::default(),
+        )
+        .await?;
+
+    let client2 = client.clone();
+    let stream_name_2 = stream_name.clone();
+    let _: tokio::task::JoinHandle<eventstore::Result<()>> = tokio::spawn(async move {
+        loop {
+            let event = generate_events("foobar", 1);
+            let _ = client2
+                .append_to_stream(stream_name_2.as_str(), &Default::default(), event)
+                .await?;
+
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    });
+
+    let _: tokio::task::JoinHandle<eventstore::Result<()>> = tokio::spawn(async move {
+        loop {
+            let event = sub.next().await?;
+            sub.ack(event).await?;
+        }
+    });
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     let info = client
         .get_persistent_subscription_info(
@@ -827,8 +896,9 @@ async fn test_persistent_subscription_encoding(
         )
         .await?;
 
-    assert_eq!(info.event_stream_id, stream_name);
+    assert_eq!(info.event_source, stream_name);
     assert_eq!(info.group_name, group_name);
+    assert_eq!(info.connections.is_empty(), false);
 
     Ok(())
 }
@@ -1257,11 +1327,11 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
         }?;
     }
     debug!("Complete");
-    debug!("Before test_restart_persistent_subscription_subsystem...");
-    test_restart_persistent_subscription_subsystem(&client).await?;
-    debug!("Complete");
     debug!("Before test_persistent_subscription_encoding...");
     test_persistent_subscription_encoding(&client, &mut name_generator).await?;
+    debug!("Complete");
+    debug!("Before test_persistent_subscription_info_with_connection_details...");
+    test_persistent_subscription_info_with_connection_details(&client, &mut name_generator).await?;
     debug!("Complete");
     debug!("Before test_batch_append");
     if let Err(e) = test_batch_append(&client).await {
@@ -1273,7 +1343,9 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
         }?;
     }
     debug!("Complete");
-
+    debug!("Before test_restart_persistent_subscription_subsystem...");
+    test_restart_persistent_subscription_subsystem(&client).await?;
+    debug!("Complete");
     Ok(())
 }
 
