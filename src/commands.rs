@@ -478,6 +478,12 @@ where
         metadata.insert("requires-leader", header_value);
     }
 
+    if let Some(conn_name) = settings.connection_name.as_ref() {
+        let header_value =
+            MetadataValue::from_str(conn_name.as_str()).expect("valid metadata header value");
+        metadata.insert("connection-name", header_value);
+    }
+
     metadata
 }
 
