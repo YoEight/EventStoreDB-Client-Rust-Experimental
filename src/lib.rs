@@ -77,10 +77,12 @@ pub(crate) mod google {
     }
 }
 
+pub use batch::*;
 pub use client::Client;
 pub use commands::{PersistentSubscription, ReadStream, Subscription};
 pub use grpc::{ClientSettings, ClientSettingsParseError};
 pub use options::append_to_stream::*;
+pub use options::batch_append::*;
 pub use options::delete_stream::*;
 pub use options::persistent_subscription::*;
 pub use options::projections::*;
@@ -94,10 +96,12 @@ pub use projection_client::*;
 pub use types::*;
 
 pub mod prelude {
+    pub use crate::batch::*;
     pub use crate::client::Client;
     pub use crate::commands::{PersistentSubscription, ReadStream, Subscription};
     pub use crate::grpc::{ClientSettings, ClientSettingsParseError};
     pub use crate::options::append_to_stream::*;
+    pub use crate::options::batch_append::*;
     pub use crate::options::delete_stream::*;
     pub use crate::options::persistent_subscription::*;
     pub use crate::options::projections::*;

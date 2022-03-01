@@ -45,6 +45,7 @@ pub(crate) enum OperationKind {
 // TODO - Use procedural macros instead. It will need a separate crate
 // though.
 #[macro_export]
+#[doc(hidden)]
 macro_rules! impl_options_trait {
     ($typ:ty $(,$kind:expr)?) => {
         impl crate::options::Options for $typ {
