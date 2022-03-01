@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - Apply gRPC deadlines RFC. [EventStoreDB-Client-Rust#126](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/126)
 - Default `NodePreference` to `Leader`. [EventStoreDB-Client-Rust#126](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/126)
 - Simplify `read_stream` and `read_all` API. [EventStoreDB-Client-Rust#123](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/123)
+- Apply new persistent subscription info data. [EventStoreDB-Client-Rust#131](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/131)
 
 ### Fixed
 - Fix automatic reconnection process for stream operations. [EventStoreDB-Client-Rust#56](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/56)
