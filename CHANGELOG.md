@@ -41,6 +41,7 @@ All notable changes to this project will be documented in this file.
 - Allow passing an external Tokio runtime when creating a new client. [EventStoreDB-Client-Rust#124](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/124)
 - Implement persistent subscription management gRPC API. [EventStoreDB-Client-Rust#122](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/122)
 - Added missing subscribe-to-persistent-subscription-to-all snippet [EventStoreDB-Client-Rust#129](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/129)
+- Support connection name connection setting. [EventStoreDB-Client-Rust#133](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/133)
 
 ## Previous versions
 1.0.0
