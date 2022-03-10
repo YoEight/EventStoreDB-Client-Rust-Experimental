@@ -6,4 +6,4 @@ pub struct BatchAppendOptions {
     pub(crate) common_operation_options: CommonOperationOptions,
 }
 
-impl_options_trait!(BatchAppendOptions);
+impl_options_trait!(BatchAppendOptions, super::OperationKind::Streaming);

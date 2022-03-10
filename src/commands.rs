@@ -1,7 +1,8 @@
 #![allow(clippy::large_enum_variant)]
 //! Commands this client supports.
 use futures::{Stream, StreamExt, TryStreamExt};
-use std::time::Duration;
+use std::ops::Add;
+use std::time::{Duration, SystemTime};
 
 use crate::event_store::client::{persistent, shared, streams};
 use crate::types::{
@@ -11,6 +12,7 @@ use crate::types::{
 
 use async_stream::try_stream;
 use persistent::persistent_subscriptions_client::PersistentSubscriptionsClient;
+use prost_types::Timestamp;
 use shared::{Empty, StreamIdentifier, Uuid};
 use streams::streams_client::StreamsClient;
 
@@ -627,7 +629,8 @@ pub async fn batch_append(
     let mut cloned_batch_sender = batch_sender.clone();
     let batch_client = BatchAppendClient::new(batch_sender, batch_receiver, forward);
 
-    let receiver = receiver.map(|req| {
+    let common_operation_options = options.common_operation_options.clone();
+    let receiver = receiver.map(move |req| {
         let correlation_id = shared::uuid::Value::String(req.id.to_string());
         let correlation_id = Some(Uuid {
             value: Some(correlation_id),
@@ -651,9 +654,19 @@ pub async fn batch_append(
             .map(convert_event_data_to_batch_proposed_message)
             .collect();
 
+        let deadline = common_operation_options
+            .deadline
+            .unwrap_or_else(|| Duration::from_secs(10));
+
+        let deadline = SystemTime::now().add(deadline);
+        let deadline = deadline.duration_since(SystemTime::UNIX_EPOCH).unwrap();
+
         let options = Some(Options {
             stream_identifier,
-            deadline: None,
+            deadline: Some(Timestamp {
+                seconds: deadline.as_secs() as i64,
+                nanos: deadline.subsec_nanos() as i32,
+            }),
             expected_stream_position,
         });
 
