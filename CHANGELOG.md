@@ -3,6 +3,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+[2.0.0] - 2022-03-01
 ### Changed
 - Rename StreamPosition::Point to StreamPosition::Position. [EventStoreDB-Client-Rust#76](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/76)
 - Migrate to Rust 2021 edition. [EventStoreDB-Client-Rust#94](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/94)
