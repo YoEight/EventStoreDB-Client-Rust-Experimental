@@ -1459,6 +1459,14 @@ impl Error {
             message: status.message().to_string(),
         }
     }
+
+    pub fn is_access_denied(&self) -> bool {
+        if let Error::AccessDenied = self {
+            return true;
+        }
+
+        false
+    }
 }
 
 #[derive(Error, Debug, Clone)]

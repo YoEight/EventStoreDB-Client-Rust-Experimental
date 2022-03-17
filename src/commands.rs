@@ -1216,7 +1216,7 @@ impl Subscription {
 
                         error!("Subscription dropped. cause: {}", e);
 
-                        if !self.retry_enabled {
+                        if e.is_access_denied() || !self.retry_enabled {
                             return Err(e);
                         }
                     }
@@ -1310,7 +1310,7 @@ impl Subscription {
 
                         handle_error(&self.connection.sender, self.channel_id, &e).await;
 
-                        if self.attempts < self.limit {
+                        if !e.is_access_denied() && self.attempts < self.limit {
                             error!(
                                 "Subscription: attempt ({}/{}) failure, cause: {}, retrying...",
                                 self.attempts, self.limit, e
@@ -1321,7 +1321,7 @@ impl Subscription {
                             continue;
                         }
 
-                        if self.retry_enabled {
+                        if !e.is_access_denied() && self.retry_enabled {
                             error!(
                                 "Subscription: maximum retry threshold reached, cause: {}",
                                 e
