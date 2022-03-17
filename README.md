@@ -1,9 +1,17 @@
 # EventStoreDB Rust Client
-![Crates.io](https://img.shields.io/crates/v/eventstore.svg)
-![Crates.io](https://img.shields.io/crates/d/eventstore.svg)
-![Github action CI workflow](https://github.com/EventStore/EventStoreDB-Client-Rust/workflows/CI/badge.svg?branch=master)
+[![Crates.io][crates-badge]][crates-url]
+[![Crates.io][crates-download]][crates-url]
+[![Build Status][ci-badge]][ci-url]
 ![Discord](https://img.shields.io/discord/415421715385155584.svg)
 ![Crates.io](https://img.shields.io/crates/l/eventstore.svg)
+
+[crates-badge]: https://img.shields.io/crates/v/eventstore.svg
+[crates-download]: https://img.shields.io/crates/d/eventstore.svg
+[crates-url]: https://crates.io/crates/eventstore
+[ci-badge]: https://github.com/EventStore/EventStoreDB-Client-Rust/workflows/CI/badge.svg
+[ci-url]: https://github.com/EventStore/EventStoreDB-Client-Rust/actions
+
+[Documentation](https://docs.rs/eventstore)
 
 Official Rust [EventStoreDB rust gRPC] gRPC Client.
 
