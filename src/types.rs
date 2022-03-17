@@ -1497,6 +1497,13 @@ impl SubscriptionFilter {
         temp
     }
 
+    pub fn exclude_system_events(self) -> Self {
+        Self {
+            regex: Some("^[^\\$].*".to_string()),
+            ..self
+        }
+    }
+
     pub fn max(self, max: u32) -> Self {
         SubscriptionFilter {
             max: Some(max),
