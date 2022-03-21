@@ -260,6 +260,30 @@ async fn test_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+async fn test_subscription_all_filter(client: &Client) -> Result<(), Box<dyn Error>> {
+    let filter = eventstore::SubscriptionFilter::on_event_type().exclude_system_events();
+    let options = eventstore::SubscribeToAllOptions::default()
+        .position(eventstore::StreamPosition::Start)
+        .filter(filter);
+
+    let mut sub = client.subscribe_to_all(&options).await;
+
+    match tokio::time::timeout(Duration::from_secs(60), async move {
+        let event = sub.next().await?;
+
+        assert!(!event.get_original_event().event_type.starts_with('$'));
+
+        Ok(()) as eventstore::Result<()>
+    })
+    .await
+    {
+        Ok(result) => assert!(result.is_ok()),
+        Err(e) => panic!("we are supposed to receive event from that subscription"),
+    };
+
+    Ok(())
+}
+
 async fn test_create_persistent_subscription(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("create_persistent_sub");
 
@@ -1217,6 +1241,9 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
     debug!("Complete");
     debug!("Before test_subscription…");
     test_subscription(&client).await?;
+    debug!("Complete");
+    debug!("Before test_subscription_all_filter…");
+    test_subscription_all_filter(&client).await?;
     debug!("Complete");
     debug!("Before test_create_persistent_subscription…");
     test_create_persistent_subscription(&client).await?;

@@ -23,7 +23,7 @@ type Result<A> = std::result::Result<A, Box<dyn Error>>;
 
 pub async fn exclude_system_events(client: &Client) -> Result<()> {
     // region exclude-system
-    let filter = SubscriptionFilter::on_event_type().regex("/^[^\\$].*/");
+    let filter = SubscriptionFilter::on_event_type().exclude_system_events();
     let options = SubscribeToAllOptions::default().filter(filter);
 
     let mut sub = client.subscribe_to_all(&options).await;
