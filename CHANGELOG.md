@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Disable default deadline for batch-append operation. [EventStoreDB-Client-Rust#134](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/134)
 - Fix system event exclusion regex. [EventStoreDB-Client-Rust#135](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/135)
+- Do not retry a subscription when facing an authentication error. [EventStoreDB-Client-Rust#136](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/136)
 
 ## [2.0.0] - 2022-03-01
 ### Changed
