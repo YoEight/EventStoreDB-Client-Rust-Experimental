@@ -6,7 +6,7 @@ use std::fmt::Formatter;
 use std::time::Duration;
 
 use crate::commands;
-use crate::gossip::VNodeState;
+use crate::operations::gossip::VNodeState;
 use bytes::Bytes;
 use serde::de::SeqAccess;
 use serde::{de::Visitor, ser::SerializeSeq};
@@ -1462,6 +1462,14 @@ impl Error {
 
     pub fn is_access_denied(&self) -> bool {
         if let Error::AccessDenied = self {
+            return true;
+        }
+
+        false
+    }
+
+    pub fn is_unsupported_feature(&self) -> bool {
+        if let Error::UnsupportedFeature = self {
             return true;
         }
 

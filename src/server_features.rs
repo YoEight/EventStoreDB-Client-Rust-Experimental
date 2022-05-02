@@ -18,17 +18,41 @@ bitflags! {
 }
 
 #[derive(Clone, Copy, Default, Debug)]
-pub(crate) struct ServerVersion {
+pub struct ServerVersion {
     pub(crate) major: usize,
     pub(crate) minor: usize,
     pub(crate) patch: usize,
 }
 
+impl ServerVersion {
+    pub fn major(&self) -> usize {
+        self.major
+    }
+
+    pub fn minor(&self) -> usize {
+        self.minor
+    }
+
+    pub fn patch(&self) -> usize {
+        self.patch
+    }
+}
+
 #[allow(unused)]
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct ServerInfo {
+pub struct ServerInfo {
     pub(crate) version: ServerVersion,
     pub(crate) features: Features,
+}
+
+impl ServerInfo {
+    pub fn version(&self) -> ServerVersion {
+        self.version
+    }
+
+    pub fn features(&self) -> Features {
+        self.features
+    }
 }
 
 pub(crate) async fn supported_methods(channel: Channel) -> Result<ServerInfo, Status> {

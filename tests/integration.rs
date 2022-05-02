@@ -6,7 +6,7 @@ extern crate serde_json;
 mod images;
 
 use eventstore::{
-    Acl, Client, ClientSettings, EventData, ProjectionClient, StreamAclBuilder,
+    operations, Acl, Client, ClientSettings, EventData, ProjectionClient, StreamAclBuilder,
     StreamMetadataBuilder, StreamMetadataResult, StreamPosition,
 };
 use futures::channel::oneshot;
@@ -35,6 +35,10 @@ fn generate_events<Type: AsRef<str>>(event_type: Type, cnt: usize) -> Vec<EventD
     }
 
     events
+}
+
+fn generate_login(names: &mut names::Generator<'_>) -> String {
+    names.next().unwrap().replace("-", "_")
 }
 
 async fn test_write_events(client: &Client) -> Result<(), Box<dyn Error>> {
@@ -892,7 +896,7 @@ async fn test_persistent_subscription_info_with_connection_details(
 
     let client2 = client.clone();
     let stream_name_2 = stream_name.clone();
-    let _: tokio::task::JoinHandle<eventstore::Result<()>> = tokio::spawn(async move {
+    let append_handle: tokio::task::JoinHandle<eventstore::Result<()>> = tokio::spawn(async move {
         loop {
             let event = generate_events("foobar", 1);
             let _ = client2
@@ -903,7 +907,7 @@ async fn test_persistent_subscription_info_with_connection_details(
         }
     });
 
-    let _: tokio::task::JoinHandle<eventstore::Result<()>> = tokio::spawn(async move {
+    let ack_handle: tokio::task::JoinHandle<eventstore::Result<()>> = tokio::spawn(async move {
         loop {
             let event = sub.next().await?;
             sub.ack(event).await?;
@@ -923,6 +927,9 @@ async fn test_persistent_subscription_info_with_connection_details(
     assert_eq!(info.event_source, stream_name);
     assert_eq!(info.group_name, group_name);
     assert_eq!(info.connections.is_empty(), false);
+
+    append_handle.abort();
+    ack_handle.abort();
 
     Ok(())
 }
@@ -992,12 +999,27 @@ fn create_unique_volume() -> Result<VolumeName, Box<dyn std::error::Error>> {
     Ok(dir_name)
 }
 
-async fn wait_node_is_alive(port: u16) -> Result<(), Box<dyn std::error::Error>> {
+async fn wait_node_is_alive(
+    setts: &eventstore::ClientSettings,
+    port: u16,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()?;
+
+    let protocol = if setts.is_secure_mode_enabled() {
+        "https"
+    } else {
+        "http"
+    };
+
     match tokio::time::timeout(std::time::Duration::from_secs(60), async move {
         loop {
             match tokio::time::timeout(
                 std::time::Duration::from_secs(1),
-                reqwest::get(format!("http://localhost:{}/health/live", port)),
+                client
+                    .get(format!("{}://localhost:{}/health/live", protocol, port))
+                    .send(),
             )
             .await
             {
@@ -1106,13 +1128,13 @@ async fn cluster() -> Result<(), Box<dyn std::error::Error>> {
     let settings = "esdb://admin:changeit@localhost:2111,localhost:2112,localhost:2113?tlsVerifyCert=false&nodePreference=leader&maxdiscoverattempts=50&defaultDeadline=60000"
         .parse::<ClientSettings>()?;
 
-    let client = Client::new(settings)?;
+    let client = Client::new(settings.clone())?;
 
     // Those pre-checks are put in place to avoid test flakiness. In essence, those functions use
     // features we test later on.
     wait_for_admin_to_be_available(&client).await?;
 
-    all_around_tests(client).await?;
+    all_around_tests(client, &settings).await?;
 
     Ok(())
 }
@@ -1121,20 +1143,34 @@ async fn cluster() -> Result<(), Box<dyn std::error::Error>> {
 async fn single_node() -> Result<(), Box<dyn std::error::Error>> {
     let _ = pretty_env_logger::try_init();
     let docker = Cli::default();
-    let image = images::ESDB::default().insecure_mode();
+    let secure_mode = if let Some("true") = std::option_env!("SECURE") {
+        true
+    } else {
+        false
+    };
+
+    let image = images::ESDB::default().secure_mode(secure_mode);
     let container = docker.run_with_args(image, RunArgs::default());
 
-    wait_node_is_alive(container.get_host_port(2_113).unwrap()).await?;
+    let settings = if secure_mode {
+        format!(
+            "esdb://admin:changeit@localhost:{}?defaultDeadline=60000&tlsVerifyCert=false",
+            container.get_host_port(2_113).unwrap(),
+        )
+        .parse::<ClientSettings>()
+    } else {
+        format!(
+            "esdb://localhost:{}?tls=false&defaultDeadline=60000",
+            container.get_host_port(2_113).unwrap(),
+        )
+        .parse::<ClientSettings>()
+    }?;
 
-    let settings = format!(
-        "esdb://localhost:{}?tls=false&defaultDeadline=60000",
-        container.get_host_port(2_113).unwrap(),
-    )
-    .parse::<ClientSettings>()?;
+    wait_node_is_alive(&settings, container.get_host_port(2_113).unwrap()).await?;
 
-    let client = Client::new(settings)?;
+    let client = Client::new(settings.clone())?;
 
-    all_around_tests(client).await?;
+    all_around_tests(client, &settings).await?;
 
     Ok(())
 }
@@ -1152,10 +1188,11 @@ async fn test_auto_resub_on_connection_drop() -> Result<(), Box<dyn std::error::
         RunArgs::default().with_mapped_port((3_113, 2_113)),
     );
 
-    wait_node_is_alive(3_113).await?;
-
     let settings = format!("esdb://localhost:{}?tls=false", 3_113).parse::<ClientSettings>()?;
 
+    wait_node_is_alive(&settings, 3_113).await?;
+
+    let cloned_setts = settings.clone();
     let client = Client::new(settings)?;
     let stream_name = fresh_stream_id("auto-reconnect");
     let retry = eventstore::RetryOptions::default().retry_forever();
@@ -1194,7 +1231,7 @@ async fn test_auto_resub_on_connection_drop() -> Result<(), Box<dyn std::error::
         RunArgs::default().with_mapped_port((3_113, 2_113)),
     );
 
-    wait_node_is_alive(3_113).await?;
+    wait_node_is_alive(&cloned_setts, 3_113).await?;
 
     let events = generate_events("reconnect".to_string(), 3);
 
@@ -1212,7 +1249,320 @@ async fn test_auto_resub_on_connection_drop() -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
-async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Error>> {
+async fn test_gossip(client: &operations::Client) -> eventstore::Result<()> {
+    let gossip = client.read_gossip().await?;
+
+    assert!(gossip.len() > 0);
+
+    Ok(())
+}
+
+async fn test_stats(client: &operations::Client) -> eventstore::Result<()> {
+    let mut stream = client
+        .stats(Duration::from_millis(500), true, &Default::default())
+        .await?;
+    let result = stream.next().await?;
+
+    assert!(result.is_some());
+
+    let result = result.unwrap();
+
+    assert!(result.len() > 0);
+    Ok(())
+}
+
+async fn test_create_user(
+    client: &operations::Client,
+    names: &mut names::Generator<'_>,
+) -> eventstore::Result<()> {
+    client
+        .create_user(
+            generate_login(names),
+            names.next().unwrap(),
+            names.next().unwrap(),
+            Vec::new(),
+            &Default::default(),
+        )
+        .await?;
+
+    Ok(())
+}
+
+async fn test_update_user(
+    client: &operations::Client,
+    names: &mut names::Generator<'_>,
+) -> eventstore::Result<()> {
+    let login = generate_login(names);
+
+    client
+        .create_user(
+            login.as_str(),
+            names.next().unwrap(),
+            names.next().unwrap(),
+            Vec::new(),
+            &Default::default(),
+        )
+        .await?;
+
+    client
+        .update_user(
+            login.as_str(),
+            names.next().unwrap(),
+            names.next().unwrap(),
+            Vec::new(),
+            &Default::default(),
+        )
+        .await?;
+
+    Ok(())
+}
+
+async fn test_delete_user(
+    client: &operations::Client,
+    names: &mut names::Generator<'_>,
+) -> eventstore::Result<()> {
+    let login = generate_login(names);
+
+    client
+        .create_user(
+            login.as_str(),
+            names.next().unwrap(),
+            names.next().unwrap(),
+            Vec::new(),
+            &Default::default(),
+        )
+        .await?;
+
+    client
+        .delete_user(login.as_str(), &Default::default())
+        .await?;
+
+    Ok(())
+}
+
+async fn test_enable_user(
+    client: &operations::Client,
+    names: &mut names::Generator<'_>,
+) -> eventstore::Result<()> {
+    let login = generate_login(names);
+
+    client
+        .create_user(
+            login.as_str(),
+            names.next().unwrap(),
+            names.next().unwrap(),
+            Vec::new(),
+            &Default::default(),
+        )
+        .await?;
+
+    client
+        .enable_user(login.as_str(), &Default::default())
+        .await?;
+
+    Ok(())
+}
+
+async fn test_disable_user(
+    client: &operations::Client,
+    names: &mut names::Generator<'_>,
+) -> eventstore::Result<()> {
+    let login = generate_login(names);
+
+    client
+        .create_user(
+            login.as_str(),
+            names.next().unwrap(),
+            names.next().unwrap(),
+            Vec::new(),
+            &Default::default(),
+        )
+        .await?;
+
+    client
+        .enable_user(login.as_str(), &Default::default())
+        .await?;
+
+    client
+        .disable_user(login.as_str(), &Default::default())
+        .await?;
+
+    Ok(())
+}
+
+async fn test_user_details(
+    client: &operations::Client,
+    names: &mut names::Generator<'_>,
+) -> eventstore::Result<()> {
+    let login = generate_login(names);
+
+    client
+        .create_user(
+            login.as_str(),
+            names.next().unwrap(),
+            names.next().unwrap(),
+            Vec::new(),
+            &Default::default(),
+        )
+        .await?;
+
+    let result = client
+        .user_details(login.as_str(), &Default::default())
+        .await;
+
+    assert!(result.is_ok());
+
+    Ok(())
+}
+
+async fn test_change_user_password(
+    client: &operations::Client,
+    names: &mut names::Generator<'_>,
+) -> eventstore::Result<()> {
+    let login = generate_login(names);
+    let password = names.next().unwrap();
+
+    client
+        .create_user(
+            login.as_str(),
+            password.as_str(),
+            names.next().unwrap(),
+            Vec::new(),
+            &Default::default(),
+        )
+        .await?;
+
+    client
+        .change_user_password(
+            login.as_str(),
+            password,
+            names.next().unwrap(),
+            &Default::default(),
+        )
+        .await?;
+
+    Ok(())
+}
+
+async fn test_reset_user_password(
+    client: &operations::Client,
+    names: &mut names::Generator<'_>,
+) -> eventstore::Result<()> {
+    let login = generate_login(names);
+
+    client
+        .create_user(
+            login.as_str(),
+            names.next().unwrap(),
+            names.next().unwrap(),
+            Vec::new(),
+            &Default::default(),
+        )
+        .await?;
+
+    client
+        .reset_user_password(login.as_str(), names.next().unwrap(), &Default::default())
+        .await?;
+
+    Ok(())
+}
+
+async fn test_merge_indexes(client: &operations::Client) -> eventstore::Result<()> {
+    client.merge_indexes(&Default::default()).await
+}
+
+async fn test_resign_node(client: &operations::Client) -> eventstore::Result<()> {
+    client.resign_node(&Default::default()).await
+}
+
+async fn test_set_node_priority(client: &operations::Client) -> eventstore::Result<()> {
+    client.set_node_priority(1, &Default::default()).await
+}
+
+async fn test_op_restart_persistent_subscription_subsystem(
+    client: &operations::Client,
+) -> eventstore::Result<()> {
+    client
+        .restart_persistent_subscriptions(&Default::default())
+        .await
+}
+
+async fn test_scavenge(client: &operations::Client) -> eventstore::Result<()> {
+    let result = client.start_scavenge(1, 0, &Default::default()).await?;
+    let result = client.stop_scavenge(result.id(), &Default::default()).await;
+
+    assert!(result.is_ok());
+
+    Ok(())
+}
+
+async fn test_shutdown(client: &operations::Client) -> eventstore::Result<()> {
+    client.shutdown(&Default::default()).await
+}
+
+async fn operations_tests(
+    client: &operations::Client,
+    gen: &mut names::Generator<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    debug!("Before test_gossip…");
+    test_gossip(client).await?;
+    debug!("Complete");
+    debug!("Before test_stats…");
+    if let Err(e) = test_stats(client).await {
+        if !e.is_unsupported_feature() {
+            Err(e)?;
+        }
+    }
+    debug!("Complete");
+    debug!("Before test_create_user…");
+    test_create_user(client, gen).await?;
+    debug!("Complete");
+    debug!("Before test_update_user…");
+    test_update_user(client, gen).await?;
+    debug!("Complete");
+    debug!("Before test_delete_user…");
+    test_delete_user(client, gen).await?;
+    debug!("Complete");
+    debug!("Before test_enable_user…");
+    test_enable_user(client, gen).await?;
+    debug!("Complete");
+    debug!("Before test_disable_user…");
+    test_disable_user(client, gen).await?;
+    debug!("Complete");
+    debug!("Before test_user_details…");
+    test_user_details(client, gen).await?;
+    debug!("Complete");
+    debug!("Before test_change_user_password…");
+    test_change_user_password(client, gen).await?;
+    debug!("Complete");
+    debug!("Before test_reset_user_password…");
+    test_reset_user_password(client, gen).await?;
+    debug!("Complete");
+    debug!("Before test_merge_indexes…");
+    test_merge_indexes(client).await?;
+    debug!("Complete");
+    debug!("Before test_resign_node…");
+    test_resign_node(client).await?;
+    debug!("Complete");
+    debug!("Before test_set_node_priority…");
+    test_set_node_priority(client).await?;
+    debug!("Complete");
+    debug!("Before test_op_restart_persistent_subscription_subsystem…");
+    test_op_restart_persistent_subscription_subsystem(client).await?;
+    debug!("Complete");
+    debug!("Before test_scavenge…");
+    test_scavenge(client).await?;
+    debug!("Complete");
+    debug!("Before test_shutdown…");
+    test_shutdown(client).await?;
+    debug!("Complete");
+    Ok(())
+}
+
+async fn all_around_tests(
+    client: Client,
+    setts: &ClientSettings,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut name_generator = names::Generator::default();
 
     debug!("Before test_write_events…");
@@ -1373,6 +1723,14 @@ async fn all_around_tests(client: Client) -> Result<(), Box<dyn std::error::Erro
     debug!("Before test_restart_persistent_subscription_subsystem...");
     test_restart_persistent_subscription_subsystem(&client).await?;
     debug!("Complete");
+
+    if setts.is_secure_mode_enabled() {
+        debug!("Start operational tests");
+        let op_client = client.into();
+        operations_tests(&op_client, &mut name_generator).await?;
+        debug!("completed");
+    }
+
     Ok(())
 }
 
@@ -1744,13 +2102,13 @@ async fn projection_tests() -> Result<(), Box<dyn std::error::Error>> {
     let image = images::ESDB::default().insecure_mode().enable_projections();
     let container = docker.run_with_args(image, RunArgs::default());
 
-    wait_node_is_alive(container.get_host_port(2_113).unwrap()).await?;
-
     let settings = format!(
         "esdb://localhost:{}?tls=false",
         container.get_host_port(2_113).unwrap(),
     )
     .parse::<ClientSettings>()?;
+
+    wait_node_is_alive(&settings, container.get_host_port(2_113).unwrap()).await?;
 
     let client = ProjectionClient::new(settings.clone());
     let stream_client = Client::new(settings)?;

@@ -1,4 +1,4 @@
-use crate::gossip::{Gossip, MemberInfo, VNodeState};
+use crate::operations::gossip::{self, MemberInfo, VNodeState};
 use crate::server_features::{Features, ServerInfo};
 use crate::types::{Endpoint, GrpcConnectionError};
 use crate::{Credentials, DnsClusterSettings, NodePreference};
@@ -1198,11 +1198,9 @@ async fn node_selection(
     for candidate in candidates {
         match new_channel(conn_setts, tls_config.clone(), &candidate).await {
             Ok(channel) => {
-                let gossip_client = Gossip::create(channel.clone());
-
                 debug!("Calling gossip endpoint on: {:?}", candidate);
                 if let Ok(result) =
-                    tokio::time::timeout(conn_setts.gossip_timeout, gossip_client.read()).await
+                    tokio::time::timeout(conn_setts.gossip_timeout, gossip::read(channel)).await
                 {
                     match result {
                         Ok(members_info) => {
@@ -1359,7 +1357,7 @@ fn determine_best_node(
 #[cfg(test)]
 mod node_selection_tests {
     use crate::{
-        gossip::{MemberInfo, VNodeState},
+        operations::gossip::{MemberInfo, VNodeState},
         Endpoint, NodePreference,
     };
     use rand::{rngs::SmallRng, RngCore, SeedableRng};
@@ -1399,6 +1397,14 @@ mod node_selection_tests {
                 host: "localhost".to_string(),
                 port: rng.next_u32(),
             },
+
+            last_commit_position: 0,
+            writer_checkpoint: 0,
+            chaser_checkpoint: 0,
+            epoch_position: 0,
+            epoch_number: 0,
+            epoch_id: Default::default(),
+            node_priority: 0,
         });
 
         members.push(MemberInfo {
@@ -1410,6 +1416,13 @@ mod node_selection_tests {
                 host: "localhost".to_string(),
                 port: rng.next_u32(),
             },
+            last_commit_position: 0,
+            writer_checkpoint: 0,
+            chaser_checkpoint: 0,
+            epoch_position: 0,
+            epoch_number: 0,
+            epoch_id: Default::default(),
+            node_priority: 0,
         });
 
         members.push(MemberInfo {
@@ -1421,6 +1434,13 @@ mod node_selection_tests {
                 host: "localhost".to_string(),
                 port: rng.next_u32(),
             },
+            last_commit_position: 0,
+            writer_checkpoint: 0,
+            chaser_checkpoint: 0,
+            epoch_position: 0,
+            epoch_number: 0,
+            epoch_id: Default::default(),
+            node_priority: 0,
         });
 
         members.push(MemberInfo {
@@ -1432,6 +1452,13 @@ mod node_selection_tests {
                 host: "localhost".to_string(),
                 port: rng.next_u32(),
             },
+            last_commit_position: 0,
+            writer_checkpoint: 0,
+            chaser_checkpoint: 0,
+            epoch_position: 0,
+            epoch_number: 0,
+            epoch_id: Default::default(),
+            node_priority: 0,
         });
 
         members.push(MemberInfo {
@@ -1443,6 +1470,13 @@ mod node_selection_tests {
                 host: "localhost".to_string(),
                 port: rng.next_u32(),
             },
+            last_commit_position: 0,
+            writer_checkpoint: 0,
+            chaser_checkpoint: 0,
+            epoch_position: 0,
+            epoch_number: 0,
+            epoch_id: Default::default(),
+            node_priority: 0,
         });
 
         let opt1 = super::determine_best_node(&mut rng, pref, members.as_slice());

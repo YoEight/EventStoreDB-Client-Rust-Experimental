@@ -38,6 +38,39 @@ impl ESDB {
         self
     }
 
+    pub fn secure_mode(mut self, is_secure: bool) -> Self {
+        if is_secure {
+            self.verify_certificates_exist().unwrap();
+
+            self.env_vars.insert(
+                "EVENTSTORE_CERTIFICATE_FILE".to_string(),
+                "/etc/eventstore/certs/node/node.crt".to_string(),
+            );
+
+            self.env_vars.insert(
+                "EVENTSTORE_CERTIFICATE_PRIVATE_KEY_FILE".to_string(),
+                "/etc/eventstore/certs/node/node.key".to_string(),
+            );
+
+            self.env_vars.insert(
+                "EVENTSTORE_TRUSTED_ROOT_CERTIFICATES_PATH".to_string(),
+                "/etc/eventstore/certs/ca".to_string(),
+            );
+
+            let mut certs = std::env::current_dir().unwrap();
+            certs.push("certs");
+
+            self.vol_vars.insert(
+                certs.as_path().display().to_string(),
+                "/etc/eventstore/certs".to_string(),
+            );
+
+            self
+        } else {
+            self.insecure_mode()
+        }
+    }
+
     pub fn enable_projections(mut self) -> Self {
         self.env_vars
             .insert("EVENTSTORE_RUN_PROJECTIONS".to_string(), "all".to_string());
@@ -54,6 +87,32 @@ impl ESDB {
             .insert(volume, "/var/lib/eventstore".to_string());
 
         self
+    }
+
+    fn verify_certificates_exist(&self) -> std::io::Result<()> {
+        let mut root_dir = std::env::current_dir()?;
+        let certs = &[
+            ["ca", "ca.crt"],
+            ["ca", "ca.key"],
+            ["node", "node.crt"],
+            ["node", "node.key"],
+        ];
+
+        root_dir.push("certs");
+
+        for paths in certs {
+            let mut tmp = root_dir.clone();
+
+            for path in paths {
+                tmp.push(path);
+            }
+
+            if !tmp.as_path().exists() {
+                panic!("certificates directory is not configured properly, please run 'docker-compose --file configure-tls-for-tests.yml up'");
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -91,10 +150,17 @@ impl Image for ESDB {
 impl Default for ESDB {
     fn default() -> Self {
         let tag = option_env!("CONTAINER_IMAGE_VERSION").unwrap_or(DEFAULT_TAG);
+        let mut env_vars = HashMap::new();
+
+        env_vars.insert(
+            "EVENTSTORE_GOSSIP_ON_SINGLE_NODE".to_string(),
+            "true".to_string(),
+        );
+
         ESDB {
             tag: tag.to_string(),
             arguments: ESDBArgs::default(),
-            env_vars: HashMap::new(),
+            env_vars,
             vol_vars: HashMap::new(),
         }
     }
