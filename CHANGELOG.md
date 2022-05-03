@@ -3,6 +3,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.0] - 2022-05-03
 ### Added
 - Implement Operations client. [EventStoreDB-Client-Rust#139](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/139)
 
