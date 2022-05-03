@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Implement Operations client. [EventStoreDB-Client-Rust#139](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/139)
+
 ## [2.0.1] - 2022-04-03
 ### Fixed
 - Disable default deadline for batch-append operation. [EventStoreDB-Client-Rust#134](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/134)
