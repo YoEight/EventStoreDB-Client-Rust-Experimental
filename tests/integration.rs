@@ -5,6 +5,7 @@ extern crate serde_json;
 
 mod images;
 
+use eventstore::operations::StatsOptions;
 use eventstore::{
     operations, Acl, Client, ClientSettings, EventData, ProjectionClient, StreamAclBuilder,
     StreamMetadataBuilder, StreamMetadataResult, StreamPosition,
@@ -1258,9 +1259,11 @@ async fn test_gossip(client: &operations::Client) -> eventstore::Result<()> {
 }
 
 async fn test_stats(client: &operations::Client) -> eventstore::Result<()> {
-    let mut stream = client
-        .stats(Duration::from_millis(500), true, &Default::default())
-        .await?;
+    let options = StatsOptions::default()
+        .use_metadata(true)
+        .refresh_time(Duration::from_millis(500));
+
+    let mut stream = client.stats(&options).await?;
     let result = stream.next().await?;
 
     assert!(result.is_some());

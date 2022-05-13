@@ -25,6 +25,40 @@ pub struct OperationalOptions {
 
 crate::impl_options_trait!(OperationalOptions);
 
+pub struct StatsOptions {
+    pub(crate) common_operation_options: crate::options::CommonOperationOptions,
+    pub(crate) refresh_time: Duration,
+    pub(crate) use_metadata: bool,
+}
+
+impl Default for StatsOptions {
+    fn default() -> StatsOptions {
+        StatsOptions {
+            common_operation_options: Default::default(),
+            refresh_time: Duration::from_secs(1),
+            use_metadata: false,
+        }
+    }
+}
+
+impl StatsOptions {
+    pub fn refresh_time(self, value: Duration) -> Self {
+        Self {
+            refresh_time: value,
+            ..self
+        }
+    }
+
+    pub fn use_metadata(self, value: bool) -> Self {
+        Self {
+            use_metadata: value,
+            ..self
+        }
+    }
+}
+
+crate::impl_options_trait!(StatsOptions, crate::options::OperationKind::Streaming);
+
 impl Client {
     pub fn new(setts: ClientSettings) -> Self {
         let inner = crate::grpc::GrpcClient::create(tokio::runtime::Handle::current(), setts);
@@ -48,17 +82,12 @@ impl Client {
             .map_err(|e| crate::Error::IllegalStateError(e.to_string()))
     }
 
-    pub async fn stats(
-        &self,
-        refresh_time: Duration,
-        use_metadata: bool,
-        options: &OperationalOptions,
-    ) -> crate::Result<Stats> {
+    pub async fn stats(&self, options: &StatsOptions) -> crate::Result<Stats> {
         let handle = self.inner.current_selected_node().await?;
 
         let req = monitoring::StatsReq {
-            use_metadata,
-            refresh_time_period_in_ms: refresh_time.as_millis() as u64,
+            use_metadata: options.use_metadata,
+            refresh_time_period_in_ms: options.refresh_time.as_millis() as u64,
         };
 
         let req = crate::commands::new_request(self.inner.connection_settings(), options, req);
