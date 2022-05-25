@@ -8,6 +8,7 @@ use std::time::Duration;
 use crate::commands;
 use crate::operations::gossip::VNodeState;
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use serde::de::SeqAccess;
 use serde::{de::Visitor, ser::SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -259,6 +260,9 @@ pub struct RecordedEvent {
 
     /// An event position in the $all stream.
     pub position: Position,
+
+    /// When the event was created in the database.
+    pub created: DateTime<Utc>,
 }
 
 impl RecordedEvent {
