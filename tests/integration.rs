@@ -5,6 +5,7 @@ extern crate serde_json;
 
 mod images;
 
+use chrono::{Datelike, Utc};
 use eventstore::operations::StatsOptions;
 use eventstore::{
     operations, Acl, Client, ClientSettings, EventData, ProjectionClient, StreamAclBuilder,
@@ -52,6 +53,29 @@ async fn test_write_events(client: &Client) -> Result<(), Box<dyn Error>> {
 
     debug!("Write response: {:?}", result);
     assert_eq!(result.next_expected_version, 2);
+
+    Ok(())
+}
+
+async fn test_tick_date_conversion(client: &Client) -> Result<(), Box<dyn Error>> {
+    let stream_id = fresh_stream_id("ticks_date");
+    let events = generate_events("about_date_stuff", 1);
+
+    client
+        .append_to_stream(stream_id.as_str(), &Default::default(), events)
+        .await?;
+
+    let mut stream = client
+        .read_stream(stream_id.as_str(), &Default::default())
+        .await?;
+
+    let event = stream.next().await?.unwrap();
+    let now = Utc::now();
+    let created = event.get_original_event().created;
+
+    assert_eq!(now.day(), created.day());
+    assert_eq!(now.year(), created.year());
+    assert_eq!(now.month(), created.month());
 
     Ok(())
 }
@@ -1570,6 +1594,9 @@ async fn all_around_tests(
 
     debug!("Before test_write_events…");
     test_write_events(&client).await?;
+    debug!("Complete");
+    debug!("Before test_tick_date_conversion…");
+    test_tick_date_conversion(&client).await?;
     debug!("Complete");
     debug!("Before test_all_read_stream_events…");
     test_read_all_stream_events(&client).await?;

@@ -11,6 +11,7 @@ use crate::types::{
 };
 
 use async_stream::try_stream;
+use chrono::{DateTime, Utc};
 use persistent::persistent_subscriptions_client::PersistentSubscriptionsClient;
 use prost_types::Timestamp;
 use shared::{Empty, StreamIdentifier, Uuid};
@@ -127,6 +128,17 @@ fn convert_proto_recorded_event(
         "<no-event-type-provided>".to_string()
     };
 
+    let created: DateTime<Utc> = if let Some(ticks_since_epoch) = event.metadata.get("created") {
+        let ticks_since_epoch = ticks_since_epoch.parse::<u64>().unwrap_or(0);
+        let secs_since_epoch = ticks_since_epoch / 10_000_000;
+
+        SystemTime::UNIX_EPOCH
+            .add(Duration::from_secs(secs_since_epoch))
+            .into()
+    } else {
+        SystemTime::UNIX_EPOCH.into()
+    };
+
     let is_json = if let Some(content_type) = event.metadata.get("content-type") {
         matches!(content_type.as_str(), "application/json")
     } else {
@@ -147,6 +159,7 @@ fn convert_proto_recorded_event(
         position,
         event_type,
         is_json,
+        created,
         metadata: event.metadata,
         custom_metadata: event.custom_metadata.into(),
         data: event.data.into(),
@@ -172,6 +185,17 @@ fn convert_persistent_proto_recorded_event(
         "<no-event-type-provided>".to_owned()
     };
 
+    let created: DateTime<Utc> = if let Some(ticks_since_epoch) = event.metadata.get("created") {
+        let ticks_since_epoch = ticks_since_epoch.parse::<u64>().unwrap_or(0);
+        let secs_since_epoch = ticks_since_epoch / 10_000_000;
+
+        SystemTime::UNIX_EPOCH
+            .add(Duration::from_secs(secs_since_epoch))
+            .into()
+    } else {
+        SystemTime::UNIX_EPOCH.into()
+    };
+
     let is_json = if let Some(content_type) = event.metadata.get("content-type") {
         matches!(content_type.as_str(), "application/json")
     } else {
@@ -193,6 +217,7 @@ fn convert_persistent_proto_recorded_event(
         position,
         event_type,
         is_json,
+        created,
         metadata: event.metadata,
         custom_metadata: event.custom_metadata.into(),
         data: event.data.into(),
