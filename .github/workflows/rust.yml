@@ -25,7 +25,7 @@ jobs:
         rustup update
         rustup default ${{ matrix.rust }}
     - name: Build
-      run: cargo check
+      run: cargo check --all-targets
       continue-on-error: ${{ matrix.rust == 'nightly' }}
 
   tests_single_node:

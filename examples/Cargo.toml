@@ -1,0 +1,41 @@
+[package]
+name = "examples"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[dev-dependencies]
+eventstore = { path = "../eventstore" }
+futures = "0.3"
+uuid = { version  = "0.8", features = [ "v4", "serde" ] }
+serde = "1"
+
+[[example]]
+name = "appending_events"
+path = "appending_events.rs"
+crate-type = ["staticlib"]
+
+[[example]]
+name = "quickstart"
+path = "quickstart.rs"
+crate-type = ["staticlib"]
+
+[[example]]
+name = "reading_events"
+path = "reading_events.rs"
+crate-type = ["staticlib"]
+
+[[example]]
+name = "server_side_filtering"
+path = "server_side_filtering.rs"
+crate-type = ["staticlib"]
+
+[[example]]
+name = "subscribing_to_stream"
+path = "subscribing_to_stream.rs"
+crate-type = ["staticlib"]
+
+[[example]]
+name = "persistent_subscriptions"
+path = "persistent_subscriptions.rs"
+crate-type = ["staticlib"]
