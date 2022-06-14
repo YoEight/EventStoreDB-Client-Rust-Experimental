@@ -6,7 +6,7 @@ use crate::event_store::generated::monitoring;
 use crate::event_store::generated::operations;
 use crate::event_store::generated::users;
 use crate::event_store::generated::Empty;
-use crate::ClientSettings;
+use crate::{ClientSettings, Endpoint};
 
 pub(crate) mod gossip;
 
@@ -28,7 +28,6 @@ crate::impl_options_trait!(OperationalOptions);
 pub struct StatsOptions {
     pub(crate) common_operation_options: crate::options::CommonOperationOptions,
     pub(crate) refresh_time: Duration,
-    pub(crate) use_metadata: bool,
 }
 
 impl Default for StatsOptions {
@@ -36,7 +35,6 @@ impl Default for StatsOptions {
         StatsOptions {
             common_operation_options: Default::default(),
             refresh_time: Duration::from_secs(1),
-            use_metadata: false,
         }
     }
 }
@@ -45,13 +43,6 @@ impl StatsOptions {
     pub fn refresh_time(self, value: Duration) -> Self {
         Self {
             refresh_time: value,
-            ..self
-        }
-    }
-
-    pub fn use_metadata(self, value: bool) -> Self {
-        Self {
-            use_metadata: value,
             ..self
         }
     }
@@ -65,10 +56,20 @@ impl Client {
         Self { inner }
     }
 
+    pub async fn current_selected_node(&self) -> crate::Result<Endpoint> {
+        let handle = self.inner.current_selected_node().await?;
+
+        Ok(handle.endpoint)
+    }
+
     pub async fn server_version(&self) -> crate::Result<Option<ServerInfo>> {
         let handle = self.inner.current_selected_node().await?;
 
         Ok(handle.server_info)
+    }
+
+    pub fn settings(&self) -> &ClientSettings {
+        self.inner.connection_settings()
     }
 
     pub async fn read_gossip(&self) -> crate::Result<Vec<gossip::MemberInfo>> {
@@ -86,7 +87,9 @@ impl Client {
         let handle = self.inner.current_selected_node().await?;
 
         let req = monitoring::StatsReq {
-            use_metadata: options.use_metadata,
+            // Using the metadata messes the parsing for no benefit. It only provides value in the UI, it's
+            // better to have all the metrics flattened with only strings.
+            use_metadata: false,
             refresh_time_period_in_ms: options.refresh_time.as_millis() as u64,
         };
 
@@ -453,19 +456,32 @@ impl From<crate::Client> for Client {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct RawStatistics(pub HashMap<String, String>);
+
 pub struct Stats {
     inner: tonic::Streaming<monitoring::StatsResp>,
 }
 
+impl From<HashMap<String, String>> for RawStatistics {
+    fn from(value: HashMap<String, String>) -> Self {
+        RawStatistics(value)
+    }
+}
+
 impl Stats {
-    pub async fn next(&mut self) -> crate::Result<Option<HashMap<String, String>>> {
+    pub async fn next(&mut self) -> crate::Result<RawStatistics> {
         let result = self
             .inner
             .try_next()
             .await
             .map_err(crate::Error::from_grpc)?;
 
-        Ok(result.map(|resp| resp.stats))
+        if let Some(resp) = result {
+            Ok(resp.stats.into())
+        } else {
+            Err(crate::Error::ResourceNotFound)
+        }
     }
 }
 

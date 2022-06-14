@@ -55,6 +55,10 @@ impl Client {
         })
     }
 
+    pub fn settings(&self) -> &ClientSettings {
+        self.client.connection_settings()
+    }
+
     /// Sends events to a given stream.
     pub async fn append_to_stream<Events>(
         &self,

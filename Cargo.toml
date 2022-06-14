@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "eventstore",
+    "eventstore-extras",
 
     # internals
     "examples"
