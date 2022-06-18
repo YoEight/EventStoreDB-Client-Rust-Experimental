@@ -1,13 +1,15 @@
-use crate::options::CommonOperationOptions;
-use crate::{impl_options_trait, Position, ReadDirection, StreamPosition};
+use crate::{Position, ReadDirection, StreamPosition};
+use eventstore_macros::{options, streaming};
 
-#[derive(Clone)]
-pub struct ReadAllOptions {
-    pub(crate) direction: ReadDirection,
-    pub(crate) position: StreamPosition<Position>,
-    pub(crate) resolve_link_tos: bool,
-    pub(crate) common_operation_options: CommonOperationOptions,
-    pub(crate) max_count: usize,
+options! {
+    #[derive(Clone)]
+    #[streaming]
+    pub struct ReadAllOptions {
+        pub(crate) direction: ReadDirection,
+        pub(crate) position: StreamPosition<Position>,
+        pub(crate) resolve_link_tos: bool,
+        pub(crate) max_count: usize,
+    }
 }
 
 impl Default for ReadAllOptions {
@@ -21,8 +23,6 @@ impl Default for ReadAllOptions {
         }
     }
 }
-
-impl_options_trait!(ReadAllOptions, super::OperationKind::Streaming);
 
 impl ReadAllOptions {
     /// Asks the command to read forward (toward the end of the stream).

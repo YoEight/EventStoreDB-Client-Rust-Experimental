@@ -4,5 +4,6 @@ members = [
     "eventstore-extras",
 
     # internals
+    "eventstore-macros",
     "examples"
 ]

@@ -1,11 +1,12 @@
-use crate::options::CommonOperationOptions;
-use crate::{impl_options_trait, ExpectedRevision};
+use crate::ExpectedRevision;
+use eventstore_macros::options;
 
-#[derive(Clone)]
-/// Options of the delete stream command.
-pub struct DeleteStreamOptions {
-    pub(crate) version: ExpectedRevision,
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone)]
+    /// Options of the delete stream command.
+    pub struct DeleteStreamOptions {
+        pub(crate) version: ExpectedRevision,
+    }
 }
 
 impl Default for DeleteStreamOptions {
@@ -16,8 +17,6 @@ impl Default for DeleteStreamOptions {
         }
     }
 }
-
-impl_options_trait!(DeleteStreamOptions);
 
 impl DeleteStreamOptions {
     /// Asks the server to check that the stream receiving the event is at
