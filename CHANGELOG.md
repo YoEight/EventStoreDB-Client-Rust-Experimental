@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Add created date field in RecordedEvent struct. [EventStoreDB-Client-Rust#143](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/143)
 
+### Changed
+- Change project organization. [EventStoreDB-Client-Rust#145](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/145)
+
 ## [2.1.1] - 2022-05-14
 ### Fixed
 - Configure operations' stats request as streaming. [EventStoreDB-Client-Rust#141](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/141)
