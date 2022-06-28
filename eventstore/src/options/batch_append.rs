@@ -1,9 +1,7 @@
-use crate::impl_options_trait;
-use crate::options::CommonOperationOptions;
+use eventstore_macros::{options, streaming};
 
-#[derive(Clone, Default)]
-pub struct BatchAppendOptions {
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone, Default)]
+    #[streaming]
+    pub struct BatchAppendOptions {}
 }
-
-impl_options_trait!(BatchAppendOptions, super::OperationKind::Streaming);

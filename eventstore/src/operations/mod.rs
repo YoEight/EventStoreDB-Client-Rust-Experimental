@@ -1,3 +1,4 @@
+use eventstore_macros::{options, streaming};
 use futures::stream::TryStreamExt;
 use std::time::SystemTime;
 use std::{collections::HashMap, time::Duration};
@@ -18,16 +19,16 @@ pub struct Client {
     inner: crate::grpc::GrpcClient,
 }
 
-#[derive(Default)]
-pub struct OperationalOptions {
-    pub(crate) common_operation_options: crate::options::CommonOperationOptions,
+options! {
+    #[derive(Default)]
+    pub struct OperationalOptions {}
 }
 
-crate::impl_options_trait!(OperationalOptions);
-
-pub struct StatsOptions {
-    pub(crate) common_operation_options: crate::options::CommonOperationOptions,
-    pub(crate) refresh_time: Duration,
+options! {
+    #[streaming]
+    pub struct StatsOptions {
+        pub(crate) refresh_time: Duration,
+    }
 }
 
 impl Default for StatsOptions {
@@ -47,8 +48,6 @@ impl StatsOptions {
         }
     }
 }
-
-crate::impl_options_trait!(StatsOptions, crate::options::OperationKind::Streaming);
 
 impl Client {
     pub fn new(setts: ClientSettings) -> Self {

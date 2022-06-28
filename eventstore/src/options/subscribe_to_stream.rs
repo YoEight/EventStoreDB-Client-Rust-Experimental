@@ -1,13 +1,15 @@
 use crate::options::retry::RetryOptions;
-use crate::options::CommonOperationOptions;
-use crate::{impl_options_trait, StreamPosition};
+use crate::StreamPosition;
+use eventstore_macros::{options, streaming};
 
-#[derive(Clone)]
-pub struct SubscribeToStreamOptions {
-    pub(crate) position: StreamPosition<u64>,
-    pub(crate) resolve_link_tos: bool,
-    pub(crate) retry: Option<RetryOptions>,
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone)]
+    #[streaming]
+    pub struct SubscribeToStreamOptions {
+        pub(crate) position: StreamPosition<u64>,
+        pub(crate) resolve_link_tos: bool,
+        pub(crate) retry: Option<RetryOptions>,
+    }
 }
 
 impl Default for SubscribeToStreamOptions {
@@ -20,8 +22,6 @@ impl Default for SubscribeToStreamOptions {
         }
     }
 }
-
-impl_options_trait!(SubscribeToStreamOptions, super::OperationKind::Streaming);
 
 impl SubscribeToStreamOptions {
     /// For example, if a starting point of 50 is specified when a stream has

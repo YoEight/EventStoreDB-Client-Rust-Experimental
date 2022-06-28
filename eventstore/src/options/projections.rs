@@ -1,14 +1,12 @@
-use crate::impl_options_trait;
-use crate::options::CommonOperationOptions;
+use eventstore_macros::options;
 
-#[derive(Clone, Default)]
-pub struct CreateProjectionOptions {
-    pub(crate) track_emitted_streams: bool,
-    pub(crate) emit: bool,
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone, Default)]
+    pub struct CreateProjectionOptions {
+        pub(crate) track_emitted_streams: bool,
+        pub(crate) emit: bool,
+    }
 }
-
-impl_options_trait!(CreateProjectionOptions);
 
 impl CreateProjectionOptions {
     pub fn new() -> Self {
@@ -27,13 +25,12 @@ impl CreateProjectionOptions {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct UpdateProjectionOptions {
-    pub(crate) emit: Option<bool>,
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone, Default)]
+    pub struct UpdateProjectionOptions {
+        pub(crate) emit: Option<bool>,
+    }
 }
-
-impl_options_trait!(UpdateProjectionOptions);
 
 impl UpdateProjectionOptions {
     pub fn new() -> Self {
@@ -48,15 +45,14 @@ impl UpdateProjectionOptions {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct DeleteProjectionOptions {
-    pub(crate) delete_emitted_streams: bool,
-    pub(crate) delete_state_stream: bool,
-    pub(crate) delete_checkpoint_stream: bool,
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone, Default)]
+    pub struct DeleteProjectionOptions {
+        pub(crate) delete_emitted_streams: bool,
+        pub(crate) delete_state_stream: bool,
+        pub(crate) delete_checkpoint_stream: bool,
+    }
 }
-
-impl_options_trait!(DeleteProjectionOptions);
 
 impl DeleteProjectionOptions {
     pub fn new() -> Self {
@@ -85,13 +81,12 @@ impl DeleteProjectionOptions {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct GetStateProjectionOptions {
-    pub(crate) partition: String,
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone, Default)]
+    pub struct GetStateProjectionOptions {
+        pub(crate) partition: String,
+    }
 }
-
-impl_options_trait!(GetStateProjectionOptions);
 
 impl GetStateProjectionOptions {
     pub fn new() -> Self {
@@ -106,13 +101,12 @@ impl GetStateProjectionOptions {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct GetResultProjectionOptions {
-    pub(crate) partition: String,
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone, Default)]
+    pub struct GetResultProjectionOptions {
+        pub(crate) partition: String,
+    }
 }
-
-impl_options_trait!(GetResultProjectionOptions);
 
 impl GetResultProjectionOptions {
     pub fn new() -> Self {
@@ -127,9 +121,7 @@ impl GetResultProjectionOptions {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct GenericProjectionOptions {
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone, Default)]
+    pub struct GenericProjectionOptions {}
 }
-
-impl_options_trait!(GenericProjectionOptions);

@@ -1,14 +1,15 @@
 use crate::event_store::client::shared::Empty;
 use crate::event_store::client::streams::append_req::options::ExpectedStreamRevision;
-use crate::options::CommonOperationOptions;
 use crate::private::Sealed;
-use crate::{impl_options_trait, EventData, ExpectedRevision};
+use crate::{EventData, ExpectedRevision};
+use eventstore_macros::options;
 
-#[derive(Clone)]
-/// Options of the append to stream command.
-pub struct AppendToStreamOptions {
-    pub(crate) version: ExpectedStreamRevision,
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone)]
+    /// Options of the append to stream command.
+    pub struct AppendToStreamOptions {
+        pub(crate) version: ExpectedStreamRevision,
+    }
 }
 
 impl Default for AppendToStreamOptions {
@@ -19,8 +20,6 @@ impl Default for AppendToStreamOptions {
         }
     }
 }
-
-impl_options_trait!(AppendToStreamOptions);
 
 impl AppendToStreamOptions {
     /// Asks the server to check that the stream receiving the event is at

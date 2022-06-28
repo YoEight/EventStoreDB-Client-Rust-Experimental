@@ -1,17 +1,16 @@
-use crate::options::CommonOperationOptions;
 use crate::{
-    impl_options_trait, PersistentSubscriptionSettings, Position, StreamPosition,
-    SubscriptionFilter, SystemConsumerStrategy,
+    PersistentSubscriptionSettings, Position, StreamPosition, SubscriptionFilter,
+    SystemConsumerStrategy,
 };
+use eventstore_macros::{options, streaming};
 use std::time::Duration;
 
-#[derive(Clone, Default)]
-pub struct PersistentSubscriptionOptions {
-    pub(crate) setts: PersistentSubscriptionSettings<u64>,
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone, Default)]
+    pub struct PersistentSubscriptionOptions {
+        pub(crate) setts: PersistentSubscriptionSettings<u64>,
+    }
 }
-
-impl_options_trait!(PersistentSubscriptionOptions);
 
 impl PersistentSubscriptionOptions {
     /// Applies the specified persistent subscription settings.
@@ -106,14 +105,13 @@ impl PersistentSubscriptionOptions {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct PersistentSubscriptionToAllOptions {
-    pub(crate) setts: PersistentSubscriptionSettings<Position>,
-    pub(crate) filter: Option<SubscriptionFilter>,
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone, Default)]
+    pub struct PersistentSubscriptionToAllOptions {
+        pub(crate) setts: PersistentSubscriptionSettings<Position>,
+        pub(crate) filter: Option<SubscriptionFilter>,
+    }
 }
-
-impl_options_trait!(PersistentSubscriptionToAllOptions);
 
 impl PersistentSubscriptionToAllOptions {
     /// Applies the specified persistent subscription settings.
@@ -216,17 +214,17 @@ impl PersistentSubscriptionToAllOptions {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct DeletePersistentSubscriptionOptions {
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone, Default)]
+    pub struct DeletePersistentSubscriptionOptions {}
 }
 
-impl_options_trait!(DeletePersistentSubscriptionOptions);
-
-#[derive(Clone)]
-pub struct SubscribeToPersistentSubscriptionOptions {
-    pub(crate) buffer_size: usize,
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone)]
+    #[streaming]
+    pub struct SubscribeToPersistentSubscriptionOptions {
+        pub(crate) buffer_size: usize,
+    }
 }
 
 impl Default for SubscribeToPersistentSubscriptionOptions {
@@ -238,11 +236,6 @@ impl Default for SubscribeToPersistentSubscriptionOptions {
     }
 }
 
-impl_options_trait!(
-    SubscribeToPersistentSubscriptionOptions,
-    super::OperationKind::Streaming
-);
-
 impl SubscribeToPersistentSubscriptionOptions {
     /// The buffer size to use  for the persistent subscription.
     pub fn buffer_size(self, buffer_size: usize) -> Self {
@@ -253,13 +246,12 @@ impl SubscribeToPersistentSubscriptionOptions {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct ReplayParkedMessagesOptions {
-    pub(crate) common_operation_options: CommonOperationOptions,
-    pub(crate) stop_at: Option<usize>,
+options! {
+    #[derive(Clone, Default)]
+    pub struct ReplayParkedMessagesOptions {
+        pub(crate) stop_at: Option<usize>,
+    }
 }
-
-impl_options_trait!(ReplayParkedMessagesOptions);
 
 impl ReplayParkedMessagesOptions {
     pub fn stop_at(self, value: usize) -> Self {
@@ -270,23 +262,17 @@ impl ReplayParkedMessagesOptions {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct ListPersistentSubscriptionsOptions {
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone, Default)]
+    pub struct ListPersistentSubscriptionsOptions {}
 }
 
-impl_options_trait!(ListPersistentSubscriptionsOptions);
-
-#[derive(Clone, Default)]
-pub struct GetPersistentSubscriptionInfoOptions {
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone, Default)]
+    pub struct GetPersistentSubscriptionInfoOptions {}
 }
 
-impl_options_trait!(GetPersistentSubscriptionInfoOptions);
-
-#[derive(Clone, Default)]
-pub struct RestartPersistentSubscriptionSubsystem {
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone, Default)]
+    pub struct RestartPersistentSubscriptionSubsystem {}
 }
-
-impl_options_trait!(RestartPersistentSubscriptionSubsystem);

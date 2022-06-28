@@ -1,11 +1,12 @@
-use crate::options::CommonOperationOptions;
-use crate::{impl_options_trait, ExpectedRevision};
+use crate::ExpectedRevision;
+use eventstore_macros::options;
 
-#[derive(Clone)]
-/// Options of the tombstone stream command.
-pub struct TombstoneStreamOptions {
-    pub(crate) version: ExpectedRevision,
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone)]
+    /// Options of the tombstone stream command.
+    pub struct TombstoneStreamOptions {
+        pub(crate) version: ExpectedRevision,
+    }
 }
 
 impl Default for TombstoneStreamOptions {
@@ -16,8 +17,6 @@ impl Default for TombstoneStreamOptions {
         }
     }
 }
-
-impl_options_trait!(TombstoneStreamOptions);
 
 impl TombstoneStreamOptions {
     /// Asks the server to check that the stream receiving the event is at
