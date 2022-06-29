@@ -941,7 +941,7 @@ pub async fn read_stream<S: AsRef<str>>(
         filter_option: Some(options::FilterOption::NoFilter(Empty {})),
         count_option: Some(options::CountOption::Count(count)),
         uuid_option: Some(uuid_option),
-        control_option: None,
+        control_option: Some(options::ControlOption { compatibility: 1 }),
         read_direction,
     };
 
