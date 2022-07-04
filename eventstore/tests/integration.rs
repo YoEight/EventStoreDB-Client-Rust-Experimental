@@ -8,8 +8,8 @@ mod images;
 use chrono::{Datelike, Utc};
 use eventstore::operations::StatsOptions;
 use eventstore::{
-    operations, Acl, Client, ClientSettings, EventData, ProjectionClient, StreamAclBuilder,
-    StreamMetadataBuilder, StreamMetadataResult, StreamPosition,
+    operations, Acl, Client, ClientSettings, EventData, ProjectionClient, ReadEvent,
+    StreamAclBuilder, StreamMetadataBuilder, StreamMetadataResult, StreamPosition,
 };
 use futures::channel::oneshot;
 use std::collections::HashMap;
@@ -116,6 +116,32 @@ async fn test_read_stream_events(client: &Client) -> Result<(), Box<dyn Error>> 
 
     assert_eq!(pos, 10);
     assert_eq!(idx, 10);
+
+    Ok(())
+}
+
+async fn test_read_stream_events_with_position(client: &Client) -> eventstore::Result<()> {
+    let stream_id = fresh_stream_id("read_position");
+    let events = generate_events("read_position", 10);
+
+    let _ = client
+        .append_to_stream(stream_id.as_str(), &Default::default(), events)
+        .await?;
+
+    let options = eventstore::ReadStreamOptions::default()
+        .forwards()
+        .position(StreamPosition::Start);
+
+    let mut stream = client.read_stream(stream_id, &options).await?;
+
+    let mut last_stream_position = 0u64;
+    while let Some(event) = stream.next_read_event().await? {
+        if let ReadEvent::LastStreamPosition(pos) = event {
+            last_stream_position = pos;
+        }
+    }
+
+    assert_eq!(9, last_stream_position);
 
     Ok(())
 }
@@ -1585,6 +1611,13 @@ async fn all_around_tests(
     setts: &ClientSettings,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut name_generator = names::Generator::default();
+    let op_client: eventstore::operations::Client = client.clone().into();
+
+    let is_at_least_21_10 = if let Some(info) = op_client.server_version().await? {
+        info.version().major() >= 21 && info.version().minor() >= 10
+    } else {
+        false
+    };
 
     debug!("Before test_write_events…");
     test_write_events(&client).await?;
@@ -1598,6 +1631,11 @@ async fn all_around_tests(
     debug!("Before test_read_stream_events…");
     test_read_stream_events(&client).await?;
     debug!("Complete");
+    if is_at_least_21_10 {
+        debug!("Before test_read_stream_events_with_position");
+        test_read_stream_events_with_position(&client).await?;
+        debug!("Complete");
+    }
     debug!("Before test_read_stream_events_non_existent");
     test_read_stream_events_non_existent(&client).await?;
     debug!("Complete");
@@ -1750,7 +1788,6 @@ async fn all_around_tests(
 
     if setts.is_secure_mode_enabled() {
         debug!("Start operational tests");
-        let op_client = client.into();
         operations_tests(&op_client, &mut name_generator).await?;
         debug!("completed");
     }
