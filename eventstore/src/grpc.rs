@@ -1490,9 +1490,8 @@ mod node_selection_tests {
             assert!(
                 members
                     .iter()
-                    .find(|m| m.http_end_point == opt1.as_ref().unwrap().clone()
-                        && pref.match_preference(&m.state))
-                    .is_some(),
+                    .any(|m| m.http_end_point == opt1.as_ref().unwrap().clone()
+                        && pref.match_preference(&m.state)),
                 "Someone broke the node selection implementation!"
             );
         }
@@ -1509,9 +1508,8 @@ mod node_selection_tests {
                     assert!(
                         members
                             .iter()
-                            .find(|m| m.http_end_point == opt2.as_ref().unwrap().clone()
-                                && pref.match_preference(&m.state))
-                            .is_some(),
+                            .any(|m| m.http_end_point == opt2.as_ref().unwrap().clone()
+                                && pref.match_preference(&m.state)),
                         "Someone broke the node selection implementation!"
                     );
                 }
@@ -1530,9 +1528,8 @@ mod node_selection_tests {
                         assert!(
                             members
                                 .iter()
-                                .find(|m| m.http_end_point == opt2.as_ref().unwrap().clone()
-                                    && pref.match_preference(&m.state))
-                                .is_some(),
+                                .any(|m| m.http_end_point == opt2.as_ref().unwrap().clone()
+                                    && pref.match_preference(&m.state)),
                             "Someone broke the node selection implementation!"
                         );
                     }

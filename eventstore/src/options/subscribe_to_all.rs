@@ -1,14 +1,16 @@
 use crate::options::retry::RetryOptions;
-use crate::options::CommonOperationOptions;
-use crate::{impl_options_trait, Position, StreamPosition, SubscriptionFilter};
+use crate::{Position, StreamPosition, SubscriptionFilter};
+use eventstore_macros::{options, streaming};
 
-#[derive(Clone)]
-pub struct SubscribeToAllOptions {
-    pub(crate) position: StreamPosition<Position>,
-    pub(crate) resolve_link_tos: bool,
-    pub(crate) filter: Option<SubscriptionFilter>,
-    pub(crate) retry: Option<RetryOptions>,
-    pub(crate) common_operation_options: CommonOperationOptions,
+options! {
+    #[derive(Clone)]
+    #[streaming]
+    pub struct SubscribeToAllOptions {
+        pub(crate) position: StreamPosition<Position>,
+        pub(crate) resolve_link_tos: bool,
+        pub(crate) filter: Option<SubscriptionFilter>,
+        pub(crate) retry: Option<RetryOptions>,
+    }
 }
 
 impl Default for SubscribeToAllOptions {
@@ -22,8 +24,6 @@ impl Default for SubscribeToAllOptions {
         }
     }
 }
-
-impl_options_trait!(SubscribeToAllOptions, super::OperationKind::Streaming);
 
 impl SubscribeToAllOptions {
     /// Starting point in the transaction journal log. By default, it will start at

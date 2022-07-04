@@ -1,0 +1,12 @@
+[package]
+name = "eventstore-extras"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# will move to version number once we got something stable.
+eventstore = { path = "../eventstore" }
+chrono = "*"
+log = "*"
