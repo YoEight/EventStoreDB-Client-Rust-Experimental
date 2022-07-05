@@ -5,9 +5,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Add created date field in RecordedEvent struct. [EventStoreDB-Client-Rust#143](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/143)
+- Implement statistics parsing. [EventStoreDB-Client-Rust#146](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/146)
 
 ### Changed
 - Change project organization. [EventStoreDB-Client-Rust#145](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/145)
+
+### Removed
+- Remove `use_metadata` option when reading stats. [EventStoreDB-Client-Rust#146](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/146)
 
 ## [2.1.1] - 2022-05-14
 ### Fixed
