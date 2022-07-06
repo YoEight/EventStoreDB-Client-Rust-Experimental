@@ -30,8 +30,8 @@ use crate::server_features::Features;
 use crate::{
     ClientSettings, CurrentRevision, DeletePersistentSubscriptionOptions, DeleteStreamOptions,
     GetPersistentSubscriptionInfoOptions, ListPersistentSubscriptionsOptions, NakAction,
-    PersistentSubscriptionConnectionInfo, PersistentSubscriptionEvent, PersistentSubscriptionInfo,
-    PersistentSubscriptionMeasurements, PersistentSubscriptionStats,
+    NodePreference, PersistentSubscriptionConnectionInfo, PersistentSubscriptionEvent,
+    PersistentSubscriptionInfo, PersistentSubscriptionMeasurements, PersistentSubscriptionStats,
     PersistentSubscriptionToAllOptions, ReplayParkedMessagesOptions,
     RestartPersistentSubscriptionSubsystem, RetryOptions, RevisionOrPosition,
     SubscribeToAllOptions, SubscribeToPersistentSubscriptionOptions, SubscriptionFilter,
@@ -500,7 +500,7 @@ where
         metadata.insert("authorization", header_value);
     }
 
-    if options.requires_leader {
+    if options.requires_leader || settings.node_preference() == NodePreference::Leader {
         let header_value = MetadataValue::from_str("true").expect("valid metadata header value");
         metadata.insert("requires-leader", header_value);
     }

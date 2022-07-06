@@ -19,21 +19,11 @@ pub(crate) trait Options {
     fn kind(&self) -> OperationKind;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct CommonOperationOptions {
     pub(crate) credentials: Option<Credentials>,
     pub(crate) requires_leader: bool,
     pub(crate) deadline: Option<Duration>,
-}
-
-impl Default for CommonOperationOptions {
-    fn default() -> Self {
-        Self {
-            credentials: None,
-            requires_leader: true,
-            deadline: None,
-        }
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
