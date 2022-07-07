@@ -13,6 +13,9 @@ All notable changes to this project will be documented in this file.
 ### Removed
 - Remove `use_metadata` option when reading stats. [EventStoreDB-Client-Rust#146](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/146)
 
+### Fixed
+- Fix `RequiresLeader` header when node preference is set to leader. [EventStoreDB-Client-Rust#148](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/148)
+
 ## [2.1.1] - 2022-05-14
 ### Fixed
 - Configure operations' stats request as streaming. [EventStoreDB-Client-Rust#141](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/141)
