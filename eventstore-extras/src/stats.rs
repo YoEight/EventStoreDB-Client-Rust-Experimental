@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, num::IntErrorKind};
 
 #[derive(Debug, Default, Clone)]
 pub struct Statistics {
@@ -397,14 +397,43 @@ impl StatisticsExt for eventstore::operations::RawStatistics {
                 }
 
                 "sys-freeMem" => {
-                    stats.sys.free_mem = value.parse().map_err(|e| {
-                        eventstore::Error::InternalParsingError(format!(
-                            "{key}: {err} = '{value}'",
-                            key = key,
-                            err = e,
-                            value = value,
-                        ))
-                    })?;
+                    // It's possible we got a negative value here, hence why we try to parse a i64 first.
+                    match value.parse::<i64>() {
+                        Ok(value) => {
+                            if value < 0 {
+                                stats.sys.free_mem = 0;
+                            } else {
+                                stats.sys.free_mem = value as usize;
+                            }
+                        }
+
+                        Err(e) => match e.kind() {
+                            IntErrorKind::NegOverflow => {
+                                stats.sys.free_mem = 0;
+                            }
+
+                            IntErrorKind::PosOverflow => {
+                                // In case the number is too big for a signed number, we try unsigned.
+                                stats.sys.free_mem = value.parse().map_err(|e| {
+                                    eventstore::Error::InternalParsingError(format!(
+                                        "{key}: {err} = '{value}'",
+                                        key = key,
+                                        err = e,
+                                        value = value,
+                                    ))
+                                })?;
+                            }
+
+                            _ => {
+                                return Err(eventstore::Error::InternalParsingError(format!(
+                                    "{key}: {err} = '{value}'",
+                                    key = key,
+                                    err = e,
+                                    value = value,
+                                )));
+                            }
+                        },
+                    }
                 }
 
                 "es-checksum" => {
@@ -853,7 +882,7 @@ pub struct DiskIo {
 
 #[derive(Debug, Default, Clone)]
 pub struct Sys {
-    pub free_mem: i64,
+    pub free_mem: usize,
     pub loadavg: LoadAvg,
     pub drive: Option<Drive>,
 }
