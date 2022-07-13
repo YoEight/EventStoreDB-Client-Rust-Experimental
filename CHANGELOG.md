@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 
 ### This patch should fix the issue encountered here
 - https://github.com/EventStore/esdb-tui/issues/6 [EventStoreDB-Client-Rust#150](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/150)
+- https://github.com/EventStore/esdb-tui/issues/6 [EventStoreDB-Client-Rust#150](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/150)
 
 ## [2.1.1] - 2022-05-14
 ### Fixed
