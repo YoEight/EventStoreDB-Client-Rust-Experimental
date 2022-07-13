@@ -16,6 +16,9 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Fix `RequiresLeader` header when node preference is set to leader. [EventStoreDB-Client-Rust#148](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/148)
 
+### This patch should fix the issue encountered here
+- https://github.com/EventStore/esdb-tui/issues/6 [EventStoreDB-Client-Rust#150](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/150)
+
 ## [2.1.1] - 2022-05-14
 ### Fixed
 - Configure operations' stats request as streaming. [EventStoreDB-Client-Rust#141](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/141)
