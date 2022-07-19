@@ -146,6 +146,30 @@ async fn test_read_stream_events_with_position(client: &Client) -> eventstore::R
     Ok(())
 }
 
+async fn test_read_stream_populates_log_position(client: &Client) -> Result<(), Box<dyn Error>> {
+    let stream_id = fresh_stream_id("read_stream_populates_log_position");
+    let events = generate_events("read_stream_populates_log_position".to_string(), 1);
+
+    let write_result = client
+        .append_to_stream(stream_id.clone(), &Default::default(), events)
+        .await?;
+
+    assert_eq!(write_result.position.prepare, write_result.position.commit);
+
+    let mut pos = 0usize;
+    let mut stream = client.read_stream(stream_id, &Default::default()).await?;
+
+    while let Some(event) = stream.next().await? {
+        let event = event.get_original_event();
+        assert_eq!(write_result.position, event.position);
+        pos += 1;
+    }
+
+    assert_eq!(pos, 1);
+
+    Ok(())
+}
+
 async fn test_metadata(client: &Client) -> Result<(), Box<dyn Error>> {
     let stream_id = fresh_stream_id("metadata");
     let events = generate_events("metadata-test".to_string(), 5);
@@ -1613,11 +1637,17 @@ async fn all_around_tests(
     let mut name_generator = names::Generator::default();
     let op_client: eventstore::operations::Client = client.clone().into();
 
-    let is_at_least_21_10 = if let Some(info) = op_client.server_version().await? {
-        info.version().major() >= 21 && info.version().minor() >= 10
+    let is_at_least_21_10;
+    let is_at_least_22;
+
+    if let Some(info) = op_client.server_version().await? {
+        is_at_least_21_10 = info.version().major() >= 21 && info.version().minor() >= 10;
+        is_at_least_22 = info.version().major() >= 22;
     } else {
-        false
-    };
+        // older versions did not have the server version api
+        is_at_least_21_10 = false;
+        is_at_least_22 = false;
+    }
 
     debug!("Before test_write_events…");
     test_write_events(&client).await?;
@@ -1636,6 +1666,11 @@ async fn all_around_tests(
         test_read_stream_events_with_position(&client).await?;
         debug!("Complete");
     }
+    if is_at_least_22 {
+        debug!("Before test_read_stream_populates_log_position");
+        test_read_stream_populates_log_position(&client).await?;
+    }
+    debug!("Complete");
     debug!("Before test_read_stream_events_non_existent");
     test_read_stream_events_non_existent(&client).await?;
     debug!("Complete");
