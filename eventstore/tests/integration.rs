@@ -1641,7 +1641,8 @@ async fn all_around_tests(
     let is_at_least_22;
 
     if let Some(info) = op_client.server_version().await? {
-        is_at_least_21_10 = info.version().major() >= 21 && info.version().minor() >= 10;
+        is_at_least_21_10 = info.version().major() == 21 && info.version().minor() >= 10
+            || info.version().major() > 21;
         is_at_least_22 = info.version().major() >= 22;
     } else {
         // older versions did not have the server version api
