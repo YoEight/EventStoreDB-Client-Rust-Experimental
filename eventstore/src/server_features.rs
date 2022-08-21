@@ -1,7 +1,7 @@
 use crate::event_store::generated::server_features::server_features_client::ServerFeaturesClient;
 use crate::event_store::generated::Empty;
+use crate::grpc::HyperClient;
 use bitflags::bitflags;
-use tonic::transport::Channel;
 use tonic::{Code, Request, Status};
 
 bitflags! {
@@ -55,8 +55,11 @@ impl ServerInfo {
     }
 }
 
-pub(crate) async fn supported_methods(channel: Channel) -> Result<ServerInfo, Status> {
-    let mut client = ServerFeaturesClient::new(channel);
+pub(crate) async fn supported_methods(
+    client: &HyperClient,
+    uri: hyper::Uri,
+) -> Result<ServerInfo, Status> {
+    let mut client = ServerFeaturesClient::with_origin(client, uri);
     let methods = client
         .get_supported_methods(Request::new(Empty {}))
         .await?

@@ -13,7 +13,7 @@ jobs:
     name: Build
     strategy:
       matrix:
-        os: [ubuntu-18.04, windows-2019, macos-10.15]
+        os: [ubuntu-latest, windows-2019, macos-11]
         rust: [stable, beta, nightly]
 
     runs-on: ${{ matrix.os }}
@@ -36,7 +36,7 @@ jobs:
         version: [ 20.10.5-focal, 21.10.0-focal, ci ]
         secure: [ true, false ]
 
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2
@@ -64,7 +64,7 @@ jobs:
       matrix:
         version: [ 20.10.5-focal, 21.10.0-focal, ci ]
 
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - name: Install
@@ -84,7 +84,7 @@ jobs:
   tests_library:
     name: Tests library unit tests
     needs: build
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v2
@@ -99,7 +99,7 @@ jobs:
       - tests_single_node
       - tests_library
       - tests_cluster
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
     - name: Install

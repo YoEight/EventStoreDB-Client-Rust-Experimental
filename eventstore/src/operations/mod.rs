@@ -93,7 +93,8 @@ impl Client {
         };
 
         let req = crate::commands::new_request(self.inner.connection_settings(), options, req);
-        let mut client = monitoring::monitoring_client::MonitoringClient::new(handle.channel);
+        let mut client =
+            monitoring::monitoring_client::MonitoringClient::with_origin(handle.client, handle.uri);
 
         let inner = client
             .stats(req)
@@ -121,7 +122,8 @@ impl Client {
 
         let req = crate::commands::new_request(self.inner.connection_settings(), options, req);
 
-        let mut client = operations::operations_client::OperationsClient::new(handle.channel);
+        let mut client =
+            operations::operations_client::OperationsClient::with_origin(handle.client, handle.uri);
 
         let resp = client
             .start_scavenge(req)
@@ -154,7 +156,8 @@ impl Client {
 
         let req = crate::commands::new_request(self.inner.connection_settings(), options, req);
 
-        let mut client = operations::operations_client::OperationsClient::new(handle.channel);
+        let mut client =
+            operations::operations_client::OperationsClient::with_origin(handle.client, handle.uri);
 
         let resp = client
             .stop_scavenge(req)
@@ -175,7 +178,8 @@ impl Client {
     pub async fn shutdown(&self, options: &OperationalOptions) -> crate::Result<()> {
         let handle = self.inner.current_selected_node().await?;
 
-        let mut client = operations::operations_client::OperationsClient::new(handle.channel);
+        let mut client =
+            operations::operations_client::OperationsClient::with_origin(handle.client, handle.uri);
         let req = crate::commands::new_request(self.inner.connection_settings(), options, Empty {});
         client
             .shutdown(req)
@@ -186,7 +190,8 @@ impl Client {
 
     pub async fn merge_indexes(&self, options: &OperationalOptions) -> crate::Result<()> {
         let handle = self.inner.current_selected_node().await?;
-        let mut client = operations::operations_client::OperationsClient::new(handle.channel);
+        let mut client =
+            operations::operations_client::OperationsClient::with_origin(handle.client, handle.uri);
         let req = crate::commands::new_request(self.inner.connection_settings(), options, Empty {});
 
         client
@@ -198,7 +203,8 @@ impl Client {
 
     pub async fn resign_node(&self, options: &OperationalOptions) -> crate::Result<()> {
         let handle = self.inner.current_selected_node().await?;
-        let mut client = operations::operations_client::OperationsClient::new(handle.channel);
+        let mut client =
+            operations::operations_client::OperationsClient::with_origin(handle.client, handle.uri);
         let req = crate::commands::new_request(self.inner.connection_settings(), options, Empty {});
 
         client
@@ -214,7 +220,8 @@ impl Client {
         options: &OperationalOptions,
     ) -> crate::Result<()> {
         let handle = self.inner.current_selected_node().await?;
-        let mut client = operations::operations_client::OperationsClient::new(handle.channel);
+        let mut client =
+            operations::operations_client::OperationsClient::with_origin(handle.client, handle.uri);
 
         let req = operations::SetNodePriorityReq {
             priority: priority as i32,
@@ -234,7 +241,8 @@ impl Client {
         options: &OperationalOptions,
     ) -> crate::Result<()> {
         let handle = self.inner.current_selected_node().await?;
-        let mut client = operations::operations_client::OperationsClient::new(handle.channel);
+        let mut client =
+            operations::operations_client::OperationsClient::with_origin(handle.client, handle.uri);
         let req = crate::commands::new_request(self.inner.connection_settings(), options, Empty {});
 
         client
@@ -253,7 +261,7 @@ impl Client {
         options: &OperationalOptions,
     ) -> crate::Result<()> {
         let handle = self.inner.current_selected_node().await?;
-        let mut client = users::users_client::UsersClient::new(handle.channel);
+        let mut client = users::users_client::UsersClient::with_origin(handle.client, handle.uri);
 
         let req = users::CreateReq {
             options: Some(users::create_req::Options {
@@ -282,7 +290,7 @@ impl Client {
         options: &OperationalOptions,
     ) -> crate::Result<()> {
         let handle = self.inner.current_selected_node().await?;
-        let mut client = users::users_client::UsersClient::new(handle.channel);
+        let mut client = users::users_client::UsersClient::with_origin(handle.client, handle.uri);
 
         let req = users::UpdateReq {
             options: Some(users::update_req::Options {
@@ -308,7 +316,7 @@ impl Client {
         options: &OperationalOptions,
     ) -> crate::Result<()> {
         let handle = self.inner.current_selected_node().await?;
-        let mut client = users::users_client::UsersClient::new(handle.channel);
+        let mut client = users::users_client::UsersClient::with_origin(handle.client, handle.uri);
 
         let req = users::DeleteReq {
             options: Some(users::delete_req::Options {
@@ -331,7 +339,7 @@ impl Client {
         options: &OperationalOptions,
     ) -> crate::Result<()> {
         let handle = self.inner.current_selected_node().await?;
-        let mut client = users::users_client::UsersClient::new(handle.channel);
+        let mut client = users::users_client::UsersClient::with_origin(handle.client, handle.uri);
 
         let req = users::EnableReq {
             options: Some(users::enable_req::Options {
@@ -354,7 +362,7 @@ impl Client {
         options: &OperationalOptions,
     ) -> crate::Result<()> {
         let handle = self.inner.current_selected_node().await?;
-        let mut client = users::users_client::UsersClient::new(handle.channel);
+        let mut client = users::users_client::UsersClient::with_origin(handle.client, handle.uri);
 
         let req = users::DisableReq {
             options: Some(users::disable_req::Options {
@@ -377,7 +385,7 @@ impl Client {
         options: &OperationalOptions,
     ) -> crate::Result<UserDetailsStream> {
         let handle = self.inner.current_selected_node().await?;
-        let mut client = users::users_client::UsersClient::new(handle.channel);
+        let mut client = users::users_client::UsersClient::with_origin(handle.client, handle.uri);
 
         let req = users::DetailsReq {
             options: Some(users::details_req::Options {
@@ -404,7 +412,7 @@ impl Client {
         options: &OperationalOptions,
     ) -> crate::Result<()> {
         let handle = self.inner.current_selected_node().await?;
-        let mut client = users::users_client::UsersClient::new(handle.channel);
+        let mut client = users::users_client::UsersClient::with_origin(handle.client, handle.uri);
 
         let req = users::ChangePasswordReq {
             options: Some(users::change_password_req::Options {
@@ -430,7 +438,7 @@ impl Client {
         options: &OperationalOptions,
     ) -> crate::Result<()> {
         let handle = self.inner.current_selected_node().await?;
-        let mut client = users::users_client::UsersClient::new(handle.channel);
+        let mut client = users::users_client::UsersClient::with_origin(handle.client, handle.uri);
 
         let req = users::ResetPasswordReq {
             options: Some(users::reset_password_req::Options {
