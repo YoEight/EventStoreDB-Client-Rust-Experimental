@@ -1,6 +1,5 @@
 #![allow(clippy::large_enum_variant)]
 //! Commands this client supports.
-use futures::{Stream, StreamExt, TryStreamExt};
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
 
@@ -10,12 +9,14 @@ use crate::types::{
     RecordedEvent, ResolvedEvent, StreamPosition, SubscriptionEvent, WriteResult,
 };
 
-use async_stream::try_stream;
 use chrono::{DateTime, Utc};
+use futures::TryStreamExt;
 use persistent::persistent_subscriptions_client::PersistentSubscriptionsClient;
 use prost_types::Timestamp;
 use shared::{Empty, StreamIdentifier, Uuid};
 use streams::streams_client::StreamsClient;
+use tokio::sync::mpsc;
+use tonic::{Request, Streaming};
 
 use crate::batch::BatchAppendClient;
 use crate::grpc::{handle_error, GrpcClient, Handle, Msg};
@@ -37,7 +38,6 @@ use crate::{
     SubscribeToAllOptions, SubscribeToPersistentSubscriptionOptions, SubscriptionFilter,
     SystemConsumerStrategy, TombstoneStreamOptions,
 };
-use tonic::{Request, Streaming};
 
 fn raw_uuid_to_uuid(src: Uuid) -> uuid::Uuid {
     use byteorder::{BigEndian, ByteOrder};
@@ -494,20 +494,20 @@ where
 
         let basic_auth_string = base64::encode(&format!("{}:{}", login, password));
         let basic_auth = format!("Basic {}", basic_auth_string);
-        let header_value = MetadataValue::from_str(basic_auth.as_str())
+        let header_value = MetadataValue::try_from(basic_auth.as_str())
             .expect("Auth header value should be valid metadata header value");
 
         metadata.insert("authorization", header_value);
     }
 
     if options.requires_leader || settings.node_preference() == NodePreference::Leader {
-        let header_value = MetadataValue::from_str("true").expect("valid metadata header value");
+        let header_value = MetadataValue::try_from("true").expect("valid metadata header value");
         metadata.insert("requires-leader", header_value);
     }
 
     if let Some(conn_name) = settings.connection_name.as_ref() {
         let header_value =
-            MetadataValue::from_str(conn_name.as_str()).expect("valid metadata header value");
+            MetadataValue::try_from(conn_name.as_str()).expect("valid metadata header value");
         metadata.insert("connection-name", header_value);
     }
 
@@ -574,11 +574,11 @@ pub async fn append_to_stream(
     let handle = connection.current_selected_node().await?;
     let handle_id = handle.id();
     let req = new_request(connection.connection_settings(), options, payload);
-    let mut client = StreamsClient::new(handle.channel);
+    let mut client = StreamsClient::with_origin(handle.client, handle.uri);
     let resp = match client.append(req).await {
         Err(e) => {
             let e = crate::Error::from_grpc(e);
-            handle_error(&connection.sender, handle_id, &e).await;
+            handle_error(&connection.sender, handle_id, &e);
 
             return Err(e);
         }
@@ -632,7 +632,6 @@ pub async fn batch_append(
     connection: &GrpcClient,
     options: &BatchAppendOptions,
 ) -> crate::Result<BatchAppendClient> {
-    use futures::SinkExt;
     use streams::{
         batch_append_req::{options::ExpectedStreamPosition, Options, ProposedMessage},
         batch_append_resp::{
@@ -649,68 +648,69 @@ pub async fn batch_append(
         return Err(crate::Error::UnsupportedFeature);
     }
 
-    let (forward, receiver) = futures::channel::mpsc::unbounded::<crate::batch::Req>();
-    let (batch_sender, batch_receiver) = futures::channel::mpsc::unbounded();
-    let mut cloned_batch_sender = batch_sender.clone();
+    let (forward, mut receiver) = mpsc::unbounded_channel::<crate::batch::Req>();
+    let (batch_sender, batch_receiver) = mpsc::unbounded_channel();
+    let cloned_batch_sender = batch_sender.clone();
     let batch_client = BatchAppendClient::new(batch_sender, batch_receiver, forward);
 
     let common_operation_options = options.common_operation_options.clone();
-    let receiver = receiver.map(move |req| {
-        let correlation_id = shared::uuid::Value::String(req.id.to_string());
-        let correlation_id = Some(Uuid {
-            value: Some(correlation_id),
-        });
-        let stream_identifier = Some(StreamIdentifier {
-            stream_name: req.stream_name.into_bytes(),
-        });
+    let receiver = async_stream::stream! {
+        while let Some(req) = receiver.recv().await {
+            let correlation_id = shared::uuid::Value::String(req.id.to_string());
+            let correlation_id = Some(Uuid {
+                value: Some(correlation_id),
+            });
+            let stream_identifier = Some(StreamIdentifier {
+                stream_name: req.stream_name.into_bytes(),
+            });
 
-        let expected_stream_position = match req.expected_revision {
-            ExpectedRevision::Exact(rev) => ExpectedStreamPosition::StreamPosition(rev),
-            ExpectedRevision::NoStream => ExpectedStreamPosition::NoStream(()),
-            ExpectedRevision::StreamExists => ExpectedStreamPosition::StreamExists(()),
-            ExpectedRevision::Any => ExpectedStreamPosition::Any(()),
-        };
+            let expected_stream_position = match req.expected_revision {
+                ExpectedRevision::Exact(rev) => ExpectedStreamPosition::StreamPosition(rev),
+                ExpectedRevision::NoStream => ExpectedStreamPosition::NoStream(()),
+                ExpectedRevision::StreamExists => ExpectedStreamPosition::StreamExists(()),
+                ExpectedRevision::Any => ExpectedStreamPosition::Any(()),
+            };
 
-        let expected_stream_position = Some(expected_stream_position);
+            let expected_stream_position = Some(expected_stream_position);
 
-        let proposed_messages: Vec<ProposedMessage> = req
-            .events
-            .into_iter()
-            .map(convert_event_data_to_batch_proposed_message)
-            .collect();
+            let proposed_messages: Vec<ProposedMessage> = req
+                .events
+                .into_iter()
+                .map(convert_event_data_to_batch_proposed_message)
+                .collect();
 
-        let deadline = common_operation_options
-            .deadline
-            .unwrap_or_else(|| Duration::from_secs(10));
+            let deadline = common_operation_options
+                .deadline
+                .unwrap_or_else(|| Duration::from_secs(10));
 
-        let deadline = SystemTime::now().add(deadline);
-        let deadline = deadline.duration_since(SystemTime::UNIX_EPOCH).unwrap();
+            let deadline = SystemTime::now().add(deadline);
+            let deadline = deadline.duration_since(SystemTime::UNIX_EPOCH).unwrap();
 
-        let options = Some(Options {
-            stream_identifier,
-            deadline: Some(Timestamp {
-                seconds: deadline.as_secs() as i64,
-                nanos: deadline.subsec_nanos() as i32,
-            }),
-            expected_stream_position,
-        });
+            let options = Some(Options {
+                stream_identifier,
+                deadline: Some(Timestamp {
+                    seconds: deadline.as_secs() as i64,
+                    nanos: deadline.subsec_nanos() as i32,
+                }),
+                expected_stream_position,
+            });
 
-        BatchAppendReq {
-            correlation_id,
-            options,
-            proposed_messages,
-            is_final: true,
+            yield BatchAppendReq {
+                correlation_id,
+                options,
+                proposed_messages,
+                is_final: true,
+            };
         }
-    });
+    };
 
     let req = new_request(connection.connection_settings(), options, receiver);
     tokio::spawn(async move {
-        let mut client = StreamsClient::new(handle.channel.clone());
+        let mut client = StreamsClient::with_origin(handle.client.clone(), handle.uri.clone());
         match client.batch_append(req).await {
             Err(e) => {
                 let _ = cloned_batch_sender
-                    .send(crate::batch::BatchMsg::Error(crate::Error::from_grpc(e)))
-                    .await;
+                    .send(crate::batch::BatchMsg::Error(crate::Error::from_grpc(e)));
             }
 
             Ok(resp) => {
@@ -781,12 +781,11 @@ pub async fn batch_append(
                         match resp_stream.try_next().await {
                             Err(e) => {
                                 let err = crate::Error::from_grpc(e);
-                                crate::grpc::handle_error(handle.sender(), handle.id(), &err).await;
+                                crate::grpc::handle_error(handle.sender(), handle.id(), &err);
 
                                 // We notify the batch-append client that its session has been closed because of a gRPC error.
-                                let _ = cloned_batch_sender
-                                    .send(crate::batch::BatchMsg::Error(err))
-                                    .await;
+                                let _ =
+                                    cloned_batch_sender.send(crate::batch::BatchMsg::Error(err));
                                 break;
                             }
 
@@ -794,7 +793,6 @@ pub async fn batch_append(
                                 if let Some(out) = out {
                                     if cloned_batch_sender
                                         .send(crate::batch::BatchMsg::Out(out))
-                                        .await
                                         .is_err()
                                     {
                                         break;
@@ -826,7 +824,7 @@ pub enum ReadEvent {
 
 #[derive(Debug)]
 pub struct ReadStream {
-    sender: futures::channel::mpsc::UnboundedSender<Msg>,
+    sender: tokio::sync::mpsc::UnboundedSender<Msg>,
     channel_id: uuid::Uuid,
     inner: Streaming<crate::event_store::client::streams::ReadResp>,
 }
@@ -836,7 +834,7 @@ impl ReadStream {
         loop {
             match self.inner.try_next().await.map_err(crate::Error::from_grpc) {
                 Err(e) => {
-                    handle_error(&self.sender, self.channel_id, &e).await;
+                    handle_error(&self.sender, self.channel_id, &e);
                     return Err(e);
                 }
 
@@ -882,22 +880,6 @@ impl ReadStream {
         }
 
         Ok(None)
-    }
-
-    pub fn into_stream_of_read_events(mut self) -> impl Stream<Item = crate::Result<ReadEvent>> {
-        try_stream! {
-            while let Some(event) = self.next_read_event().await? {
-                yield event;
-            }
-        }
-    }
-
-    pub fn into_stream(mut self) -> impl Stream<Item = crate::Result<ResolvedEvent>> {
-        try_stream! {
-            while let Some(event) = self.next().await? {
-                yield event;
-            }
-        }
     }
 }
 
@@ -952,12 +934,12 @@ pub async fn read_stream<S: AsRef<str>>(
     let req = new_request(connection.connection_settings(), options, req);
     let handle = connection.current_selected_node().await?;
     let channel_id = handle.id();
-    let mut client = StreamsClient::new(handle.channel);
+    let mut client = StreamsClient::with_origin(handle.client, handle.uri);
 
     match client.read(req).await {
         Err(status) => {
             let e = crate::Error::from_grpc(status);
-            handle_error(&connection.sender, channel_id, &e).await;
+            handle_error(&connection.sender, channel_id, &e);
 
             Err(e)
         }
@@ -1023,12 +1005,12 @@ pub async fn read_all(
     let req = new_request(connection.connection_settings(), options, req);
     let handle = connection.current_selected_node().await?;
     let channel_id = handle.id();
-    let mut client = StreamsClient::new(handle.channel);
+    let mut client = StreamsClient::with_origin(handle.client, handle.uri);
 
     match client.read(req).await {
         Err(status) => {
             let e = crate::Error::from_grpc(status);
-            handle_error(&connection.sender, channel_id, &e).await;
+            handle_error(&connection.sender, channel_id, &e);
 
             Err(e)
         }
@@ -1076,8 +1058,8 @@ pub async fn delete_stream<S: AsRef<str>>(
     );
 
     connection
-        .execute(|channel| async {
-            let mut client = StreamsClient::new(channel.channel);
+        .execute(|handle| async {
+            let mut client = StreamsClient::with_origin(handle.client, handle.uri);
             let result = client.delete(req).await?.into_inner();
 
             if let Some(opts) = result.position_option {
@@ -1135,8 +1117,8 @@ pub async fn tombstone_stream<S: AsRef<str>>(
     );
 
     connection
-        .execute(|channel| async {
-            let mut client = StreamsClient::new(channel.channel);
+        .execute(|handle| async {
+            let mut client = StreamsClient::with_origin(handle.client, handle.uri);
             let result = client.tombstone(req).await?.into_inner();
 
             if let Some(opts) = result.position_option {
@@ -1197,27 +1179,6 @@ impl Subscription {
         }
     }
 
-    pub fn into_stream_of_subscription_events(
-        mut self,
-    ) -> impl Stream<Item = crate::Result<SubscriptionEvent>> {
-        try_stream! {
-            loop {
-                let event = self.next_subscription_event().await?;
-
-                yield event;
-            }
-        }
-    }
-
-    pub fn into_stream(mut self) -> impl Stream<Item = crate::Result<ResolvedEvent>> {
-        try_stream! {
-            loop {
-                let event = self.next().await?;
-                yield event;
-            }
-        }
-    }
-
     pub async fn next(&mut self) -> crate::Result<ResolvedEvent> {
         loop {
             if let SubscriptionEvent::EventAppeared(event) = self.next_subscription_event().await? {
@@ -1236,7 +1197,7 @@ impl Subscription {
                 match stream.try_next().await {
                     Err(status) => {
                         let e = crate::Error::from_grpc(status);
-                        handle_error(&self.connection.sender, self.channel_id, &e).await;
+                        handle_error(&self.connection.sender, self.channel_id, &e);
                         self.attempts = 1;
 
                         error!("Subscription dropped. cause: {}", e);
@@ -1322,7 +1283,7 @@ impl Subscription {
 
                 self.channel_id = handle.id();
 
-                let mut client = StreamsClient::new(handle.channel);
+                let mut client = StreamsClient::with_origin(handle.client, handle.uri);
                 let mut req = Request::new(streams::ReadReq {
                     options: Some(self.options.clone()),
                 });
@@ -1333,7 +1294,7 @@ impl Subscription {
                     Err(status) => {
                         let e = crate::Error::from_grpc(status);
 
-                        handle_error(&self.connection.sender, self.channel_id, &e).await;
+                        handle_error(&self.connection.sender, self.channel_id, &e);
 
                         if !e.is_access_denied() && self.attempts < self.limit {
                             error!(
@@ -1632,10 +1593,10 @@ where
     let req = new_request(connection.connection_settings(), options, req);
 
     let id = handle.id();
-    let mut client = PersistentSubscriptionsClient::new(handle.channel);
+    let mut client = PersistentSubscriptionsClient::with_origin(handle.client, handle.uri);
     if let Err(e) = client.create(req).await {
         let e = crate::Error::from_grpc(e);
-        handle_error(&connection.sender, id, &e).await;
+        handle_error(&connection.sender, id, &e);
 
         return Err(e);
     };
@@ -1685,10 +1646,10 @@ where
 
     let req = new_request(connection.connection_settings(), options, req);
     let id = handle.id();
-    let mut client = PersistentSubscriptionsClient::new(handle.channel);
+    let mut client = PersistentSubscriptionsClient::with_origin(handle.client, handle.uri);
     if let Err(e) = client.update(req).await {
         let e = crate::Error::from_grpc(e);
-        handle_error(&connection.sender, id, &e).await;
+        handle_error(&connection.sender, id, &e);
 
         return Err(e);
     }
@@ -1732,11 +1693,11 @@ pub async fn delete_persistent_subscription<S: AsRef<str>>(
 
     let req = new_request(connection.connection_settings(), options, req);
     let id = handle.id();
-    let mut client = PersistentSubscriptionsClient::new(handle.channel);
+    let mut client = PersistentSubscriptionsClient::with_origin(handle.client, handle.uri);
 
     if let Err(e) = client.delete(req).await {
         let e = crate::Error::from_grpc(e);
-        handle_error(&connection.sender, id, &e).await;
+        handle_error(&connection.sender, id, &e);
 
         return Err(e);
     }
@@ -1753,8 +1714,6 @@ pub async fn subscribe_to_persistent_subscription<S: AsRef<str>>(
     options: &SubscribeToPersistentSubscriptionOptions,
     to_all: bool,
 ) -> crate::Result<PersistentSubscription> {
-    use futures::channel::mpsc;
-    use futures::sink::SinkExt;
     use persistent::read_req::options::{self, UuidOption};
     use persistent::read_req::{self, options::StreamOption, Options};
     use persistent::ReadReq;
@@ -1765,7 +1724,12 @@ pub async fn subscribe_to_persistent_subscription<S: AsRef<str>>(
         return Err(crate::Error::UnsupportedFeature);
     }
 
-    let (mut sender, recv) = mpsc::channel(500);
+    let (sender, mut recv) = mpsc::channel(500);
+    let recv = async_stream::stream! {
+        while let Some(msg) = recv.recv().await {
+            yield msg;
+        }
+    };
 
     let uuid_option = UuidOption {
         content: Some(options::uuid_option::Content::String(Empty {})),
@@ -1798,12 +1762,12 @@ pub async fn subscribe_to_persistent_subscription<S: AsRef<str>>(
     let stream_id = stream_id.as_ref().to_string();
     let group_name = group_name.as_ref().to_string();
     let channel_id = handle.id();
-    let mut client = PersistentSubscriptionsClient::new(handle.channel);
+    let mut client = PersistentSubscriptionsClient::with_origin(handle.client, handle.uri);
 
     match client.read(req).await {
         Err(status) => {
             let e = crate::Error::from_grpc(status);
-            handle_error(&connection.sender, channel_id, &e).await;
+            handle_error(&connection.sender, channel_id, &e);
 
             Err(e)
         }
@@ -1819,8 +1783,8 @@ pub async fn subscribe_to_persistent_subscription<S: AsRef<str>>(
 }
 
 pub struct PersistentSubscription {
-    sender: futures::channel::mpsc::UnboundedSender<Msg>,
-    ack_sender: futures::channel::mpsc::Sender<crate::event_store::client::persistent::ReadReq>,
+    sender: tokio::sync::mpsc::UnboundedSender<Msg>,
+    ack_sender: mpsc::Sender<crate::event_store::client::persistent::ReadReq>,
     channel_id: uuid::Uuid,
     inner: tonic::Streaming<crate::event_store::client::persistent::ReadResp>,
     stream_id: String,
@@ -1845,7 +1809,7 @@ impl PersistentSubscription {
                 }
 
                 let e = crate::Error::from_grpc(status);
-                handle_error(&self.sender, self.channel_id, &e).await;
+                handle_error(&self.sender, self.channel_id, &e);
 
                 Err(e)
             }
@@ -1887,7 +1851,6 @@ impl PersistentSubscription {
     where
         I: IntoIterator<Item = uuid::Uuid>,
     {
-        use futures::sink::SinkExt;
         use persistent::read_req::{Ack, Content};
         use persistent::ReadReq;
 
@@ -1928,7 +1891,6 @@ impl PersistentSubscription {
     where
         I: IntoIterator<Item = uuid::Uuid>,
     {
-        use futures::sink::SinkExt;
         use persistent::read_req::{Content, Nack};
         use persistent::ReadReq;
 
@@ -2136,12 +2098,13 @@ where
 
     let req = new_request(settings, op_options, req);
     let id = handle.id();
-    let mut client = PersistentSubscriptionsClient::new(handle.channel.clone());
+    let mut client =
+        PersistentSubscriptionsClient::with_origin(handle.client.clone(), handle.uri.clone());
 
     match client.list(req).await {
         Err(status) => {
             let e = crate::Error::from_grpc(status);
-            handle_error(handle.sender(), id, &e).await;
+            handle_error(handle.sender(), id, &e);
 
             Err(e)
         }
@@ -2366,10 +2329,10 @@ where
 
     let req = new_request(connection.connection_settings(), op_options, req);
     let id = handle.id();
-    let mut client = PersistentSubscriptionsClient::new(handle.channel);
+    let mut client = PersistentSubscriptionsClient::with_origin(handle.client, handle.uri);
     if let Err(e) = client.replay_parked(req).await {
         let e = crate::Error::from_grpc(e);
-        handle_error(&connection.sender, id, &e).await;
+        handle_error(&connection.sender, id, &e);
 
         return Err(e);
     }
@@ -2425,12 +2388,12 @@ where
     let req = new_request(connection.connection_settings(), op_options, req);
 
     let id = handle.id();
-    let mut client = PersistentSubscriptionsClient::new(handle.channel);
+    let mut client = PersistentSubscriptionsClient::with_origin(handle.client, handle.uri);
 
     match client.get_info(req).await {
         Err(e) => {
             let e = crate::Error::from_grpc(e);
-            handle_error(&connection.sender, id, &e).await;
+            handle_error(&connection.sender, id, &e);
 
             Err(e)
         }
@@ -2465,12 +2428,12 @@ pub async fn restart_persistent_subscription_subsystem(
     }
 
     let id = handle.id();
-    let mut client = PersistentSubscriptionsClient::new(handle.channel);
+    let mut client = PersistentSubscriptionsClient::with_origin(handle.client, handle.uri);
     let req = new_request(connection.connection_settings(), op_options, Empty {});
 
     if let Err(e) = client.restart_subsystem(req).await {
         let e = crate::Error::from_grpc(e);
-        handle_error(&connection.sender, id, &e).await;
+        handle_error(&connection.sender, id, &e);
 
         return Err(e);
     }

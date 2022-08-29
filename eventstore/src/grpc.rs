@@ -2,10 +2,9 @@ use crate::operations::gossip::{self, MemberInfo, VNodeState};
 use crate::server_features::{Features, ServerInfo};
 use crate::types::{Endpoint, GrpcConnectionError};
 use crate::{Credentials, DnsClusterSettings, NodePreference};
-use futures::channel::mpsc::UnboundedSender;
-use futures::channel::oneshot;
-use futures::stream::StreamExt;
-use futures::{Future, SinkExt};
+use futures::Future;
+use hyper::client::HttpConnector;
+use hyper_rustls::HttpsConnector;
 use nom::branch::alt;
 use nom::bytes::complete::take_while;
 use nom::combinator::{all_consuming, complete, opt};
@@ -21,21 +20,24 @@ use serde::{Deserializer, Serializer};
 use std::cmp::Ordering;
 use std::str::FromStr;
 use std::time::Duration;
-use tonic::transport::Channel;
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot;
 use tonic::{Code, Status};
 use uuid::Uuid;
 
 struct NoVerification;
 
-impl rustls::ServerCertVerifier for NoVerification {
+impl rustls::client::ServerCertVerifier for NoVerification {
     fn verify_server_cert(
         &self,
-        _roots: &rustls::RootCertStore,
-        _presented_certs: &[rustls::Certificate],
-        _dns_name: webpki::DNSNameRef,
+        _end_entity: &rustls::Certificate,
+        _intermediates: &[rustls::Certificate],
+        _server_name: &rustls::ServerName,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
         _ocsp_response: &[u8],
-    ) -> Result<rustls::ServerCertVerified, rustls::TLSError> {
-        Ok(rustls::ServerCertVerified::assertion())
+        _now: std::time::SystemTime,
+    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::ServerCertVerified::assertion())
     }
 }
 
@@ -681,6 +683,13 @@ impl ClientSettings {
             .parse()
             .unwrap()
     }
+
+    pub(crate) fn to_hyper_uri(&self, endpoint: &Endpoint) -> hyper::Uri {
+        let scheme = if self.secure { "https" } else { "http" };
+
+        hyper::Uri::from_maybe_shared(format!("{}://{}:{}", scheme, endpoint.host, endpoint.port))
+            .unwrap()
+    }
 }
 
 impl FromStr for ClientSettings {
@@ -717,14 +726,16 @@ pub(crate) mod defaults {
     pub const KEEP_ALIVE_TIMEOUT_IN_MS: u64 = 10_000;
 }
 
+pub(crate) type HyperClient = hyper::Client<HttpsConnector<HttpConnector>, tonic::body::BoxBody>;
+
 struct NodeConnection {
     id: Uuid,
+    client: HyperClient,
     handle: Option<HandleInfo>,
     settings: ClientSettings,
     cluster_mode: Option<ClusterMode>,
     rng: SmallRng,
     previous_candidates: Option<Vec<Member>>,
-    tls_setts: Option<tonic::transport::ClientTlsConfig>,
 }
 
 #[derive(Clone)]
@@ -741,7 +752,8 @@ struct NodeRequest {
 #[derive(Clone)]
 pub(crate) struct HandleInfo {
     id: Uuid,
-    pub(crate) channel: Channel,
+    pub(crate) client: HyperClient,
+    pub(crate) uri: hyper::Uri,
     pub(crate) endpoint: Endpoint,
     pub(crate) secure: bool,
     pub(crate) server_info: Option<ServerInfo>,
@@ -749,6 +761,42 @@ pub(crate) struct HandleInfo {
 
 impl NodeConnection {
     fn new(settings: ClientSettings) -> Self {
+        let mut roots = rustls::RootCertStore::empty();
+
+        for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs")
+        {
+            roots.add(&rustls::Certificate(cert.0)).unwrap();
+        }
+
+        let mut tls = tokio_rustls::rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+
+        if !settings.tls_verify_cert && settings.secure {
+            tls.dangerous()
+                .set_certificate_verifier(std::sync::Arc::new(NoVerification));
+        }
+
+        let mut http = HttpConnector::new();
+        http.enforce_http(false);
+
+        let connector = tower::ServiceBuilder::new()
+            .layer_fn(move |s| {
+                hyper_rustls::HttpsConnectorBuilder::new()
+                    .with_tls_config(tls.clone())
+                    .https_or_http()
+                    .enable_http2()
+                    .wrap_connector(s)
+            })
+            .service(http);
+
+        let client = hyper::Client::builder()
+            .http2_only(true)
+            .http2_keep_alive_interval(settings.keep_alive_interval)
+            .http2_keep_alive_timeout(settings.keep_alive_timeout)
+            .build::<_, tonic::body::BoxBody>(connector);
+
         let cluster_mode = if settings.dns_discover || settings.hosts().len() > 1 {
             let mode = if settings.dns_discover {
                 let endpoint = settings.hosts()[0].clone();
@@ -762,31 +810,14 @@ impl NodeConnection {
             None
         };
 
-        let tls_setts = if !settings.tls_verify_cert && settings.secure {
-            let mut rustls_config = rustls::ClientConfig::new();
-            let protocols = vec![(b"h2".to_vec())];
-
-            rustls_config.set_protocols(protocols.as_slice());
-
-            rustls_config
-                .dangerous()
-                .set_certificate_verifier(std::sync::Arc::new(NoVerification));
-
-            Some(tonic::transport::ClientTlsConfig::new().rustls_client_config(rustls_config))
-        } else if settings.secure {
-            Some(tonic::transport::ClientTlsConfig::new())
-        } else {
-            None
-        };
-
         Self {
             id: Uuid::nil(),
+            client,
             handle: None,
             settings,
             cluster_mode,
             rng: SmallRng::from_entropy(),
             previous_candidates: None,
-            tls_setts,
         }
     }
 
@@ -816,56 +847,58 @@ impl NodeConnection {
             let mut attempts = 1usize;
             loop {
                 if let Some(selected_node) = selected_node.take() {
-                    match new_channel(&self.settings, self.tls_setts.clone(), &selected_node).await
+                    let uri = self.settings.to_hyper_uri(&selected_node);
+                    let server_info = match tokio::time::timeout(
+                        self.settings.gossip_timeout(),
+                        crate::server_features::supported_methods(&self.client, uri.clone()),
+                    )
+                    .await
                     {
-                        Ok(channel) => {
-                            let server_info =
-                                match crate::server_features::supported_methods(channel.clone())
-                                    .await
+                        Ok(outcome) => match outcome {
+                            Ok(fs) => Some(fs),
+
+                            Err(status) => {
+                                if status.code() == Code::NotFound
+                                    || status.code() == Code::Unimplemented
                                 {
-                                    Ok(fs) => Some(fs),
-                                    Err(status) => {
-                                        if status.code() == Code::NotFound
-                                            || status.code() == Code::Unimplemented
-                                        {
-                                            None
-                                        } else {
-                                            error!(
-                                            "Unexpected error when fetching server features: {}",
-                                            status
-                                        );
-                                            return Err(GrpcConnectionError::Grpc(
-                                                status.to_string(),
-                                            ));
-                                        }
-                                    }
-                                };
-                            self.id = Uuid::new_v4();
-                            let handle = HandleInfo {
-                                id: self.id,
-                                endpoint: selected_node,
-                                secure: self.settings.secure,
-                                channel,
-                                server_info,
-                            };
+                                    None
+                                } else {
+                                    error!(
+                                        "Unexpected error when fetching server features: {}",
+                                        status
+                                    );
+                                    return Err(GrpcConnectionError::Grpc(status.to_string()));
+                                }
+                            }
+                        },
 
-                            self.handle = Some(handle.clone());
-
-                            return Ok(handle);
-                        }
-
-                        Err(err) => {
+                        Err(_) => {
                             error!(
-                                "Error when creating a gRPC channel for selected node {:?}: {}",
-                                selected_node, err
+                                "Timeout when fetching server features on {:?}",
+                                selected_node
                             );
+
+                            continue;
                         }
-                    }
+                    };
+                    self.id = Uuid::new_v4();
+                    let handle = HandleInfo {
+                        id: self.id,
+                        endpoint: selected_node,
+                        secure: self.settings.secure,
+                        client: self.client.clone(),
+                        uri,
+                        server_info,
+                    };
+
+                    self.handle = Some(handle.clone());
+
+                    return Ok(handle);
                 } else if let Some(mode) = self.cluster_mode.as_ref() {
                     let node = node_selection(
                         &self.settings,
                         mode,
-                        &self.tls_setts,
+                        &self.client,
                         &failed_endpoint,
                         &mut self.rng,
                         &mut self.previous_candidates,
@@ -899,14 +932,14 @@ fn connection_state_machine(
     handle: tokio::runtime::Handle,
     settings: ClientSettings,
 ) -> UnboundedSender<Msg> {
-    let (sender, mut consumer) = futures::channel::mpsc::unbounded::<Msg>();
+    let (sender, mut consumer) = tokio::sync::mpsc::unbounded_channel::<Msg>();
     let dup_sender = sender.clone();
 
     handle.spawn(async move {
         let mut connection = NodeConnection::new(settings);
         let mut handle_opt: Option<Handle> = None;
 
-        while let Some(msg) = consumer.next().await {
+        while let Some(msg) = consumer.recv().await {
             match msg {
                 Msg::GetChannel(resp) => {
                     if let Some(handle) = handle_opt.as_ref() {
@@ -917,14 +950,14 @@ fn connection_state_machine(
                     match connection.next(None).await {
                         Err(e) => {
                             error!("gRPC connection error: {}", e);
-
                             let _ = resp.send(Err(e));
                             break;
                         }
                         Ok(info) => {
                             let handle = Handle {
                                 id: info.id,
-                                channel: info.channel,
+                                client: info.client,
+                                uri: info.uri,
                                 endpoint: info.endpoint,
                                 secure: info.secure,
                                 sender: sender.clone(),
@@ -951,7 +984,8 @@ fn connection_state_machine(
                         Ok(info) => {
                             let handle = Handle {
                                 id: info.id,
-                                channel: info.channel,
+                                client: info.client,
+                                uri: info.uri,
                                 endpoint: info.endpoint,
                                 secure: info.secure,
                                 sender: sender.clone(),
@@ -969,53 +1003,28 @@ fn connection_state_machine(
     dup_sender
 }
 
-async fn new_channel(
-    setts: &ClientSettings,
-    tls_config: Option<tonic::transport::ClientTlsConfig>,
-    endpoint: &Endpoint,
-) -> Result<Channel, tonic::transport::Error> {
-    let uri = setts.to_uri(endpoint);
-
-    debug!("Create gRPC channel for: {}", uri);
-
-    let mut channel = Channel::builder(uri.clone());
-
-    if let Some(config) = tls_config {
-        channel = channel.tls_config(config)?;
-    }
-
-    let channel = channel
-        .http2_keep_alive_interval(setts.keep_alive_interval)
-        .keep_alive_timeout(setts.keep_alive_timeout)
-        .connect()
-        .await?;
-
-    debug!("Connected to Node: {}", uri);
-
-    Ok(channel)
-}
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct Handle {
     id: Uuid,
-    pub(crate) channel: Channel,
+    pub(crate) client: HyperClient,
+    pub(crate) uri: hyper::Uri,
     pub(crate) endpoint: Endpoint,
     pub(crate) secure: bool,
     pub(crate) server_info: Option<ServerInfo>,
-    sender: futures::channel::mpsc::UnboundedSender<Msg>,
+    sender: tokio::sync::mpsc::UnboundedSender<Msg>,
 }
 
 impl Handle {
-    pub(crate) async fn report_error(mut self, e: &crate::Error) {
+    pub(crate) fn report_error(self, e: &crate::Error) {
         error!("Error occurred during operation execution: {:?}", e);
-        let _ = self.sender.send(Msg::CreateChannel(self.id, None)).await;
+        let _ = self.sender.send(Msg::CreateChannel(self.id, None));
     }
 
     pub(crate) fn id(&self) -> Uuid {
         self.id
     }
 
-    pub(crate) fn sender(&self) -> &futures::channel::mpsc::UnboundedSender<Msg> {
+    pub(crate) fn sender(&self) -> &tokio::sync::mpsc::UnboundedSender<Msg> {
         &self.sender
     }
 
@@ -1055,7 +1064,7 @@ impl std::fmt::Debug for Msg {
 
 #[derive(Clone)]
 pub struct GrpcClient {
-    pub(crate) sender: futures::channel::mpsc::UnboundedSender<Msg>,
+    pub(crate) sender: tokio::sync::mpsc::UnboundedSender<Msg>,
     connection_settings: ClientSettings,
 }
 
@@ -1075,46 +1084,29 @@ impl GrpcClient {
         Fut: Future<Output = Result<A, Status>> + Send,
         A: Send,
     {
-        let (sender, consumer) = futures::channel::oneshot::channel();
-
         debug!("Sending channel handle request...");
-        let _ = self.sender.clone().send(Msg::GetChannel(sender)).await;
-
-        let handle = match consumer.await {
-            Ok(handle) => handle.map_err(crate::Error::GrpcConnectionError),
-            Err(_) => Err(crate::Error::ConnectionClosed),
-        }?;
-
+        let handle = self.current_selected_node().await?;
         debug!("Handle received!");
 
         let id = handle.id;
-        match action(handle).await {
-            Err(status) => {
-                let e = crate::Error::from_grpc(status);
-
-                handle_error(&self.sender, id, &e).await;
-
-                Err(e)
-            }
-
-            Ok(a) => Ok(a),
-        }
+        action(handle).await.map_err(|status| {
+            let e = crate::Error::from_grpc(status);
+            handle_error(&self.sender, id, &e);
+            e
+        })
     }
 
     pub(crate) async fn current_selected_node(&self) -> crate::Result<Handle> {
-        let (sender, consumer) = futures::channel::oneshot::channel();
+        let (sender, consumer) = tokio::sync::oneshot::channel();
 
-        debug!("Sending channel handle request...");
+        if self.sender.send(Msg::GetChannel(sender)).is_err() {
+            return Err(crate::Error::ConnectionClosed);
+        }
 
-        let _ = self.sender.clone().send(Msg::GetChannel(sender)).await;
-        let handle = match consumer.await {
+        match consumer.await {
             Ok(handle) => handle.map_err(crate::Error::GrpcConnectionError),
             Err(_) => Err(crate::Error::ConnectionClosed),
-        }?;
-
-        debug!("Handle received!");
-
-        Ok(handle)
+        }
     }
 
     pub fn connection_settings(&self) -> &ClientSettings {
@@ -1122,23 +1114,13 @@ impl GrpcClient {
     }
 }
 
-pub(crate) async fn handle_error(
-    sender: &UnboundedSender<Msg>,
-    connection_id: Uuid,
-    err: &crate::Error,
-) {
+pub(crate) fn handle_error(sender: &UnboundedSender<Msg>, connection_id: Uuid, err: &crate::Error) {
     if let crate::Error::ServerError(ref status) = err {
         error!("Current selected EventStoreDB node gone unavailable. Starting node selection process: {}", status);
 
-        let _ = sender
-            .clone()
-            .send(Msg::CreateChannel(connection_id, None))
-            .await;
+        let _ = sender.send(Msg::CreateChannel(connection_id, None));
     } else if let crate::Error::NotLeaderException(ref leader) = err {
-        let _ = sender
-            .clone()
-            .send(Msg::CreateChannel(connection_id, Some(leader.clone())))
-            .await;
+        let _ = sender.send(Msg::CreateChannel(connection_id, Some(leader.clone())));
 
         warn!(
             "NotLeaderException found. Start reconnection process on: {:?}",
@@ -1164,7 +1146,7 @@ struct Member {
 async fn node_selection(
     conn_setts: &ClientSettings,
     mode: &ClusterMode,
-    tls_config: &Option<tonic::transport::ClientTlsConfig>,
+    client: &HyperClient,
     failed_endpoint: &Option<Endpoint>,
     rng: &mut SmallRng,
     previous_candidates: &mut Option<Vec<Member>>,
@@ -1196,41 +1178,30 @@ async fn node_selection(
     debug!("List of candidates: {:?}", candidates);
 
     for candidate in candidates {
-        match new_channel(conn_setts, tls_config.clone(), &candidate).await {
-            Ok(channel) => {
-                debug!("Calling gossip endpoint on: {:?}", candidate);
-                if let Ok(result) =
-                    tokio::time::timeout(conn_setts.gossip_timeout, gossip::read(channel)).await
-                {
-                    match result {
-                        Ok(members_info) => {
-                            debug!("Candidate {:?} gossip info: {:?}", candidate, members_info);
-                            let selected_node = determine_best_node(
-                                rng,
-                                conn_setts.preference,
-                                members_info.as_slice(),
-                            );
+        let uri = conn_setts.to_hyper_uri(&candidate);
+        debug!("Calling gossip endpoint on: {:?}", candidate);
+        if let Ok(result) =
+            tokio::time::timeout(conn_setts.gossip_timeout, gossip::read(client, uri)).await
+        {
+            match result {
+                Ok(members_info) => {
+                    debug!("Candidate {:?} gossip info: {:?}", candidate, members_info);
+                    let selected_node =
+                        determine_best_node(rng, conn_setts.preference, members_info.as_slice());
 
-                            if let Some(selected_node) = selected_node {
-                                return Some(selected_node);
-                            }
-                        }
-                        Err(err) => {
-                            debug!(
-                                "Failed to retrieve gossip information from candidate {:?}: {}",
-                                &candidate, err
-                            );
-                        }
+                    if let Some(selected_node) = selected_node {
+                        return Some(selected_node);
                     }
-                } else {
-                    warn!("Gossip request timeout for candidate: {:?}", candidate);
+                }
+                Err(err) => {
+                    debug!(
+                        "Failed to retrieve gossip information from candidate {:?}: {}",
+                        &candidate, err
+                    );
                 }
             }
-
-            Err(err) => debug!(
-                "Failed to create gRPC channel for candidate {:?}: {}",
-                candidate, err
-            ),
+        } else {
+            warn!("Gossip request timeout for candidate: {:?}", candidate);
         }
     }
 

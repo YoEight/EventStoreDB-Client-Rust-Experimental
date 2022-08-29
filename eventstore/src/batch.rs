@@ -1,7 +1,8 @@
 use crate::{EventData, ExpectedRevision, Position};
-use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
-use futures::channel::oneshot;
-use futures::{SinkExt, StreamExt};
+use tokio::sync::{
+    mpsc::{UnboundedReceiver, UnboundedSender},
+    oneshot,
+};
 
 #[derive(Debug)]
 pub(crate) struct In {
@@ -78,18 +79,18 @@ impl BatchAppendClient {
     pub(crate) fn new(
         sender: UnboundedSender<BatchMsg>,
         mut receiver: UnboundedReceiver<BatchMsg>,
-        mut forward: UnboundedSender<Req>,
+        forward: UnboundedSender<Req>,
     ) -> Self {
         tokio::spawn(async move {
             let mut reg = std::collections::HashMap::<
                 uuid::Uuid,
                 oneshot::Sender<crate::Result<BatchWriteResult>>,
             >::new();
-            while let Some(msg) = receiver.next().await {
+            while let Some(msg) = receiver.recv().await {
                 match msg {
                     BatchMsg::In(msg) => {
                         let correlation_id = msg.req.id;
-                        if forward.send(msg.req).await.is_ok() {
+                        if forward.send(msg.req).is_ok() {
                             reg.insert(correlation_id, msg.sender);
                             debug!("Send batch-append request {}", correlation_id);
 
@@ -148,7 +149,7 @@ impl BatchAppendClient {
 
         let req = In { sender, req };
 
-        if let Err(e) = self.sender.clone().send(BatchMsg::In(req)).await {
+        if let Err(e) = self.sender.send(BatchMsg::In(req)) {
             error!("[sending-end] Batch-append stream is closed: {}", e);
 
             let status = tonic::Status::cancelled("Batch-append stream has been closed");

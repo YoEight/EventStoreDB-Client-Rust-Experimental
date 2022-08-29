@@ -5,7 +5,7 @@ use crate::options::projections::{
     CreateProjectionOptions, DeleteProjectionOptions, GenericProjectionOptions,
     GetResultProjectionOptions, GetStateProjectionOptions, UpdateProjectionOptions,
 };
-use futures::stream::BoxStream;
+use futures::{stream::BoxStream, TryStreamExt};
 use serde::de::DeserializeOwned;
 
 #[allow(dead_code)]
@@ -109,8 +109,10 @@ impl ProjectionClient {
 
         self.client
             .execute(|handle| async move {
-                let mut client =
-                    projections::projections_client::ProjectionsClient::new(handle.channel);
+                let mut client = projections::projections_client::ProjectionsClient::with_origin(
+                    handle.client,
+                    handle.uri,
+                );
                 let _ = client.create(req).await?;
 
                 Ok(())
@@ -148,8 +150,10 @@ impl ProjectionClient {
 
         self.client
             .execute(|handle| async move {
-                let mut client =
-                    projections::projections_client::ProjectionsClient::new(handle.channel.clone());
+                let mut client = projections::projections_client::ProjectionsClient::with_origin(
+                    handle.client.clone(),
+                    handle.uri.clone(),
+                );
 
                 let _ = client.update(req).await?;
 
@@ -181,8 +185,10 @@ impl ProjectionClient {
 
         self.client
             .execute(|handle| async move {
-                let mut client =
-                    projections::projections_client::ProjectionsClient::new(handle.channel.clone());
+                let mut client = projections::projections_client::ProjectionsClient::with_origin(
+                    handle.client.clone(),
+                    handle.uri.clone(),
+                );
 
                 let _ = client.delete(req).await?;
 
@@ -199,7 +205,6 @@ impl ProjectionClient {
     where
         Name: AsRef<str>,
     {
-        use futures::TryStreamExt;
         self.statistics(StatsFor::Name(name.as_ref().to_string()), options)
             .await?
             .try_next()
@@ -218,8 +223,6 @@ impl ProjectionClient {
         stats_for: StatsFor,
         options: &GenericProjectionOptions,
     ) -> crate::Result<BoxStream<'_, crate::Result<ProjectionStatus>>> {
-        use futures::TryStreamExt;
-
         let mode = match stats_for {
             StatsFor::Name(name) => projections::statistics_req::options::Mode::Name(name),
             StatsFor::AllProjections => projections::statistics_req::options::Mode::All(Empty {}),
@@ -239,7 +242,7 @@ impl ProjectionClient {
         self.client
             .execute(|handle| async move {
                 let mut client =
-                    projections::projections_client::ProjectionsClient::new(handle.channel.clone());
+                    projections::projections_client::ProjectionsClient::with_origin(handle.client.clone(), handle.uri.clone());
 
                 let mut stream = client.statistics(req).await?.into_inner();
 
@@ -249,7 +252,7 @@ impl ProjectionClient {
                             Err(e) => {
                                 let e = crate::Error::from_grpc(e);
 
-                                handle.report_error(&e).await;
+                                handle.report_error(&e);
                                 yield Err(e);
                                 break;
                             }
@@ -316,8 +319,10 @@ impl ProjectionClient {
 
         self.client
             .execute(|handle| async move {
-                let mut client =
-                    projections::projections_client::ProjectionsClient::new(handle.channel.clone());
+                let mut client = projections::projections_client::ProjectionsClient::with_origin(
+                    handle.client.clone(),
+                    handle.uri.clone(),
+                );
 
                 let _ = client.enable(req).await?;
 
@@ -347,8 +352,10 @@ impl ProjectionClient {
 
         self.client
             .execute(|handle| async move {
-                let mut client =
-                    projections::projections_client::ProjectionsClient::new(handle.channel.clone());
+                let mut client = projections::projections_client::ProjectionsClient::with_origin(
+                    handle.client.clone(),
+                    handle.uri.clone(),
+                );
 
                 let _ = client.reset(req).await?;
 
@@ -401,8 +408,10 @@ impl ProjectionClient {
 
         self.client
             .execute(|handle| async move {
-                let mut client =
-                    projections::projections_client::ProjectionsClient::new(handle.channel.clone());
+                let mut client = projections::projections_client::ProjectionsClient::with_origin(
+                    handle.client.clone(),
+                    handle.uri.clone(),
+                );
 
                 let _ = client.disable(req).await?;
 
@@ -433,8 +442,10 @@ impl ProjectionClient {
 
         self.client
             .execute(|handle| async move {
-                let mut client =
-                    projections::projections_client::ProjectionsClient::new(handle.channel.clone());
+                let mut client = projections::projections_client::ProjectionsClient::with_origin(
+                    handle.client.clone(),
+                    handle.uri.clone(),
+                );
 
                 let resp = client.state(req).await?.into_inner();
                 let value = resp
@@ -469,8 +480,10 @@ impl ProjectionClient {
 
         self.client
             .execute(|handle| async move {
-                let mut client =
-                    projections::projections_client::ProjectionsClient::new(handle.channel.clone());
+                let mut client = projections::projections_client::ProjectionsClient::with_origin(
+                    handle.client.clone(),
+                    handle.uri.clone(),
+                );
 
                 let resp = client.result(req).await?.into_inner();
                 let value = resp
@@ -489,8 +502,10 @@ impl ProjectionClient {
 
         self.client
             .execute(|handle| async {
-                let mut client =
-                    projections::projections_client::ProjectionsClient::new(handle.channel);
+                let mut client = projections::projections_client::ProjectionsClient::with_origin(
+                    handle.client,
+                    handle.uri,
+                );
                 let _ = client.restart_subsystem(req).await?;
 
                 Ok(())

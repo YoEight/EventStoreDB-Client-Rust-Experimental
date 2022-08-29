@@ -82,15 +82,15 @@ pub enum Code {
     ///
     /// Service implementors can use the following guidelines to decide
     /// between `FAILED_PRECONDITION`, `ABORTED`, and `UNAVAILABLE`:
-    ///  (a) Use `UNAVAILABLE` if the client can retry just the failing call.
-    ///  (b) Use `ABORTED` if the client should retry at a higher level
-    ///      (e.g., when a client-specified test-and-set fails, indicating the
-    ///      client should restart a read-modify-write sequence).
-    ///  (c) Use `FAILED_PRECONDITION` if the client should not retry until
-    ///      the system state has been explicitly fixed.  E.g., if an "rmdir"
-    ///      fails because the directory is non-empty, `FAILED_PRECONDITION`
-    ///      should be returned since the client should not retry unless
-    ///      the files are deleted from the directory.
+    ///   (a) Use `UNAVAILABLE` if the client can retry just the failing call.
+    ///   (b) Use `ABORTED` if the client should retry at a higher level
+    ///       (e.g., when a client-specified test-and-set fails, indicating the
+    ///       client should restart a read-modify-write sequence).
+    ///   (c) Use `FAILED_PRECONDITION` if the client should not retry until
+    ///       the system state has been explicitly fixed.  E.g., if an "rmdir"
+    ///       fails because the directory is non-empty, `FAILED_PRECONDITION`
+    ///       should be returned since the client should not retry unless
+    ///       the files are deleted from the directory.
     ///
     /// HTTP Mapping: 400 Bad Request
     FailedPrecondition = 9,
@@ -145,6 +145,33 @@ pub enum Code {
     ///
     /// HTTP Mapping: 500 Internal Server Error
     DataLoss = 15,
+}
+impl Code {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Code::Ok => "OK",
+            Code::Cancelled => "CANCELLED",
+            Code::Unknown => "UNKNOWN",
+            Code::InvalidArgument => "INVALID_ARGUMENT",
+            Code::DeadlineExceeded => "DEADLINE_EXCEEDED",
+            Code::NotFound => "NOT_FOUND",
+            Code::AlreadyExists => "ALREADY_EXISTS",
+            Code::PermissionDenied => "PERMISSION_DENIED",
+            Code::Unauthenticated => "UNAUTHENTICATED",
+            Code::ResourceExhausted => "RESOURCE_EXHAUSTED",
+            Code::FailedPrecondition => "FAILED_PRECONDITION",
+            Code::Aborted => "ABORTED",
+            Code::OutOfRange => "OUT_OF_RANGE",
+            Code::Unimplemented => "UNIMPLEMENTED",
+            Code::Internal => "INTERNAL",
+            Code::Unavailable => "UNAVAILABLE",
+            Code::DataLoss => "DATA_LOSS",
+        }
+    }
 }
 /// The `Status` type defines a logical error model that is suitable for
 /// different programming environments, including REST APIs and RPC APIs. It is
