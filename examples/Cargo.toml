@@ -7,7 +7,7 @@ edition = "2021"
 [dev-dependencies]
 eventstore = { path = "../eventstore" }
 futures = "0.3"
-uuid = { version  = "0.8", features = [ "v4", "serde" ] }
+uuid = { version  = "1.1", features = [ "v4", "serde" ] }
 serde = "1"
 
 [[example]]

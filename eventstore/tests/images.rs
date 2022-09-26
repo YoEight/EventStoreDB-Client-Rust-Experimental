@@ -1,27 +1,14 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
-use testcontainers::{Container, Docker, Image, WaitForMessage};
+use testcontainers::{core::WaitFor, Image};
 
 const CONTAINER_IDENTIFIER: &str = "ghcr.io/eventstore/eventstore";
 const DEFAULT_TAG: &str = "ci";
 
-#[derive(Debug, Default, Clone)]
-pub struct ESDBArgs;
-
-impl IntoIterator for ESDBArgs {
-    type Item = String;
-    type IntoIter = ::std::vec::IntoIter<String>;
-
-    fn into_iter(self) -> <Self as IntoIterator>::IntoIter {
-        vec![].into_iter()
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ESDB {
     tag: String,
-    arguments: ESDBArgs,
     env_vars: HashMap<String, String>,
     vol_vars: HashMap<String, String>,
 }
@@ -117,33 +104,30 @@ impl ESDB {
 }
 
 impl Image for ESDB {
-    type Args = ESDBArgs;
-    type EnvVars = HashMap<String, String>;
-    type Volumes = HashMap<String, String>;
-    type EntryPoint = std::convert::Infallible;
+    type Args = ();
 
-    fn descriptor(&self) -> String {
-        format!("{}:{}", CONTAINER_IDENTIFIER, &self.tag)
+    fn name(&self) -> String {
+        CONTAINER_IDENTIFIER.to_string()
     }
 
-    fn wait_until_ready<D: Docker>(&self, container: &Container<'_, D, Self>) {
-        container.logs().stdout.wait_for_message("SPARTA!").unwrap();
+    fn tag(&self) -> String {
+        self.tag.clone()
     }
 
-    fn args(&self) -> Self::Args {
-        self.arguments.clone()
+    fn ready_conditions(&self) -> Vec<WaitFor> {
+        vec![WaitFor::message_on_stdout("SPARTA!")]
     }
 
-    fn env_vars(&self) -> Self::EnvVars {
-        self.env_vars.clone()
+    fn env_vars(&self) -> Box<dyn Iterator<Item = (&String, &String)> + '_> {
+        Box::new(self.env_vars.iter())
     }
 
-    fn volumes(&self) -> Self::Volumes {
-        self.vol_vars.clone()
+    fn volumes(&self) -> Box<dyn Iterator<Item = (&String, &String)> + '_> {
+        Box::new(self.vol_vars.iter())
     }
 
-    fn with_args(self, arguments: Self::Args) -> Self {
-        ESDB { arguments, ..self }
+    fn expose_ports(&self) -> Vec<u16> {
+        vec![2_113]
     }
 }
 
@@ -159,7 +143,6 @@ impl Default for ESDB {
 
         ESDB {
             tag: tag.to_string(),
-            arguments: ESDBArgs::default(),
             env_vars,
             vol_vars: HashMap::new(),
         }

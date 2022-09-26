@@ -50,7 +50,7 @@ tokio-rustls = "0.23"
 tonic = { version = "0.8", features = ["tls", "tls-roots"] }
 tower = "0.4"
 urlencoding = "2"
-uuid = { version = "0.8", features = ["v4", "serde"] }
+uuid = { version = "1.1", features = ["v4", "serde"] }
 webpki = "0.22"
 
 [build-dependencies]
@@ -60,10 +60,10 @@ tonic-build = { version = "0.8", features = ["prost-build"] }
 name = "integration"
 
 [dev-dependencies]
-names = "0.12"
+names = "0.14"
 pretty_env_logger = "0.4"
 serde = { version = "1", features = ["derive"] }
-testcontainers = "0.12"
+testcontainers = "0.14"
 tokio = { version = "1.20", default-features = false, features = [
   "rt-multi-thread",
   "macros",

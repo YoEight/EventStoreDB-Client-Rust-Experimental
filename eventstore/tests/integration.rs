@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::time::Duration;
 use testcontainers::clients::Cli;
-use testcontainers::{Docker, RunArgs};
+use testcontainers::core::RunnableImage;
 
 fn fresh_stream_id(prefix: &str) -> String {
     let uuid = uuid::Uuid::new_v4();
@@ -1225,23 +1225,23 @@ async fn single_node() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let image = images::ESDB::default().secure_mode(secure_mode);
-    let container = docker.run_with_args(image, RunArgs::default());
+    let container = docker.run(image);
 
     let settings = if secure_mode {
         format!(
             "esdb://admin:changeit@localhost:{}?defaultDeadline=60000&tlsVerifyCert=false",
-            container.get_host_port(2_113).unwrap(),
+            container.get_host_port_ipv4(2_113),
         )
         .parse::<ClientSettings>()
     } else {
         format!(
             "esdb://localhost:{}?tls=false&defaultDeadline=60000",
-            container.get_host_port(2_113).unwrap(),
+            container.get_host_port_ipv4(2_113),
         )
         .parse::<ClientSettings>()
     }?;
 
-    wait_node_is_alive(&settings, container.get_host_port(2_113).unwrap()).await?;
+    wait_node_is_alive(&settings, container.get_host_port_ipv4(2_113)).await?;
 
     let client = Client::new(settings.clone())?;
 
@@ -1258,10 +1258,8 @@ async fn test_auto_resub_on_connection_drop() -> Result<(), Box<dyn std::error::
     let image = images::ESDB::default()
         .insecure_mode()
         .attach_volume_to_db_directory(volume);
-    let container = docker.run_with_args(
-        image.clone(),
-        RunArgs::default().with_mapped_port((3_113, 2_113)),
-    );
+    let image_with_args = RunnableImage::from((image.clone(), ())).with_mapped_port((3_113, 2_113));
+    let container = docker.run(image_with_args);
 
     let settings = format!("esdb://localhost:{}?tls=false", 3_113).parse::<ClientSettings>()?;
 
@@ -1301,10 +1299,8 @@ async fn test_auto_resub_on_connection_drop() -> Result<(), Box<dyn std::error::
         .await?;
 
     container.stop();
-    let _container = docker.run_with_args(
-        image.clone(),
-        RunArgs::default().with_mapped_port((3_113, 2_113)),
-    );
+    let image_with_args = RunnableImage::from((image, ())).with_mapped_port((3_113, 2_113));
+    let _container = docker.run(image_with_args);
 
     wait_node_is_alive(&cloned_setts, 3_113).await?;
 
@@ -2197,15 +2193,15 @@ async fn projection_tests() -> Result<(), Box<dyn std::error::Error>> {
     let _ = pretty_env_logger::try_init();
     let docker = Cli::default();
     let image = images::ESDB::default().insecure_mode().enable_projections();
-    let container = docker.run_with_args(image, RunArgs::default());
+    let container = docker.run(image);
 
     let settings = format!(
         "esdb://localhost:{}?tls=false",
-        container.get_host_port(2_113).unwrap(),
+        container.get_host_port_ipv4(2_113),
     )
     .parse::<ClientSettings>()?;
 
-    wait_node_is_alive(&settings, container.get_host_port(2_113).unwrap()).await?;
+    wait_node_is_alive(&settings, container.get_host_port_ipv4(2_113)).await?;
 
     let client = ProjectionClient::new(settings.clone());
     let stream_client = Client::new(settings)?;
