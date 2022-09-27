@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - Change project organization. [EventStoreDB-Client-Rust#145](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/145)
+- Update `testcontainers` dependency version number. [EventStoreDB-Client-Rust#156](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/156)
 
 ### Removed
 - Remove `use_metadata` option when reading stats. [EventStoreDB-Client-Rust#146](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/146)
