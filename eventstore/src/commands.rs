@@ -428,7 +428,7 @@ pub fn filter_into_proto(filter: SubscriptionFilter) -> streams::read_req::optio
     };
 
     let expr = Expression {
-        regex: filter.regex.unwrap_or_else(|| "".to_string()),
+        regex: filter.regex.unwrap_or_default(),
         prefix: filter.prefixes,
     };
 
@@ -457,7 +457,7 @@ pub fn ps_create_filter_into_proto(
     };
 
     let expr = Expression {
-        regex: filter.regex.clone().unwrap_or_else(|| "".to_string()),
+        regex: filter.regex.clone().unwrap_or_default(),
         prefix: filter.prefixes.clone(),
     };
 
@@ -489,8 +489,8 @@ where
         .or_else(|| settings.default_authenticated_user().as_ref());
 
     if let Some(creds) = credentials {
-        let login = String::from_utf8_lossy(&*creds.login).into_owned();
-        let password = String::from_utf8_lossy(&*creds.password).into_owned();
+        let login = String::from_utf8_lossy(&creds.login).into_owned();
+        let password = String::from_utf8_lossy(&creds.password).into_owned();
 
         let basic_auth_string = base64::encode(&format!("{}:{}", login, password));
         let basic_auth = format!("Basic {}", basic_auth_string);
