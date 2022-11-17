@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 - Fix `RequiresLeader` header when node preference is set to leader. [EventStoreDB-Client-Rust#148](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/148)
 - Bug in version check in tests [EventStoreDB-Client-Rust#153](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/153)
 - Docker image path [EventStoreDB-Client-Rust#151](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/151)
+- Fix latest linting issues. [EventStoreDB-Client-Rust#158](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/158)
 
 ### This patch should fix the issue encountered here
 - https://github.com/EventStore/esdb-tui/issues/6 [EventStoreDB-Client-Rust#150](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/150)
