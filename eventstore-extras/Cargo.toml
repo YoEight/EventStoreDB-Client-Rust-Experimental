@@ -2,12 +2,18 @@
 name = "eventstore-extras"
 version = "0.1.0"
 edition = "2021"
-publish = false
+
+license = "MIT"
+
+description = "EventStoreDB gRPC client extra features"
+keywords = ["database", "eventsourcing", "eventstore", "eventstoredb", "grpc"]
+repository = "https://github.com/EventStore/EventStoreDB-Client-Rust"
+categories = ["database", "api-bindings"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 # will move to version number once we got something stable.
-eventstore = { path = "../eventstore" }
-chrono = "*"
-log = "*"
+eventstore = { path = "../eventstore", version = "2.2.0" }
+chrono = "0.4"
+log = "0.4"
