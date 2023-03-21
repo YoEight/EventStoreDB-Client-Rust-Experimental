@@ -55,20 +55,21 @@ where
     Selector: StreamPositionTypeSelector,
 {
     let settings = if let Some(c) = info.config {
-        let mut settings = PersistentSubscriptionSettings::default();
-
-        settings.resolve_link_tos = c.resolve_linktos;
-        settings.extra_statistics = c.extra_statistics;
-        settings.message_timeout = Duration::from_millis(c.message_timeout_milliseconds as u64);
-        settings.max_retry_count = c.max_retry_count as i32;
-        settings.live_buffer_size = c.live_buffer_size as i32;
-        settings.read_batch_size = c.read_batch_size as i32;
-        settings.checkpoint_after = Duration::from_millis(c.checkpoint_after_milliseconds as u64);
-        settings.checkpoint_lower_bound = c.min_checkpoint_count as i32;
-        settings.checkpoint_upper_bound = c.max_checkpoint_count as i32;
-        settings.max_subscriber_count = c.max_subscriber_count as i32;
-        settings.consumer_strategy_name = c.named_consumer_strategy;
-        settings.history_buffer_size = c.buffer_size as i32;
+        let mut settings = PersistentSubscriptionSettings {
+            resolve_link_tos: c.resolve_linktos,
+            extra_statistics: c.extra_statistics,
+            message_timeout: Duration::from_millis(c.message_timeout_milliseconds as u64),
+            max_retry_count: c.max_retry_count as i32,
+            live_buffer_size: c.live_buffer_size as i32,
+            read_batch_size: c.read_batch_size as i32,
+            checkpoint_after: Duration::from_millis(c.checkpoint_after_milliseconds as u64),
+            checkpoint_lower_bound: c.min_checkpoint_count as i32,
+            checkpoint_upper_bound: c.max_checkpoint_count as i32,
+            max_subscriber_count: c.max_subscriber_count as i32,
+            consumer_strategy_name: c.named_consumer_strategy,
+            history_buffer_size: c.buffer_size as i32,
+            ..Default::default()
+        };
 
         if info.event_stream_id == "$all" {
             settings.start_from =
