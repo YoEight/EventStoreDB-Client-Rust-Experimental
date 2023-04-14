@@ -33,7 +33,7 @@ jobs:
     needs: build
     strategy:
       matrix:
-        version: [ previous-lts, lts, latest ]
+        version: [ previous-lts, lts, ci ]
         secure: [ true, false ]
 
     runs-on: ubuntu-latest
