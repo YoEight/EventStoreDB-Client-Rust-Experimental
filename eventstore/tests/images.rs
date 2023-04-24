@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use testcontainers::{core::WaitFor, Image};
 
 const CONTAINER_IDENTIFIER: &str = "ghcr.io/eventstore/eventstore";
-const DEFAULT_TAG: &str = "ci";
+const DEFAULT_TAG: &str = "latest";
 
 #[derive(Debug, Clone)]
 pub struct ESDB {

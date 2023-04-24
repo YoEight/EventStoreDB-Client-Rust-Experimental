@@ -33,7 +33,7 @@ jobs:
     needs: build
     strategy:
       matrix:
-        version: [ 20.10.5-focal, 21.10.0-focal, ci ]
+        version: [ previous-lts, lts, ci ]
         secure: [ true, false ]
 
     runs-on: ubuntu-latest
@@ -62,7 +62,7 @@ jobs:
     needs: build
     strategy:
       matrix:
-        version: [ 20.10.5-focal, 21.10.0-focal, ci ]
+        version: [ previous-lts, lts, latest ]
 
     runs-on: ubuntu-latest
     steps:

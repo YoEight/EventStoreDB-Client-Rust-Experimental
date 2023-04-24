@@ -1195,8 +1195,8 @@ pub struct PersistentSubscriptionSettings<A> {
     pub consumer_strategy_name: SystemConsumerStrategy,
 }
 
-impl<A> PersistentSubscriptionSettings<A> {
-    pub fn default() -> PersistentSubscriptionSettings<A> {
+impl<A> Default for PersistentSubscriptionSettings<A> {
+    fn default() -> PersistentSubscriptionSettings<A> {
         PersistentSubscriptionSettings {
             resolve_link_tos: false,
             start_from: StreamPosition::End,
@@ -1212,12 +1212,6 @@ impl<A> PersistentSubscriptionSettings<A> {
             max_subscriber_count: 0, // Means their is no limit.
             consumer_strategy_name: SystemConsumerStrategy::RoundRobin,
         }
-    }
-}
-
-impl<A> Default for PersistentSubscriptionSettings<A> {
-    fn default() -> PersistentSubscriptionSettings<A> {
-        PersistentSubscriptionSettings::default()
     }
 }
 
@@ -1261,9 +1255,10 @@ pub enum PersistActionError {
 }
 
 /// Indicates which order of preferred nodes for connecting to.
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Default, Copy, Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum NodePreference {
     /// When attempting connection, prefers leader nodes.
+    #[default]
     Leader,
 
     /// When attempting connection, prefers follower nodes.
@@ -1274,12 +1269,6 @@ pub enum NodePreference {
 
     /// When attempting connection, prefers read-replica nodes.
     ReadOnlyReplica,
-}
-
-impl Default for NodePreference {
-    fn default() -> Self {
-        NodePreference::Leader
-    }
 }
 
 impl std::fmt::Display for NodePreference {

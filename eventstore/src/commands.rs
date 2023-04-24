@@ -492,7 +492,7 @@ where
         let login = String::from_utf8_lossy(&creds.login).into_owned();
         let password = String::from_utf8_lossy(&creds.password).into_owned();
 
-        let basic_auth_string = base64::encode(&format!("{}:{}", login, password));
+        let basic_auth_string = base64::encode(format!("{}:{}", login, password));
         let basic_auth = format!("Basic {}", basic_auth_string);
         let header_value = MetadataValue::try_from(basic_auth.as_str())
             .expect("Auth header value should be valid metadata header value");
@@ -546,7 +546,7 @@ pub async fn append_to_stream(
     connection: &GrpcClient,
     stream: impl AsRef<str>,
     options: &AppendToStreamOptions,
-    mut events: impl Iterator<Item = EventData> + Send + 'static,
+    events: impl Iterator<Item = EventData> + Send + 'static,
 ) -> crate::Result<WriteResult> {
     use streams::append_req::{self, Content};
     use streams::AppendReq;
@@ -566,7 +566,7 @@ pub async fn append_to_stream(
     let payload = async_stream::stream! {
         yield header;
 
-        while let Some(event) = events.next() {
+        for event in events {
             yield convert_event_data(event);
         }
     };
@@ -1221,7 +1221,7 @@ impl Subscription {
                                     match stream_options {
                                         StreamOption::Stream(stream_options) => {
                                             let revision = RevisionOption::Revision(
-                                                event.get_original_event().revision as u64,
+                                                event.get_original_event().revision,
                                             );
                                             stream_options.revision_option = Some(revision);
                                         }
