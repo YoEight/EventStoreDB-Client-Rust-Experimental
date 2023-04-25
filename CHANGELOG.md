@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - Update container version when testing. [EventStoreDB-Client-Rust#159](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/159)
+- Update container version when testing. [EventStoreDB-Client-Rust#159](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/159)
 
 ## [2.2.0] - 2023-02-13
 ### Added
