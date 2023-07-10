@@ -1,3 +1,4 @@
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateReq {
     #[prost(message, optional, tag = "1")]
@@ -5,6 +6,7 @@ pub struct CreateReq {
 }
 /// Nested message and enum types in `CreateReq`.
 pub mod create_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
@@ -17,8 +19,10 @@ pub mod create_req {
         pub groups: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateResp {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateReq {
     #[prost(message, optional, tag = "1")]
@@ -26,6 +30,7 @@ pub struct UpdateReq {
 }
 /// Nested message and enum types in `UpdateReq`.
 pub mod update_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
@@ -38,8 +43,10 @@ pub mod update_req {
         pub groups: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateResp {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteReq {
     #[prost(message, optional, tag = "1")]
@@ -47,14 +54,17 @@ pub struct DeleteReq {
 }
 /// Nested message and enum types in `DeleteReq`.
 pub mod delete_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
         pub login_name: ::prost::alloc::string::String,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteResp {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EnableReq {
     #[prost(message, optional, tag = "1")]
@@ -62,14 +72,17 @@ pub struct EnableReq {
 }
 /// Nested message and enum types in `EnableReq`.
 pub mod enable_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
         pub login_name: ::prost::alloc::string::String,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EnableResp {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DisableReq {
     #[prost(message, optional, tag = "1")]
@@ -77,14 +90,17 @@ pub struct DisableReq {
 }
 /// Nested message and enum types in `DisableReq`.
 pub mod disable_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
         pub login_name: ::prost::alloc::string::String,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DisableResp {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DetailsReq {
     #[prost(message, optional, tag = "1")]
@@ -92,12 +108,14 @@ pub struct DetailsReq {
 }
 /// Nested message and enum types in `DetailsReq`.
 pub mod details_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
         pub login_name: ::prost::alloc::string::String,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DetailsResp {
     #[prost(message, optional, tag = "1")]
@@ -105,6 +123,7 @@ pub struct DetailsResp {
 }
 /// Nested message and enum types in `DetailsResp`.
 pub mod details_resp {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct UserDetails {
         #[prost(string, tag = "1")]
@@ -120,6 +139,7 @@ pub mod details_resp {
     }
     /// Nested message and enum types in `UserDetails`.
     pub mod user_details {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct DateTime {
             #[prost(int64, tag = "1")]
@@ -127,6 +147,7 @@ pub mod details_resp {
         }
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ChangePasswordReq {
     #[prost(message, optional, tag = "1")]
@@ -134,6 +155,7 @@ pub struct ChangePasswordReq {
 }
 /// Nested message and enum types in `ChangePasswordReq`.
 pub mod change_password_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
@@ -144,8 +166,10 @@ pub mod change_password_req {
         pub new_password: ::prost::alloc::string::String,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ChangePasswordResp {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetPasswordReq {
     #[prost(message, optional, tag = "1")]
@@ -153,6 +177,7 @@ pub struct ResetPasswordReq {
 }
 /// Nested message and enum types in `ResetPasswordReq`.
 pub mod reset_password_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
@@ -161,13 +186,14 @@ pub mod reset_password_req {
         pub new_password: ::prost::alloc::string::String,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetPasswordResp {}
 /// Generated client implementations.
 pub mod users_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::http::Uri;
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct UsersClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -176,7 +202,7 @@ pub mod users_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -211,8 +237,9 @@ pub mod users_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
-                Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+            >>::Error: Into<StdError> + Send + Sync,
         {
             UsersClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -231,130 +258,210 @@ pub mod users_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         pub async fn create(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateReq>,
-        ) -> Result<tonic::Response<super::CreateResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::CreateResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path =
-                http::uri::PathAndQuery::from_static("/event_store.client.users.Users/Create");
-            self.inner.unary(request.into_request(), path, codec).await
+            let path = http::uri::PathAndQuery::from_static(
+                "/event_store.client.users.Users/Create",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("event_store.client.users.Users", "Create"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn update(
             &mut self,
             request: impl tonic::IntoRequest<super::UpdateReq>,
-        ) -> Result<tonic::Response<super::UpdateResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::UpdateResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path =
-                http::uri::PathAndQuery::from_static("/event_store.client.users.Users/Update");
-            self.inner.unary(request.into_request(), path, codec).await
+            let path = http::uri::PathAndQuery::from_static(
+                "/event_store.client.users.Users/Update",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("event_store.client.users.Users", "Update"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteReq>,
-        ) -> Result<tonic::Response<super::DeleteResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::DeleteResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path =
-                http::uri::PathAndQuery::from_static("/event_store.client.users.Users/Delete");
-            self.inner.unary(request.into_request(), path, codec).await
+            let path = http::uri::PathAndQuery::from_static(
+                "/event_store.client.users.Users/Delete",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("event_store.client.users.Users", "Delete"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn disable(
             &mut self,
             request: impl tonic::IntoRequest<super::DisableReq>,
-        ) -> Result<tonic::Response<super::DisableResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::DisableResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path =
-                http::uri::PathAndQuery::from_static("/event_store.client.users.Users/Disable");
-            self.inner.unary(request.into_request(), path, codec).await
+            let path = http::uri::PathAndQuery::from_static(
+                "/event_store.client.users.Users/Disable",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("event_store.client.users.Users", "Disable"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn enable(
             &mut self,
             request: impl tonic::IntoRequest<super::EnableReq>,
-        ) -> Result<tonic::Response<super::EnableResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::EnableResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path =
-                http::uri::PathAndQuery::from_static("/event_store.client.users.Users/Enable");
-            self.inner.unary(request.into_request(), path, codec).await
+            let path = http::uri::PathAndQuery::from_static(
+                "/event_store.client.users.Users/Enable",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("event_store.client.users.Users", "Enable"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn details(
             &mut self,
             request: impl tonic::IntoRequest<super::DetailsReq>,
-        ) -> Result<tonic::Response<tonic::codec::Streaming<super::DetailsResp>>, tonic::Status>
-        {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path =
-                http::uri::PathAndQuery::from_static("/event_store.client.users.Users/Details");
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::DetailsResp>>,
+            tonic::Status,
+        > {
             self.inner
-                .server_streaming(request.into_request(), path, codec)
+                .ready()
                 .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/event_store.client.users.Users/Details",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("event_store.client.users.Users", "Details"));
+            self.inner.server_streaming(req, path, codec).await
         }
         pub async fn change_password(
             &mut self,
             request: impl tonic::IntoRequest<super::ChangePasswordReq>,
-        ) -> Result<tonic::Response<super::ChangePasswordResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<super::ChangePasswordResp>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.users.Users/ChangePassword",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("event_store.client.users.Users", "ChangePassword"),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn reset_password(
             &mut self,
             request: impl tonic::IntoRequest<super::ResetPasswordReq>,
-        ) -> Result<tonic::Response<super::ResetPasswordResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<super::ResetPasswordResp>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.users.Users/ResetPassword",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("event_store.client.users.Users", "ResetPassword"),
+                );
+            self.inner.unary(req, path, codec).await
         }
     }
 }

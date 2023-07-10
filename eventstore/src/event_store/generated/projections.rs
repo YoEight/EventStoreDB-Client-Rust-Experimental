@@ -1,3 +1,4 @@
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateReq {
     #[prost(message, optional, tag = "1")]
@@ -5,6 +6,7 @@ pub struct CreateReq {
 }
 /// Nested message and enum types in `CreateReq`.
 pub mod create_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "4")]
@@ -14,11 +16,13 @@ pub mod create_req {
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct Transient {
             #[prost(string, tag = "1")]
             pub name: ::prost::alloc::string::String,
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct Continuous {
             #[prost(string, tag = "1")]
@@ -26,6 +30,7 @@ pub mod create_req {
             #[prost(bool, tag = "2")]
             pub track_emitted_streams: bool,
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Mode {
             #[prost(message, tag = "1")]
@@ -37,8 +42,10 @@ pub mod create_req {
         }
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateResp {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateReq {
     #[prost(message, optional, tag = "1")]
@@ -46,6 +53,7 @@ pub struct UpdateReq {
 }
 /// Nested message and enum types in `UpdateReq`.
 pub mod update_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
@@ -57,6 +65,7 @@ pub mod update_req {
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum EmitOption {
             #[prost(bool, tag = "3")]
@@ -66,8 +75,10 @@ pub mod update_req {
         }
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateResp {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteReq {
     #[prost(message, optional, tag = "1")]
@@ -75,6 +86,7 @@ pub struct DeleteReq {
 }
 /// Nested message and enum types in `DeleteReq`.
 pub mod delete_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
@@ -87,8 +99,10 @@ pub mod delete_req {
         pub delete_checkpoint_stream: bool,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteResp {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StatisticsReq {
     #[prost(message, optional, tag = "1")]
@@ -96,6 +110,7 @@ pub struct StatisticsReq {
 }
 /// Nested message and enum types in `StatisticsReq`.
 pub mod statistics_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(oneof = "options::Mode", tags = "1, 2, 3, 4, 5")]
@@ -103,6 +118,7 @@ pub mod statistics_req {
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Mode {
             #[prost(string, tag = "1")]
@@ -118,6 +134,7 @@ pub mod statistics_req {
         }
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StatisticsResp {
     #[prost(message, optional, tag = "1")]
@@ -125,6 +142,7 @@ pub struct StatisticsResp {
 }
 /// Nested message and enum types in `StatisticsResp`.
 pub mod statistics_resp {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Details {
         #[prost(int64, tag = "1")]
@@ -167,6 +185,7 @@ pub mod statistics_resp {
         pub write_pending_events_after_checkpoint: i32,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StateReq {
     #[prost(message, optional, tag = "1")]
@@ -174,6 +193,7 @@ pub struct StateReq {
 }
 /// Nested message and enum types in `StateReq`.
 pub mod state_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
@@ -182,11 +202,13 @@ pub mod state_req {
         pub partition: ::prost::alloc::string::String,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StateResp {
     #[prost(message, optional, tag = "1")]
     pub state: ::core::option::Option<::prost_types::Value>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResultReq {
     #[prost(message, optional, tag = "1")]
@@ -194,6 +216,7 @@ pub struct ResultReq {
 }
 /// Nested message and enum types in `ResultReq`.
 pub mod result_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
@@ -202,11 +225,13 @@ pub mod result_req {
         pub partition: ::prost::alloc::string::String,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResultResp {
     #[prost(message, optional, tag = "1")]
     pub result: ::core::option::Option<::prost_types::Value>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetReq {
     #[prost(message, optional, tag = "1")]
@@ -214,6 +239,7 @@ pub struct ResetReq {
 }
 /// Nested message and enum types in `ResetReq`.
 pub mod reset_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
@@ -222,8 +248,10 @@ pub mod reset_req {
         pub write_checkpoint: bool,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResetResp {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EnableReq {
     #[prost(message, optional, tag = "1")]
@@ -231,14 +259,17 @@ pub struct EnableReq {
 }
 /// Nested message and enum types in `EnableReq`.
 pub mod enable_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
         pub name: ::prost::alloc::string::String,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EnableResp {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DisableReq {
     #[prost(message, optional, tag = "1")]
@@ -246,6 +277,7 @@ pub struct DisableReq {
 }
 /// Nested message and enum types in `DisableReq`.
 pub mod disable_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
@@ -254,13 +286,14 @@ pub mod disable_req {
         pub write_checkpoint: bool,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DisableResp {}
 /// Generated client implementations.
 pub mod projections_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::http::Uri;
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct ProjectionsClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -269,7 +302,7 @@ pub mod projections_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -304,8 +337,9 @@ pub mod projections_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
-                Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+            >>::Error: Into<StdError> + Send + Sync,
         {
             ProjectionsClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -324,168 +358,294 @@ pub mod projections_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         pub async fn create(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateReq>,
-        ) -> Result<tonic::Response<super::CreateResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::CreateResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.projections.Projections/Create",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.projections.Projections",
+                        "Create",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn update(
             &mut self,
             request: impl tonic::IntoRequest<super::UpdateReq>,
-        ) -> Result<tonic::Response<super::UpdateResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::UpdateResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.projections.Projections/Update",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.projections.Projections",
+                        "Update",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteReq>,
-        ) -> Result<tonic::Response<super::DeleteResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::DeleteResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.projections.Projections/Delete",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.projections.Projections",
+                        "Delete",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn statistics(
             &mut self,
             request: impl tonic::IntoRequest<super::StatisticsReq>,
-        ) -> Result<tonic::Response<tonic::codec::Streaming<super::StatisticsResp>>, tonic::Status>
-        {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::StatisticsResp>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.projections.Projections/Statistics",
             );
-            self.inner
-                .server_streaming(request.into_request(), path, codec)
-                .await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.projections.Projections",
+                        "Statistics",
+                    ),
+                );
+            self.inner.server_streaming(req, path, codec).await
         }
         pub async fn disable(
             &mut self,
             request: impl tonic::IntoRequest<super::DisableReq>,
-        ) -> Result<tonic::Response<super::DisableResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::DisableResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.projections.Projections/Disable",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.projections.Projections",
+                        "Disable",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn enable(
             &mut self,
             request: impl tonic::IntoRequest<super::EnableReq>,
-        ) -> Result<tonic::Response<super::EnableResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::EnableResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.projections.Projections/Enable",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.projections.Projections",
+                        "Enable",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn reset(
             &mut self,
             request: impl tonic::IntoRequest<super::ResetReq>,
-        ) -> Result<tonic::Response<super::ResetResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::ResetResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.projections.Projections/Reset",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.projections.Projections",
+                        "Reset",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn state(
             &mut self,
             request: impl tonic::IntoRequest<super::StateReq>,
-        ) -> Result<tonic::Response<super::StateResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::StateResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.projections.Projections/State",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.projections.Projections",
+                        "State",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn result(
             &mut self,
             request: impl tonic::IntoRequest<super::ResultReq>,
-        ) -> Result<tonic::Response<super::ResultResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::ResultResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.projections.Projections/Result",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.projections.Projections",
+                        "Result",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn restart_subsystem(
             &mut self,
             request: impl tonic::IntoRequest<super::super::Empty>,
-        ) -> Result<tonic::Response<super::super::Empty>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::super::Empty>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.projections.Projections/RestartSubsystem",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.projections.Projections",
+                        "RestartSubsystem",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
     }
 }

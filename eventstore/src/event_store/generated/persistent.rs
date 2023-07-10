@@ -1,3 +1,4 @@
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReadReq {
     #[prost(oneof = "read_req::Content", tags = "1, 2, 3")]
@@ -5,6 +6,7 @@ pub struct ReadReq {
 }
 /// Nested message and enum types in `ReadReq`.
 pub mod read_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "2")]
@@ -18,6 +20,7 @@ pub mod read_req {
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct UuidOption {
             #[prost(oneof = "uuid_option::Content", tags = "1, 2")]
@@ -25,6 +28,7 @@ pub mod read_req {
         }
         /// Nested message and enum types in `UUIDOption`.
         pub mod uuid_option {
+            #[allow(clippy::derive_partial_eq_without_eq)]
             #[derive(Clone, PartialEq, ::prost::Oneof)]
             pub enum Content {
                 #[prost(message, tag = "1")]
@@ -33,6 +37,7 @@ pub mod read_req {
                 String(super::super::super::super::Empty),
             }
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum StreamOption {
             #[prost(message, tag = "1")]
@@ -41,6 +46,7 @@ pub mod read_req {
             All(super::super::super::Empty),
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Ack {
         #[prost(bytes = "vec", tag = "1")]
@@ -48,6 +54,7 @@ pub mod read_req {
         #[prost(message, repeated, tag = "2")]
         pub ids: ::prost::alloc::vec::Vec<super::super::Uuid>,
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Nack {
         #[prost(bytes = "vec", tag = "1")]
@@ -62,7 +69,15 @@ pub mod read_req {
     /// Nested message and enum types in `Nack`.
     pub mod nack {
         #[derive(
-            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
+            Clone,
+            Copy,
+            Debug,
+            PartialEq,
+            Eq,
+            Hash,
+            PartialOrd,
+            Ord,
+            ::prost::Enumeration
         )]
         #[repr(i32)]
         pub enum Action {
@@ -86,8 +101,20 @@ pub mod read_req {
                     Action::Stop => "Stop",
                 }
             }
+            /// Creates an enum from field names used in the ProtoBuf definition.
+            pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+                match value {
+                    "Unknown" => Some(Self::Unknown),
+                    "Park" => Some(Self::Park),
+                    "Retry" => Some(Self::Retry),
+                    "Skip" => Some(Self::Skip),
+                    "Stop" => Some(Self::Stop),
+                    _ => None,
+                }
+            }
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Content {
         #[prost(message, tag = "1")]
@@ -98,6 +125,7 @@ pub mod read_req {
         Nack(Nack),
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReadResp {
     #[prost(oneof = "read_resp::Content", tags = "1, 2")]
@@ -105,6 +133,7 @@ pub struct ReadResp {
 }
 /// Nested message and enum types in `ReadResp`.
 pub mod read_resp {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ReadEvent {
         #[prost(message, optional, tag = "1")]
@@ -118,12 +147,15 @@ pub mod read_resp {
     }
     /// Nested message and enum types in `ReadEvent`.
     pub mod read_event {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct RecordedEvent {
             #[prost(message, optional, tag = "1")]
             pub id: ::core::option::Option<super::super::super::Uuid>,
             #[prost(message, optional, tag = "2")]
-            pub stream_identifier: ::core::option::Option<super::super::super::StreamIdentifier>,
+            pub stream_identifier: ::core::option::Option<
+                super::super::super::StreamIdentifier,
+            >,
             #[prost(uint64, tag = "3")]
             pub stream_revision: u64,
             #[prost(uint64, tag = "4")]
@@ -140,6 +172,7 @@ pub mod read_resp {
             #[prost(bytes = "vec", tag = "8")]
             pub data: ::prost::alloc::vec::Vec<u8>,
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Position {
             #[prost(uint64, tag = "3")]
@@ -147,6 +180,7 @@ pub mod read_resp {
             #[prost(message, tag = "4")]
             NoPosition(super::super::super::Empty),
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Count {
             #[prost(int32, tag = "5")]
@@ -155,11 +189,13 @@ pub mod read_resp {
             NoRetryCount(super::super::super::Empty),
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct SubscriptionConfirmation {
         #[prost(string, tag = "1")]
         pub subscription_id: ::prost::alloc::string::String,
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Content {
         #[prost(message, tag = "1")]
@@ -168,6 +204,7 @@ pub mod read_resp {
         SubscriptionConfirmation(SubscriptionConfirmation),
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateReq {
     #[prost(message, optional, tag = "1")]
@@ -175,6 +212,7 @@ pub struct CreateReq {
 }
 /// Nested message and enum types in `CreateReq`.
 pub mod create_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[deprecated]
@@ -189,6 +227,7 @@ pub mod create_req {
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum StreamOption {
             #[prost(message, tag = "4")]
@@ -197,6 +236,7 @@ pub mod create_req {
             All(super::AllOptions),
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct StreamOptions {
         #[prost(message, optional, tag = "1")]
@@ -206,6 +246,7 @@ pub mod create_req {
     }
     /// Nested message and enum types in `StreamOptions`.
     pub mod stream_options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum RevisionOption {
             #[prost(uint64, tag = "2")]
@@ -216,6 +257,7 @@ pub mod create_req {
             End(super::super::super::Empty),
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct AllOptions {
         #[prost(oneof = "all_options::AllOption", tags = "1, 2, 3")]
@@ -225,6 +267,7 @@ pub mod create_req {
     }
     /// Nested message and enum types in `AllOptions`.
     pub mod all_options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct FilterOptions {
             #[prost(uint32, tag = "5")]
@@ -236,6 +279,7 @@ pub mod create_req {
         }
         /// Nested message and enum types in `FilterOptions`.
         pub mod filter_options {
+            #[allow(clippy::derive_partial_eq_without_eq)]
             #[derive(Clone, PartialEq, ::prost::Message)]
             pub struct Expression {
                 #[prost(string, tag = "1")]
@@ -243,6 +287,7 @@ pub mod create_req {
                 #[prost(string, repeated, tag = "2")]
                 pub prefix: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
             }
+            #[allow(clippy::derive_partial_eq_without_eq)]
             #[derive(Clone, PartialEq, ::prost::Oneof)]
             pub enum Filter {
                 #[prost(message, tag = "1")]
@@ -250,6 +295,7 @@ pub mod create_req {
                 #[prost(message, tag = "2")]
                 EventType(Expression),
             }
+            #[allow(clippy::derive_partial_eq_without_eq)]
             #[derive(Clone, PartialEq, ::prost::Oneof)]
             pub enum Window {
                 #[prost(uint32, tag = "3")]
@@ -258,6 +304,7 @@ pub mod create_req {
                 Count(super::super::super::super::Empty),
             }
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum AllOption {
             #[prost(message, tag = "1")]
@@ -267,6 +314,7 @@ pub mod create_req {
             #[prost(message, tag = "3")]
             End(super::super::super::Empty),
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum FilterOption {
             #[prost(message, tag = "4")]
@@ -275,6 +323,7 @@ pub mod create_req {
             NoFilter(super::super::super::Empty),
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Position {
         #[prost(uint64, tag = "1")]
@@ -282,6 +331,7 @@ pub mod create_req {
         #[prost(uint64, tag = "2")]
         pub prepare_position: u64,
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Settings {
         #[prost(bool, tag = "1")]
@@ -317,6 +367,7 @@ pub mod create_req {
     }
     /// Nested message and enum types in `Settings`.
     pub mod settings {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum MessageTimeout {
             #[prost(int64, tag = "4")]
@@ -324,6 +375,7 @@ pub mod create_req {
             #[prost(int32, tag = "14")]
             MessageTimeoutMs(i32),
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum CheckpointAfter {
             #[prost(int64, tag = "6")]
@@ -332,7 +384,17 @@ pub mod create_req {
             CheckpointAfterMs(i32),
         }
     }
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
     #[repr(i32)]
     pub enum ConsumerStrategy {
         DispatchToSingle = 0,
@@ -351,10 +413,21 @@ pub mod create_req {
                 ConsumerStrategy::Pinned => "Pinned",
             }
         }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "DispatchToSingle" => Some(Self::DispatchToSingle),
+                "RoundRobin" => Some(Self::RoundRobin),
+                "Pinned" => Some(Self::Pinned),
+                _ => None,
+            }
+        }
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateResp {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateReq {
     #[prost(message, optional, tag = "1")]
@@ -362,6 +435,7 @@ pub struct UpdateReq {
 }
 /// Nested message and enum types in `UpdateReq`.
 pub mod update_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[deprecated]
@@ -376,6 +450,7 @@ pub mod update_req {
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum StreamOption {
             #[prost(message, tag = "4")]
@@ -384,6 +459,7 @@ pub mod update_req {
             All(super::AllOptions),
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct StreamOptions {
         #[prost(message, optional, tag = "1")]
@@ -393,6 +469,7 @@ pub mod update_req {
     }
     /// Nested message and enum types in `StreamOptions`.
     pub mod stream_options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum RevisionOption {
             #[prost(uint64, tag = "2")]
@@ -403,6 +480,7 @@ pub mod update_req {
             End(super::super::super::Empty),
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct AllOptions {
         #[prost(oneof = "all_options::AllOption", tags = "1, 2, 3")]
@@ -410,6 +488,7 @@ pub mod update_req {
     }
     /// Nested message and enum types in `AllOptions`.
     pub mod all_options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum AllOption {
             #[prost(message, tag = "1")]
@@ -420,6 +499,7 @@ pub mod update_req {
             End(super::super::super::Empty),
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Position {
         #[prost(uint64, tag = "1")]
@@ -427,6 +507,7 @@ pub mod update_req {
         #[prost(uint64, tag = "2")]
         pub prepare_position: u64,
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Settings {
         #[prost(bool, tag = "1")]
@@ -459,6 +540,7 @@ pub mod update_req {
     }
     /// Nested message and enum types in `Settings`.
     pub mod settings {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum MessageTimeout {
             #[prost(int64, tag = "4")]
@@ -466,6 +548,7 @@ pub mod update_req {
             #[prost(int32, tag = "14")]
             MessageTimeoutMs(i32),
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum CheckpointAfter {
             #[prost(int64, tag = "6")]
@@ -474,7 +557,17 @@ pub mod update_req {
             CheckpointAfterMs(i32),
         }
     }
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
     #[repr(i32)]
     pub enum ConsumerStrategy {
         DispatchToSingle = 0,
@@ -493,10 +586,21 @@ pub mod update_req {
                 ConsumerStrategy::Pinned => "Pinned",
             }
         }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "DispatchToSingle" => Some(Self::DispatchToSingle),
+                "RoundRobin" => Some(Self::RoundRobin),
+                "Pinned" => Some(Self::Pinned),
+                _ => None,
+            }
+        }
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateResp {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteReq {
     #[prost(message, optional, tag = "1")]
@@ -504,6 +608,7 @@ pub struct DeleteReq {
 }
 /// Nested message and enum types in `DeleteReq`.
 pub mod delete_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "2")]
@@ -513,6 +618,7 @@ pub mod delete_req {
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum StreamOption {
             #[prost(message, tag = "1")]
@@ -522,8 +628,10 @@ pub mod delete_req {
         }
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteResp {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetInfoReq {
     #[prost(message, optional, tag = "1")]
@@ -531,6 +639,7 @@ pub struct GetInfoReq {
 }
 /// Nested message and enum types in `GetInfoReq`.
 pub mod get_info_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "3")]
@@ -540,6 +649,7 @@ pub mod get_info_req {
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum StreamOption {
             #[prost(message, tag = "1")]
@@ -549,11 +659,13 @@ pub mod get_info_req {
         }
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetInfoResp {
     #[prost(message, optional, tag = "1")]
     pub subscription_info: ::core::option::Option<SubscriptionInfo>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SubscriptionInfo {
     #[prost(string, tag = "1")]
@@ -615,6 +727,7 @@ pub struct SubscriptionInfo {
 }
 /// Nested message and enum types in `SubscriptionInfo`.
 pub mod subscription_info {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ConnectionInfo {
         #[prost(string, tag = "1")]
@@ -636,6 +749,7 @@ pub mod subscription_info {
         #[prost(string, tag = "9")]
         pub connection_name: ::prost::alloc::string::String,
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Measurement {
         #[prost(string, tag = "1")]
@@ -644,6 +758,7 @@ pub mod subscription_info {
         pub value: i64,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReplayParkedReq {
     #[prost(message, optional, tag = "1")]
@@ -651,6 +766,7 @@ pub struct ReplayParkedReq {
 }
 /// Nested message and enum types in `ReplayParkedReq`.
 pub mod replay_parked_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(string, tag = "1")]
@@ -662,6 +778,7 @@ pub mod replay_parked_req {
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum StreamOption {
             #[prost(message, tag = "2")]
@@ -669,6 +786,7 @@ pub mod replay_parked_req {
             #[prost(message, tag = "3")]
             All(super::super::super::Empty),
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum StopAtOption {
             #[prost(int64, tag = "4")]
@@ -678,8 +796,10 @@ pub mod replay_parked_req {
         }
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReplayParkedResp {}
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListReq {
     #[prost(message, optional, tag = "1")]
@@ -687,6 +807,7 @@ pub struct ListReq {
 }
 /// Nested message and enum types in `ListReq`.
 pub mod list_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(oneof = "options::ListOption", tags = "1, 2")]
@@ -694,6 +815,7 @@ pub mod list_req {
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum ListOption {
             #[prost(message, tag = "1")]
@@ -702,6 +824,7 @@ pub mod list_req {
             ListForStream(super::StreamOption),
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct StreamOption {
         #[prost(oneof = "stream_option::StreamOption", tags = "1, 2")]
@@ -709,6 +832,7 @@ pub mod list_req {
     }
     /// Nested message and enum types in `StreamOption`.
     pub mod stream_option {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum StreamOption {
             #[prost(message, tag = "1")]
@@ -718,6 +842,7 @@ pub mod list_req {
         }
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListResp {
     #[prost(message, repeated, tag = "1")]
@@ -726,8 +851,8 @@ pub struct ListResp {
 /// Generated client implementations.
 pub mod persistent_subscriptions_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::http::Uri;
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct PersistentSubscriptionsClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -736,7 +861,7 @@ pub mod persistent_subscriptions_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -771,10 +896,13 @@ pub mod persistent_subscriptions_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
-                Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+            >>::Error: Into<StdError> + Send + Sync,
         {
-            PersistentSubscriptionsClient::new(InterceptedService::new(inner, interceptor))
+            PersistentSubscriptionsClient::new(
+                InterceptedService::new(inner, interceptor),
+            )
         }
         /// Compress requests with the given encoding.
         ///
@@ -791,136 +919,243 @@ pub mod persistent_subscriptions_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         pub async fn create(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateReq>,
-        ) -> Result<tonic::Response<super::CreateResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::CreateResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/Create",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                        "Create",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn update(
             &mut self,
             request: impl tonic::IntoRequest<super::UpdateReq>,
-        ) -> Result<tonic::Response<super::UpdateResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::UpdateResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/Update",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                        "Update",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteReq>,
-        ) -> Result<tonic::Response<super::DeleteResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::DeleteResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/Delete",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                        "Delete",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn read(
             &mut self,
             request: impl tonic::IntoStreamingRequest<Message = super::ReadReq>,
-        ) -> Result<tonic::Response<tonic::codec::Streaming<super::ReadResp>>, tonic::Status>
-        {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::ReadResp>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/Read",
             );
-            self.inner
-                .streaming(request.into_streaming_request(), path, codec)
-                .await
+            let mut req = request.into_streaming_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                        "Read",
+                    ),
+                );
+            self.inner.streaming(req, path, codec).await
         }
         pub async fn get_info(
             &mut self,
             request: impl tonic::IntoRequest<super::GetInfoReq>,
-        ) -> Result<tonic::Response<super::GetInfoResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::GetInfoResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/GetInfo",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                        "GetInfo",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn replay_parked(
             &mut self,
             request: impl tonic::IntoRequest<super::ReplayParkedReq>,
-        ) -> Result<tonic::Response<super::ReplayParkedResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<super::ReplayParkedResp>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/ReplayParked",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                        "ReplayParked",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn list(
             &mut self,
             request: impl tonic::IntoRequest<super::ListReq>,
-        ) -> Result<tonic::Response<super::ListResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::ListResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/List",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                        "List",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn restart_subsystem(
             &mut self,
             request: impl tonic::IntoRequest<super::super::Empty>,
-        ) -> Result<tonic::Response<super::super::Empty>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::super::Empty>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/RestartSubsystem",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                        "RestartSubsystem",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
         }
     }
 }

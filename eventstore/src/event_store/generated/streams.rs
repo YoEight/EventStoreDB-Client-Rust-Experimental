@@ -1,3 +1,4 @@
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReadReq {
     #[prost(message, optional, tag = "1")]
@@ -5,6 +6,7 @@ pub struct ReadReq {
 }
 /// Nested message and enum types in `ReadReq`.
 pub mod read_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(enumeration = "options::ReadDirection", tag = "3")]
@@ -24,15 +26,19 @@ pub mod read_req {
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct StreamOptions {
             #[prost(message, optional, tag = "1")]
-            pub stream_identifier: ::core::option::Option<super::super::super::StreamIdentifier>,
+            pub stream_identifier: ::core::option::Option<
+                super::super::super::StreamIdentifier,
+            >,
             #[prost(oneof = "stream_options::RevisionOption", tags = "2, 3, 4")]
             pub revision_option: ::core::option::Option<stream_options::RevisionOption>,
         }
         /// Nested message and enum types in `StreamOptions`.
         pub mod stream_options {
+            #[allow(clippy::derive_partial_eq_without_eq)]
             #[derive(Clone, PartialEq, ::prost::Oneof)]
             pub enum RevisionOption {
                 #[prost(uint64, tag = "2")]
@@ -43,6 +49,7 @@ pub mod read_req {
                 End(super::super::super::super::Empty),
             }
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct AllOptions {
             #[prost(oneof = "all_options::AllOption", tags = "1, 2, 3")]
@@ -50,6 +57,7 @@ pub mod read_req {
         }
         /// Nested message and enum types in `AllOptions`.
         pub mod all_options {
+            #[allow(clippy::derive_partial_eq_without_eq)]
             #[derive(Clone, PartialEq, ::prost::Oneof)]
             pub enum AllOption {
                 #[prost(message, tag = "1")]
@@ -60,8 +68,10 @@ pub mod read_req {
                 End(super::super::super::super::Empty),
             }
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct SubscriptionOptions {}
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct Position {
             #[prost(uint64, tag = "1")]
@@ -69,6 +79,7 @@ pub mod read_req {
             #[prost(uint64, tag = "2")]
             pub prepare_position: u64,
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct FilterOptions {
             #[prost(uint32, tag = "5")]
@@ -80,6 +91,7 @@ pub mod read_req {
         }
         /// Nested message and enum types in `FilterOptions`.
         pub mod filter_options {
+            #[allow(clippy::derive_partial_eq_without_eq)]
             #[derive(Clone, PartialEq, ::prost::Message)]
             pub struct Expression {
                 #[prost(string, tag = "1")]
@@ -87,6 +99,7 @@ pub mod read_req {
                 #[prost(string, repeated, tag = "2")]
                 pub prefix: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
             }
+            #[allow(clippy::derive_partial_eq_without_eq)]
             #[derive(Clone, PartialEq, ::prost::Oneof)]
             pub enum Filter {
                 #[prost(message, tag = "1")]
@@ -94,6 +107,7 @@ pub mod read_req {
                 #[prost(message, tag = "2")]
                 EventType(Expression),
             }
+            #[allow(clippy::derive_partial_eq_without_eq)]
             #[derive(Clone, PartialEq, ::prost::Oneof)]
             pub enum Window {
                 #[prost(uint32, tag = "3")]
@@ -102,6 +116,7 @@ pub mod read_req {
                 Count(super::super::super::super::Empty),
             }
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct UuidOption {
             #[prost(oneof = "uuid_option::Content", tags = "1, 2")]
@@ -109,6 +124,7 @@ pub mod read_req {
         }
         /// Nested message and enum types in `UUIDOption`.
         pub mod uuid_option {
+            #[allow(clippy::derive_partial_eq_without_eq)]
             #[derive(Clone, PartialEq, ::prost::Oneof)]
             pub enum Content {
                 #[prost(message, tag = "1")]
@@ -117,13 +133,22 @@ pub mod read_req {
                 String(super::super::super::super::Empty),
             }
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct ControlOption {
             #[prost(uint32, tag = "1")]
             pub compatibility: u32,
         }
         #[derive(
-            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
+            Clone,
+            Copy,
+            Debug,
+            PartialEq,
+            Eq,
+            Hash,
+            PartialOrd,
+            Ord,
+            ::prost::Enumeration
         )]
         #[repr(i32)]
         pub enum ReadDirection {
@@ -141,7 +166,16 @@ pub mod read_req {
                     ReadDirection::Backwards => "Backwards",
                 }
             }
+            /// Creates an enum from field names used in the ProtoBuf definition.
+            pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+                match value {
+                    "Forwards" => Some(Self::Forwards),
+                    "Backwards" => Some(Self::Backwards),
+                    _ => None,
+                }
+            }
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum StreamOption {
             #[prost(message, tag = "1")]
@@ -149,6 +183,7 @@ pub mod read_req {
             #[prost(message, tag = "2")]
             All(AllOptions),
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum CountOption {
             #[prost(uint64, tag = "5")]
@@ -156,6 +191,7 @@ pub mod read_req {
             #[prost(message, tag = "6")]
             Subscription(SubscriptionOptions),
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum FilterOption {
             #[prost(message, tag = "7")]
@@ -165,6 +201,7 @@ pub mod read_req {
         }
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReadResp {
     #[prost(oneof = "read_resp::Content", tags = "1, 2, 3, 4, 5, 6, 7")]
@@ -172,6 +209,7 @@ pub struct ReadResp {
 }
 /// Nested message and enum types in `ReadResp`.
 pub mod read_resp {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ReadEvent {
         #[prost(message, optional, tag = "1")]
@@ -183,12 +221,15 @@ pub mod read_resp {
     }
     /// Nested message and enum types in `ReadEvent`.
     pub mod read_event {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct RecordedEvent {
             #[prost(message, optional, tag = "1")]
             pub id: ::core::option::Option<super::super::super::Uuid>,
             #[prost(message, optional, tag = "2")]
-            pub stream_identifier: ::core::option::Option<super::super::super::StreamIdentifier>,
+            pub stream_identifier: ::core::option::Option<
+                super::super::super::StreamIdentifier,
+            >,
             #[prost(uint64, tag = "3")]
             pub stream_revision: u64,
             #[prost(uint64, tag = "4")]
@@ -205,6 +246,7 @@ pub mod read_resp {
             #[prost(bytes = "vec", tag = "8")]
             pub data: ::prost::alloc::vec::Vec<u8>,
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Position {
             #[prost(uint64, tag = "3")]
@@ -213,11 +255,13 @@ pub mod read_resp {
             NoPosition(super::super::super::Empty),
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct SubscriptionConfirmation {
         #[prost(string, tag = "1")]
         pub subscription_id: ::prost::alloc::string::String,
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Checkpoint {
         #[prost(uint64, tag = "1")]
@@ -225,11 +269,13 @@ pub mod read_resp {
         #[prost(uint64, tag = "2")]
         pub prepare_position: u64,
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct StreamNotFound {
         #[prost(message, optional, tag = "1")]
         pub stream_identifier: ::core::option::Option<super::super::StreamIdentifier>,
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Content {
         #[prost(message, tag = "1")]
@@ -248,6 +294,7 @@ pub mod read_resp {
         LastAllStreamPosition(super::super::AllStreamPosition),
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AppendReq {
     #[prost(oneof = "append_req::Content", tags = "1, 2")]
@@ -255,15 +302,19 @@ pub struct AppendReq {
 }
 /// Nested message and enum types in `AppendReq`.
 pub mod append_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(message, optional, tag = "1")]
         pub stream_identifier: ::core::option::Option<super::super::StreamIdentifier>,
         #[prost(oneof = "options::ExpectedStreamRevision", tags = "2, 3, 4, 5")]
-        pub expected_stream_revision: ::core::option::Option<options::ExpectedStreamRevision>,
+        pub expected_stream_revision: ::core::option::Option<
+            options::ExpectedStreamRevision,
+        >,
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum ExpectedStreamRevision {
             #[prost(uint64, tag = "2")]
@@ -276,6 +327,7 @@ pub mod append_req {
             StreamExists(super::super::super::Empty),
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ProposedMessage {
         #[prost(message, optional, tag = "1")]
@@ -290,6 +342,7 @@ pub mod append_req {
         #[prost(bytes = "vec", tag = "4")]
         pub data: ::prost::alloc::vec::Vec<u8>,
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Content {
         #[prost(message, tag = "1")]
@@ -298,6 +351,7 @@ pub mod append_req {
         ProposedMessage(ProposedMessage),
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AppendResp {
     #[prost(oneof = "append_resp::Result", tags = "1, 2")]
@@ -305,6 +359,7 @@ pub struct AppendResp {
 }
 /// Nested message and enum types in `AppendResp`.
 pub mod append_resp {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Position {
         #[prost(uint64, tag = "1")]
@@ -312,15 +367,19 @@ pub mod append_resp {
         #[prost(uint64, tag = "2")]
         pub prepare_position: u64,
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Success {
         #[prost(oneof = "success::CurrentRevisionOption", tags = "1, 2")]
-        pub current_revision_option: ::core::option::Option<success::CurrentRevisionOption>,
+        pub current_revision_option: ::core::option::Option<
+            success::CurrentRevisionOption,
+        >,
         #[prost(oneof = "success::PositionOption", tags = "3, 4")]
         pub position_option: ::core::option::Option<success::PositionOption>,
     }
     /// Nested message and enum types in `Success`.
     pub mod success {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum CurrentRevisionOption {
             #[prost(uint64, tag = "1")]
@@ -328,6 +387,7 @@ pub mod append_resp {
             #[prost(message, tag = "2")]
             NoStream(super::super::super::Empty),
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum PositionOption {
             #[prost(message, tag = "3")]
@@ -336,32 +396,38 @@ pub mod append_resp {
             NoPosition(super::super::super::Empty),
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct WrongExpectedVersion {
         #[prost(
             oneof = "wrong_expected_version::CurrentRevisionOption2060",
             tags = "1, 2"
         )]
-        pub current_revision_option_20_6_0:
-            ::core::option::Option<wrong_expected_version::CurrentRevisionOption2060>,
+        pub current_revision_option_20_6_0: ::core::option::Option<
+            wrong_expected_version::CurrentRevisionOption2060,
+        >,
         #[prost(
             oneof = "wrong_expected_version::ExpectedRevisionOption2060",
             tags = "3, 4, 5"
         )]
-        pub expected_revision_option_20_6_0:
-            ::core::option::Option<wrong_expected_version::ExpectedRevisionOption2060>,
+        pub expected_revision_option_20_6_0: ::core::option::Option<
+            wrong_expected_version::ExpectedRevisionOption2060,
+        >,
         #[prost(oneof = "wrong_expected_version::CurrentRevisionOption", tags = "6, 7")]
-        pub current_revision_option:
-            ::core::option::Option<wrong_expected_version::CurrentRevisionOption>,
+        pub current_revision_option: ::core::option::Option<
+            wrong_expected_version::CurrentRevisionOption,
+        >,
         #[prost(
             oneof = "wrong_expected_version::ExpectedRevisionOption",
             tags = "8, 9, 10, 11"
         )]
-        pub expected_revision_option:
-            ::core::option::Option<wrong_expected_version::ExpectedRevisionOption>,
+        pub expected_revision_option: ::core::option::Option<
+            wrong_expected_version::ExpectedRevisionOption,
+        >,
     }
     /// Nested message and enum types in `WrongExpectedVersion`.
     pub mod wrong_expected_version {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum CurrentRevisionOption2060 {
             #[prost(uint64, tag = "1")]
@@ -369,6 +435,7 @@ pub mod append_resp {
             #[prost(message, tag = "2")]
             NoStream2060(super::super::super::Empty),
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum ExpectedRevisionOption2060 {
             #[prost(uint64, tag = "3")]
@@ -378,6 +445,7 @@ pub mod append_resp {
             #[prost(message, tag = "5")]
             StreamExists2060(super::super::super::Empty),
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum CurrentRevisionOption {
             #[prost(uint64, tag = "6")]
@@ -385,6 +453,7 @@ pub mod append_resp {
             #[prost(message, tag = "7")]
             CurrentNoStream(super::super::super::Empty),
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum ExpectedRevisionOption {
             #[prost(uint64, tag = "8")]
@@ -397,6 +466,7 @@ pub mod append_resp {
             ExpectedNoStream(super::super::super::Empty),
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
         #[prost(message, tag = "1")]
@@ -405,6 +475,7 @@ pub mod append_resp {
         WrongExpectedVersion(WrongExpectedVersion),
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BatchAppendReq {
     #[prost(message, optional, tag = "1")]
@@ -418,6 +489,7 @@ pub struct BatchAppendReq {
 }
 /// Nested message and enum types in `BatchAppendReq`.
 pub mod batch_append_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(message, optional, tag = "1")]
@@ -425,10 +497,13 @@ pub mod batch_append_req {
         #[prost(message, optional, tag = "6")]
         pub deadline: ::core::option::Option<::prost_types::Timestamp>,
         #[prost(oneof = "options::ExpectedStreamPosition", tags = "2, 3, 4, 5")]
-        pub expected_stream_position: ::core::option::Option<options::ExpectedStreamPosition>,
+        pub expected_stream_position: ::core::option::Option<
+            options::ExpectedStreamPosition,
+        >,
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum ExpectedStreamPosition {
             #[prost(uint64, tag = "2")]
@@ -441,6 +516,7 @@ pub mod batch_append_req {
             StreamExists(()),
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ProposedMessage {
         #[prost(message, optional, tag = "1")]
@@ -456,6 +532,7 @@ pub mod batch_append_req {
         pub data: ::prost::alloc::vec::Vec<u8>,
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BatchAppendResp {
     #[prost(message, optional, tag = "1")]
@@ -464,23 +541,26 @@ pub struct BatchAppendResp {
     pub stream_identifier: ::core::option::Option<super::StreamIdentifier>,
     #[prost(oneof = "batch_append_resp::Result", tags = "2, 3")]
     pub result: ::core::option::Option<batch_append_resp::Result>,
-    #[prost(
-        oneof = "batch_append_resp::ExpectedStreamPosition",
-        tags = "5, 6, 7, 8"
-    )]
-    pub expected_stream_position: ::core::option::Option<batch_append_resp::ExpectedStreamPosition>,
+    #[prost(oneof = "batch_append_resp::ExpectedStreamPosition", tags = "5, 6, 7, 8")]
+    pub expected_stream_position: ::core::option::Option<
+        batch_append_resp::ExpectedStreamPosition,
+    >,
 }
 /// Nested message and enum types in `BatchAppendResp`.
 pub mod batch_append_resp {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Success {
         #[prost(oneof = "success::CurrentRevisionOption", tags = "1, 2")]
-        pub current_revision_option: ::core::option::Option<success::CurrentRevisionOption>,
+        pub current_revision_option: ::core::option::Option<
+            success::CurrentRevisionOption,
+        >,
         #[prost(oneof = "success::PositionOption", tags = "3, 4")]
         pub position_option: ::core::option::Option<success::PositionOption>,
     }
     /// Nested message and enum types in `Success`.
     pub mod success {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum CurrentRevisionOption {
             #[prost(uint64, tag = "1")]
@@ -488,6 +568,7 @@ pub mod batch_append_resp {
             #[prost(message, tag = "2")]
             NoStream(()),
         }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum PositionOption {
             #[prost(message, tag = "3")]
@@ -496,6 +577,7 @@ pub mod batch_append_resp {
             NoPosition(()),
         }
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
         #[prost(message, tag = "2")]
@@ -503,6 +585,7 @@ pub mod batch_append_resp {
         #[prost(message, tag = "3")]
         Success(Success),
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum ExpectedStreamPosition {
         #[prost(uint64, tag = "5")]
@@ -515,6 +598,7 @@ pub mod batch_append_resp {
         StreamExists(()),
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteReq {
     #[prost(message, optional, tag = "1")]
@@ -522,15 +606,19 @@ pub struct DeleteReq {
 }
 /// Nested message and enum types in `DeleteReq`.
 pub mod delete_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(message, optional, tag = "1")]
         pub stream_identifier: ::core::option::Option<super::super::StreamIdentifier>,
         #[prost(oneof = "options::ExpectedStreamRevision", tags = "2, 3, 4, 5")]
-        pub expected_stream_revision: ::core::option::Option<options::ExpectedStreamRevision>,
+        pub expected_stream_revision: ::core::option::Option<
+            options::ExpectedStreamRevision,
+        >,
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum ExpectedStreamRevision {
             #[prost(uint64, tag = "2")]
@@ -544,6 +632,7 @@ pub mod delete_req {
         }
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteResp {
     #[prost(oneof = "delete_resp::PositionOption", tags = "1, 2")]
@@ -551,6 +640,7 @@ pub struct DeleteResp {
 }
 /// Nested message and enum types in `DeleteResp`.
 pub mod delete_resp {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Position {
         #[prost(uint64, tag = "1")]
@@ -558,6 +648,7 @@ pub mod delete_resp {
         #[prost(uint64, tag = "2")]
         pub prepare_position: u64,
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum PositionOption {
         #[prost(message, tag = "1")]
@@ -566,6 +657,7 @@ pub mod delete_resp {
         NoPosition(super::super::Empty),
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TombstoneReq {
     #[prost(message, optional, tag = "1")]
@@ -573,15 +665,19 @@ pub struct TombstoneReq {
 }
 /// Nested message and enum types in `TombstoneReq`.
 pub mod tombstone_req {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Options {
         #[prost(message, optional, tag = "1")]
         pub stream_identifier: ::core::option::Option<super::super::StreamIdentifier>,
         #[prost(oneof = "options::ExpectedStreamRevision", tags = "2, 3, 4, 5")]
-        pub expected_stream_revision: ::core::option::Option<options::ExpectedStreamRevision>,
+        pub expected_stream_revision: ::core::option::Option<
+            options::ExpectedStreamRevision,
+        >,
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum ExpectedStreamRevision {
             #[prost(uint64, tag = "2")]
@@ -595,6 +691,7 @@ pub mod tombstone_req {
         }
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TombstoneResp {
     #[prost(oneof = "tombstone_resp::PositionOption", tags = "1, 2")]
@@ -602,6 +699,7 @@ pub struct TombstoneResp {
 }
 /// Nested message and enum types in `TombstoneResp`.
 pub mod tombstone_resp {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Position {
         #[prost(uint64, tag = "1")]
@@ -609,6 +707,7 @@ pub mod tombstone_resp {
         #[prost(uint64, tag = "2")]
         pub prepare_position: u64,
     }
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum PositionOption {
         #[prost(message, tag = "1")]
@@ -620,8 +719,8 @@ pub mod tombstone_resp {
 /// Generated client implementations.
 pub mod streams_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::http::Uri;
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct StreamsClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -630,7 +729,7 @@ pub mod streams_client {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
-            D: std::convert::TryInto<tonic::transport::Endpoint>,
+            D: TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
@@ -665,8 +764,9 @@ pub mod streams_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
-                Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+            >>::Error: Into<StdError> + Send + Sync,
         {
             StreamsClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -685,90 +785,141 @@ pub mod streams_client {
             self.inner = self.inner.accept_compressed(encoding);
             self
         }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
         pub async fn read(
             &mut self,
             request: impl tonic::IntoRequest<super::ReadReq>,
-        ) -> Result<tonic::Response<tonic::codec::Streaming<super::ReadResp>>, tonic::Status>
-        {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path =
-                http::uri::PathAndQuery::from_static("/event_store.client.streams.Streams/Read");
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::ReadResp>>,
+            tonic::Status,
+        > {
             self.inner
-                .server_streaming(request.into_request(), path, codec)
+                .ready()
                 .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/event_store.client.streams.Streams/Read",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("event_store.client.streams.Streams", "Read"));
+            self.inner.server_streaming(req, path, codec).await
         }
         pub async fn append(
             &mut self,
             request: impl tonic::IntoStreamingRequest<Message = super::AppendReq>,
-        ) -> Result<tonic::Response<super::AppendResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path =
-                http::uri::PathAndQuery::from_static("/event_store.client.streams.Streams/Append");
+        ) -> std::result::Result<tonic::Response<super::AppendResp>, tonic::Status> {
             self.inner
-                .client_streaming(request.into_streaming_request(), path, codec)
+                .ready()
                 .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/event_store.client.streams.Streams/Append",
+            );
+            let mut req = request.into_streaming_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("event_store.client.streams.Streams", "Append"));
+            self.inner.client_streaming(req, path, codec).await
         }
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteReq>,
-        ) -> Result<tonic::Response<super::DeleteResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::DeleteResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path =
-                http::uri::PathAndQuery::from_static("/event_store.client.streams.Streams/Delete");
-            self.inner.unary(request.into_request(), path, codec).await
+            let path = http::uri::PathAndQuery::from_static(
+                "/event_store.client.streams.Streams/Delete",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("event_store.client.streams.Streams", "Delete"));
+            self.inner.unary(req, path, codec).await
         }
         pub async fn tombstone(
             &mut self,
             request: impl tonic::IntoRequest<super::TombstoneReq>,
-        ) -> Result<tonic::Response<super::TombstoneResp>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<tonic::Response<super::TombstoneResp>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.streams.Streams/Tombstone",
             );
-            self.inner.unary(request.into_request(), path, codec).await
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("event_store.client.streams.Streams", "Tombstone"),
+                );
+            self.inner.unary(req, path, codec).await
         }
         pub async fn batch_append(
             &mut self,
             request: impl tonic::IntoStreamingRequest<Message = super::BatchAppendReq>,
-        ) -> Result<tonic::Response<tonic::codec::Streaming<super::BatchAppendResp>>, tonic::Status>
-        {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::BatchAppendResp>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.streams.Streams/BatchAppend",
             );
-            self.inner
-                .streaming(request.into_streaming_request(), path, codec)
-                .await
+            let mut req = request.into_streaming_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("event_store.client.streams.Streams", "BatchAppend"),
+                );
+            self.inner.streaming(req, path, codec).await
         }
     }
 }

@@ -172,6 +172,29 @@ impl Code {
             Code::DataLoss => "DATA_LOSS",
         }
     }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "OK" => Some(Self::Ok),
+            "CANCELLED" => Some(Self::Cancelled),
+            "UNKNOWN" => Some(Self::Unknown),
+            "INVALID_ARGUMENT" => Some(Self::InvalidArgument),
+            "DEADLINE_EXCEEDED" => Some(Self::DeadlineExceeded),
+            "NOT_FOUND" => Some(Self::NotFound),
+            "ALREADY_EXISTS" => Some(Self::AlreadyExists),
+            "PERMISSION_DENIED" => Some(Self::PermissionDenied),
+            "UNAUTHENTICATED" => Some(Self::Unauthenticated),
+            "RESOURCE_EXHAUSTED" => Some(Self::ResourceExhausted),
+            "FAILED_PRECONDITION" => Some(Self::FailedPrecondition),
+            "ABORTED" => Some(Self::Aborted),
+            "OUT_OF_RANGE" => Some(Self::OutOfRange),
+            "UNIMPLEMENTED" => Some(Self::Unimplemented),
+            "INTERNAL" => Some(Self::Internal),
+            "UNAVAILABLE" => Some(Self::Unavailable),
+            "DATA_LOSS" => Some(Self::DataLoss),
+            _ => None,
+        }
+    }
 }
 /// The `Status` type defines a logical error model that is suitable for
 /// different programming environments, including REST APIs and RPC APIs. It is
@@ -180,6 +203,7 @@ impl Code {
 ///
 /// You can find out more about this error model and how to work with it in the
 /// [API Design Guide](<https://cloud.google.com/apis/design/errors>).
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Status {
     /// The status code, which should be an enum value of \[google.rpc.Code][google.rpc.Code\].
