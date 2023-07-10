@@ -192,8 +192,8 @@ pub struct ResetPasswordResp {}
 /// Generated client implementations.
 pub mod users_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct UsersClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -237,9 +237,8 @@ pub mod users_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
         {
             UsersClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -278,19 +277,15 @@ pub mod users_client {
             &mut self,
             request: impl tonic::IntoRequest<super::CreateReq>,
         ) -> std::result::Result<tonic::Response<super::CreateResp>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/event_store.client.users.Users/Create",
-            );
+            let path =
+                http::uri::PathAndQuery::from_static("/event_store.client.users.Users/Create");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("event_store.client.users.Users", "Create"));
@@ -300,19 +295,15 @@ pub mod users_client {
             &mut self,
             request: impl tonic::IntoRequest<super::UpdateReq>,
         ) -> std::result::Result<tonic::Response<super::UpdateResp>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/event_store.client.users.Users/Update",
-            );
+            let path =
+                http::uri::PathAndQuery::from_static("/event_store.client.users.Users/Update");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("event_store.client.users.Users", "Update"));
@@ -322,19 +313,15 @@ pub mod users_client {
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteReq>,
         ) -> std::result::Result<tonic::Response<super::DeleteResp>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/event_store.client.users.Users/Delete",
-            );
+            let path =
+                http::uri::PathAndQuery::from_static("/event_store.client.users.Users/Delete");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("event_store.client.users.Users", "Delete"));
@@ -344,19 +331,15 @@ pub mod users_client {
             &mut self,
             request: impl tonic::IntoRequest<super::DisableReq>,
         ) -> std::result::Result<tonic::Response<super::DisableResp>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/event_store.client.users.Users/Disable",
-            );
+            let path =
+                http::uri::PathAndQuery::from_static("/event_store.client.users.Users/Disable");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("event_store.client.users.Users", "Disable"));
@@ -366,19 +349,15 @@ pub mod users_client {
             &mut self,
             request: impl tonic::IntoRequest<super::EnableReq>,
         ) -> std::result::Result<tonic::Response<super::EnableResp>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/event_store.client.users.Users/Enable",
-            );
+            let path =
+                http::uri::PathAndQuery::from_static("/event_store.client.users.Users/Enable");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("event_store.client.users.Users", "Enable"));
@@ -391,19 +370,15 @@ pub mod users_client {
             tonic::Response<tonic::codec::Streaming<super::DetailsResp>>,
             tonic::Status,
         > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/event_store.client.users.Users/Details",
-            );
+            let path =
+                http::uri::PathAndQuery::from_static("/event_store.client.users.Users/Details");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("event_store.client.users.Users", "Details"));
@@ -412,55 +387,44 @@ pub mod users_client {
         pub async fn change_password(
             &mut self,
             request: impl tonic::IntoRequest<super::ChangePasswordReq>,
-        ) -> std::result::Result<
-            tonic::Response<super::ChangePasswordResp>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::ChangePasswordResp>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.users.Users/ChangePassword",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("event_store.client.users.Users", "ChangePassword"),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.users.Users",
+                "ChangePassword",
+            ));
             self.inner.unary(req, path, codec).await
         }
         pub async fn reset_password(
             &mut self,
             request: impl tonic::IntoRequest<super::ResetPasswordReq>,
-        ) -> std::result::Result<
-            tonic::Response<super::ResetPasswordResp>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::ResetPasswordResp>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.users.Users/ResetPassword",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("event_store.client.users.Users", "ResetPassword"),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.users.Users",
+                "ResetPassword",
+            ));
             self.inner.unary(req, path, codec).await
         }
     }

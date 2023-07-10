@@ -40,17 +40,7 @@ pub struct ScavengeResp {
 }
 /// Nested message and enum types in `ScavengeResp`.
 pub mod scavenge_resp {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum ScavengeResult {
         Started = 0,
@@ -89,8 +79,8 @@ pub struct SetNodePriorityReq {
 /// Generated client implementations.
 pub mod operations_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct OperationsClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -134,9 +124,8 @@ pub mod operations_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
         {
             OperationsClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -175,189 +164,147 @@ pub mod operations_client {
             &mut self,
             request: impl tonic::IntoRequest<super::StartScavengeReq>,
         ) -> std::result::Result<tonic::Response<super::ScavengeResp>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.operations.Operations/StartScavenge",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.operations.Operations",
-                        "StartScavenge",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.operations.Operations",
+                "StartScavenge",
+            ));
             self.inner.unary(req, path, codec).await
         }
         pub async fn stop_scavenge(
             &mut self,
             request: impl tonic::IntoRequest<super::StopScavengeReq>,
         ) -> std::result::Result<tonic::Response<super::ScavengeResp>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.operations.Operations/StopScavenge",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.operations.Operations",
-                        "StopScavenge",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.operations.Operations",
+                "StopScavenge",
+            ));
             self.inner.unary(req, path, codec).await
         }
         pub async fn shutdown(
             &mut self,
             request: impl tonic::IntoRequest<super::super::Empty>,
         ) -> std::result::Result<tonic::Response<super::super::Empty>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.operations.Operations/Shutdown",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.operations.Operations",
-                        "Shutdown",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.operations.Operations",
+                "Shutdown",
+            ));
             self.inner.unary(req, path, codec).await
         }
         pub async fn merge_indexes(
             &mut self,
             request: impl tonic::IntoRequest<super::super::Empty>,
         ) -> std::result::Result<tonic::Response<super::super::Empty>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.operations.Operations/MergeIndexes",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.operations.Operations",
-                        "MergeIndexes",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.operations.Operations",
+                "MergeIndexes",
+            ));
             self.inner.unary(req, path, codec).await
         }
         pub async fn resign_node(
             &mut self,
             request: impl tonic::IntoRequest<super::super::Empty>,
         ) -> std::result::Result<tonic::Response<super::super::Empty>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.operations.Operations/ResignNode",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.operations.Operations",
-                        "ResignNode",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.operations.Operations",
+                "ResignNode",
+            ));
             self.inner.unary(req, path, codec).await
         }
         pub async fn set_node_priority(
             &mut self,
             request: impl tonic::IntoRequest<super::SetNodePriorityReq>,
         ) -> std::result::Result<tonic::Response<super::super::Empty>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.operations.Operations/SetNodePriority",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.operations.Operations",
-                        "SetNodePriority",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.operations.Operations",
+                "SetNodePriority",
+            ));
             self.inner.unary(req, path, codec).await
         }
         pub async fn restart_persistent_subscriptions(
             &mut self,
             request: impl tonic::IntoRequest<super::super::Empty>,
         ) -> std::result::Result<tonic::Response<super::super::Empty>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.operations.Operations/RestartPersistentSubscriptions",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.operations.Operations",
-                        "RestartPersistentSubscriptions",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.operations.Operations",
+                "RestartPersistentSubscriptions",
+            ));
             self.inner.unary(req, path, codec).await
         }
     }

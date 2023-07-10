@@ -10,16 +10,14 @@ pub struct StatsReq {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StatsResp {
     #[prost(map = "string, string", tag = "1")]
-    pub stats: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::string::String,
-    >,
+    pub stats:
+        ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
 }
 /// Generated client implementations.
 pub mod monitoring_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct MonitoringClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -63,9 +61,8 @@ pub mod monitoring_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
         {
             MonitoringClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -107,24 +104,21 @@ pub mod monitoring_client {
             tonic::Response<tonic::codec::Streaming<super::StatsResp>>,
             tonic::Status,
         > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.monitoring.Monitoring/Stats",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("event_store.client.monitoring.Monitoring", "Stats"),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.monitoring.Monitoring",
+                "Stats",
+            ));
             self.inner.server_streaming(req, path, codec).await
         }
     }

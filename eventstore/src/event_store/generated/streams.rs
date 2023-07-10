@@ -30,9 +30,7 @@ pub mod read_req {
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct StreamOptions {
             #[prost(message, optional, tag = "1")]
-            pub stream_identifier: ::core::option::Option<
-                super::super::super::StreamIdentifier,
-            >,
+            pub stream_identifier: ::core::option::Option<super::super::super::StreamIdentifier>,
             #[prost(oneof = "stream_options::RevisionOption", tags = "2, 3, 4")]
             pub revision_option: ::core::option::Option<stream_options::RevisionOption>,
         }
@@ -140,15 +138,7 @@ pub mod read_req {
             pub compatibility: u32,
         }
         #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-            PartialOrd,
-            Ord,
-            ::prost::Enumeration
+            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
         )]
         #[repr(i32)]
         pub enum ReadDirection {
@@ -227,9 +217,7 @@ pub mod read_resp {
             #[prost(message, optional, tag = "1")]
             pub id: ::core::option::Option<super::super::super::Uuid>,
             #[prost(message, optional, tag = "2")]
-            pub stream_identifier: ::core::option::Option<
-                super::super::super::StreamIdentifier,
-            >,
+            pub stream_identifier: ::core::option::Option<super::super::super::StreamIdentifier>,
             #[prost(uint64, tag = "3")]
             pub stream_revision: u64,
             #[prost(uint64, tag = "4")]
@@ -308,9 +296,7 @@ pub mod append_req {
         #[prost(message, optional, tag = "1")]
         pub stream_identifier: ::core::option::Option<super::super::StreamIdentifier>,
         #[prost(oneof = "options::ExpectedStreamRevision", tags = "2, 3, 4, 5")]
-        pub expected_stream_revision: ::core::option::Option<
-            options::ExpectedStreamRevision,
-        >,
+        pub expected_stream_revision: ::core::option::Option<options::ExpectedStreamRevision>,
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
@@ -371,9 +357,7 @@ pub mod append_resp {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Success {
         #[prost(oneof = "success::CurrentRevisionOption", tags = "1, 2")]
-        pub current_revision_option: ::core::option::Option<
-            success::CurrentRevisionOption,
-        >,
+        pub current_revision_option: ::core::option::Option<success::CurrentRevisionOption>,
         #[prost(oneof = "success::PositionOption", tags = "3, 4")]
         pub position_option: ::core::option::Option<success::PositionOption>,
     }
@@ -403,27 +387,23 @@ pub mod append_resp {
             oneof = "wrong_expected_version::CurrentRevisionOption2060",
             tags = "1, 2"
         )]
-        pub current_revision_option_20_6_0: ::core::option::Option<
-            wrong_expected_version::CurrentRevisionOption2060,
-        >,
+        pub current_revision_option_20_6_0:
+            ::core::option::Option<wrong_expected_version::CurrentRevisionOption2060>,
         #[prost(
             oneof = "wrong_expected_version::ExpectedRevisionOption2060",
             tags = "3, 4, 5"
         )]
-        pub expected_revision_option_20_6_0: ::core::option::Option<
-            wrong_expected_version::ExpectedRevisionOption2060,
-        >,
+        pub expected_revision_option_20_6_0:
+            ::core::option::Option<wrong_expected_version::ExpectedRevisionOption2060>,
         #[prost(oneof = "wrong_expected_version::CurrentRevisionOption", tags = "6, 7")]
-        pub current_revision_option: ::core::option::Option<
-            wrong_expected_version::CurrentRevisionOption,
-        >,
+        pub current_revision_option:
+            ::core::option::Option<wrong_expected_version::CurrentRevisionOption>,
         #[prost(
             oneof = "wrong_expected_version::ExpectedRevisionOption",
             tags = "8, 9, 10, 11"
         )]
-        pub expected_revision_option: ::core::option::Option<
-            wrong_expected_version::ExpectedRevisionOption,
-        >,
+        pub expected_revision_option:
+            ::core::option::Option<wrong_expected_version::ExpectedRevisionOption>,
     }
     /// Nested message and enum types in `WrongExpectedVersion`.
     pub mod wrong_expected_version {
@@ -497,9 +477,7 @@ pub mod batch_append_req {
         #[prost(message, optional, tag = "6")]
         pub deadline: ::core::option::Option<::prost_types::Timestamp>,
         #[prost(oneof = "options::ExpectedStreamPosition", tags = "2, 3, 4, 5")]
-        pub expected_stream_position: ::core::option::Option<
-            options::ExpectedStreamPosition,
-        >,
+        pub expected_stream_position: ::core::option::Option<options::ExpectedStreamPosition>,
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
@@ -541,10 +519,11 @@ pub struct BatchAppendResp {
     pub stream_identifier: ::core::option::Option<super::StreamIdentifier>,
     #[prost(oneof = "batch_append_resp::Result", tags = "2, 3")]
     pub result: ::core::option::Option<batch_append_resp::Result>,
-    #[prost(oneof = "batch_append_resp::ExpectedStreamPosition", tags = "5, 6, 7, 8")]
-    pub expected_stream_position: ::core::option::Option<
-        batch_append_resp::ExpectedStreamPosition,
-    >,
+    #[prost(
+        oneof = "batch_append_resp::ExpectedStreamPosition",
+        tags = "5, 6, 7, 8"
+    )]
+    pub expected_stream_position: ::core::option::Option<batch_append_resp::ExpectedStreamPosition>,
 }
 /// Nested message and enum types in `BatchAppendResp`.
 pub mod batch_append_resp {
@@ -552,9 +531,7 @@ pub mod batch_append_resp {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Success {
         #[prost(oneof = "success::CurrentRevisionOption", tags = "1, 2")]
-        pub current_revision_option: ::core::option::Option<
-            success::CurrentRevisionOption,
-        >,
+        pub current_revision_option: ::core::option::Option<success::CurrentRevisionOption>,
         #[prost(oneof = "success::PositionOption", tags = "3, 4")]
         pub position_option: ::core::option::Option<success::PositionOption>,
     }
@@ -612,9 +589,7 @@ pub mod delete_req {
         #[prost(message, optional, tag = "1")]
         pub stream_identifier: ::core::option::Option<super::super::StreamIdentifier>,
         #[prost(oneof = "options::ExpectedStreamRevision", tags = "2, 3, 4, 5")]
-        pub expected_stream_revision: ::core::option::Option<
-            options::ExpectedStreamRevision,
-        >,
+        pub expected_stream_revision: ::core::option::Option<options::ExpectedStreamRevision>,
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
@@ -671,9 +646,7 @@ pub mod tombstone_req {
         #[prost(message, optional, tag = "1")]
         pub stream_identifier: ::core::option::Option<super::super::StreamIdentifier>,
         #[prost(oneof = "options::ExpectedStreamRevision", tags = "2, 3, 4, 5")]
-        pub expected_stream_revision: ::core::option::Option<
-            options::ExpectedStreamRevision,
-        >,
+        pub expected_stream_revision: ::core::option::Option<options::ExpectedStreamRevision>,
     }
     /// Nested message and enum types in `Options`.
     pub mod options {
@@ -719,8 +692,8 @@ pub mod tombstone_resp {
 /// Generated client implementations.
 pub mod streams_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct StreamsClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -764,9 +737,8 @@ pub mod streams_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
         {
             StreamsClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -808,90 +780,81 @@ pub mod streams_client {
             tonic::Response<tonic::codec::Streaming<super::ReadResp>>,
             tonic::Status,
         > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/event_store.client.streams.Streams/Read",
-            );
+            let path =
+                http::uri::PathAndQuery::from_static("/event_store.client.streams.Streams/Read");
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("event_store.client.streams.Streams", "Read"));
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.streams.Streams",
+                "Read",
+            ));
             self.inner.server_streaming(req, path, codec).await
         }
         pub async fn append(
             &mut self,
             request: impl tonic::IntoStreamingRequest<Message = super::AppendReq>,
         ) -> std::result::Result<tonic::Response<super::AppendResp>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/event_store.client.streams.Streams/Append",
-            );
+            let path =
+                http::uri::PathAndQuery::from_static("/event_store.client.streams.Streams/Append");
             let mut req = request.into_streaming_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("event_store.client.streams.Streams", "Append"));
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.streams.Streams",
+                "Append",
+            ));
             self.inner.client_streaming(req, path, codec).await
         }
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteReq>,
         ) -> std::result::Result<tonic::Response<super::DeleteResp>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/event_store.client.streams.Streams/Delete",
-            );
+            let path =
+                http::uri::PathAndQuery::from_static("/event_store.client.streams.Streams/Delete");
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("event_store.client.streams.Streams", "Delete"));
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.streams.Streams",
+                "Delete",
+            ));
             self.inner.unary(req, path, codec).await
         }
         pub async fn tombstone(
             &mut self,
             request: impl tonic::IntoRequest<super::TombstoneReq>,
         ) -> std::result::Result<tonic::Response<super::TombstoneResp>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.streams.Streams/Tombstone",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("event_store.client.streams.Streams", "Tombstone"),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.streams.Streams",
+                "Tombstone",
+            ));
             self.inner.unary(req, path, codec).await
         }
         pub async fn batch_append(
@@ -901,24 +864,21 @@ pub mod streams_client {
             tonic::Response<tonic::codec::Streaming<super::BatchAppendResp>>,
             tonic::Status,
         > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.streams.Streams/BatchAppend",
             );
             let mut req = request.into_streaming_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("event_store.client.streams.Streams", "BatchAppend"),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.streams.Streams",
+                "BatchAppend",
+            ));
             self.inner.streaming(req, path, codec).await
         }
     }

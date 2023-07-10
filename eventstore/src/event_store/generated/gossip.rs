@@ -28,17 +28,7 @@ pub struct MemberInfo {
 }
 /// Nested message and enum types in `MemberInfo`.
 pub mod member_info {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum VNodeState {
         Initializing = 0,
@@ -110,8 +100,8 @@ pub mod member_info {
 /// Generated client implementations.
 pub mod gossip_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct GossipClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -155,9 +145,8 @@ pub mod gossip_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
         {
             GossipClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -196,19 +185,15 @@ pub mod gossip_client {
             &mut self,
             request: impl tonic::IntoRequest<super::super::Empty>,
         ) -> std::result::Result<tonic::Response<super::ClusterInfo>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/event_store.client.gossip.Gossip/Read",
-            );
+            let path =
+                http::uri::PathAndQuery::from_static("/event_store.client.gossip.Gossip/Read");
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("event_store.client.gossip.Gossip", "Read"));

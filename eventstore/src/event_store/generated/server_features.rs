@@ -19,8 +19,8 @@ pub struct SupportedMethod {
 /// Generated client implementations.
 pub mod server_features_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct ServerFeaturesClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -64,9 +64,8 @@ pub mod server_features_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
         {
             ServerFeaturesClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -104,31 +103,22 @@ pub mod server_features_client {
         pub async fn get_supported_methods(
             &mut self,
             request: impl tonic::IntoRequest<super::super::Empty>,
-        ) -> std::result::Result<
-            tonic::Response<super::SupportedMethods>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::SupportedMethods>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.server_features.ServerFeatures/GetSupportedMethods",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.server_features.ServerFeatures",
-                        "GetSupportedMethods",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.server_features.ServerFeatures",
+                "GetSupportedMethods",
+            ));
             self.inner.unary(req, path, codec).await
         }
     }

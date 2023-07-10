@@ -69,15 +69,7 @@ pub mod read_req {
     /// Nested message and enum types in `Nack`.
     pub mod nack {
         #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-            PartialOrd,
-            Ord,
-            ::prost::Enumeration
+            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
         )]
         #[repr(i32)]
         pub enum Action {
@@ -153,9 +145,7 @@ pub mod read_resp {
             #[prost(message, optional, tag = "1")]
             pub id: ::core::option::Option<super::super::super::Uuid>,
             #[prost(message, optional, tag = "2")]
-            pub stream_identifier: ::core::option::Option<
-                super::super::super::StreamIdentifier,
-            >,
+            pub stream_identifier: ::core::option::Option<super::super::super::StreamIdentifier>,
             #[prost(uint64, tag = "3")]
             pub stream_revision: u64,
             #[prost(uint64, tag = "4")]
@@ -384,17 +374,7 @@ pub mod create_req {
             CheckpointAfterMs(i32),
         }
     }
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum ConsumerStrategy {
         DispatchToSingle = 0,
@@ -557,17 +537,7 @@ pub mod update_req {
             CheckpointAfterMs(i32),
         }
     }
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
     #[repr(i32)]
     pub enum ConsumerStrategy {
         DispatchToSingle = 0,
@@ -851,8 +821,8 @@ pub struct ListResp {
 /// Generated client implementations.
 pub mod persistent_subscriptions_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct PersistentSubscriptionsClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -896,13 +866,10 @@ pub mod persistent_subscriptions_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-            >>::Error: Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
+                Into<StdError> + Send + Sync,
         {
-            PersistentSubscriptionsClient::new(
-                InterceptedService::new(inner, interceptor),
-            )
+            PersistentSubscriptionsClient::new(InterceptedService::new(inner, interceptor))
         }
         /// Compress requests with the given encoding.
         ///
@@ -939,81 +906,63 @@ pub mod persistent_subscriptions_client {
             &mut self,
             request: impl tonic::IntoRequest<super::CreateReq>,
         ) -> std::result::Result<tonic::Response<super::CreateResp>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/Create",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
-                        "Create",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                "Create",
+            ));
             self.inner.unary(req, path, codec).await
         }
         pub async fn update(
             &mut self,
             request: impl tonic::IntoRequest<super::UpdateReq>,
         ) -> std::result::Result<tonic::Response<super::UpdateResp>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/Update",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
-                        "Update",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                "Update",
+            ));
             self.inner.unary(req, path, codec).await
         }
         pub async fn delete(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteReq>,
         ) -> std::result::Result<tonic::Response<super::DeleteResp>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/Delete",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
-                        "Delete",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                "Delete",
+            ));
             self.inner.unary(req, path, codec).await
         }
         pub async fn read(
@@ -1023,138 +972,105 @@ pub mod persistent_subscriptions_client {
             tonic::Response<tonic::codec::Streaming<super::ReadResp>>,
             tonic::Status,
         > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/Read",
             );
             let mut req = request.into_streaming_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
-                        "Read",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                "Read",
+            ));
             self.inner.streaming(req, path, codec).await
         }
         pub async fn get_info(
             &mut self,
             request: impl tonic::IntoRequest<super::GetInfoReq>,
         ) -> std::result::Result<tonic::Response<super::GetInfoResp>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/GetInfo",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
-                        "GetInfo",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                "GetInfo",
+            ));
             self.inner.unary(req, path, codec).await
         }
         pub async fn replay_parked(
             &mut self,
             request: impl tonic::IntoRequest<super::ReplayParkedReq>,
-        ) -> std::result::Result<
-            tonic::Response<super::ReplayParkedResp>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+        ) -> std::result::Result<tonic::Response<super::ReplayParkedResp>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/ReplayParked",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
-                        "ReplayParked",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                "ReplayParked",
+            ));
             self.inner.unary(req, path, codec).await
         }
         pub async fn list(
             &mut self,
             request: impl tonic::IntoRequest<super::ListReq>,
         ) -> std::result::Result<tonic::Response<super::ListResp>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/List",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
-                        "List",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                "List",
+            ));
             self.inner.unary(req, path, codec).await
         }
         pub async fn restart_subsystem(
             &mut self,
             request: impl tonic::IntoRequest<super::super::Empty>,
         ) -> std::result::Result<tonic::Response<super::super::Empty>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/event_store.client.persistent_subscriptions.PersistentSubscriptions/RestartSubsystem",
             );
             let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "event_store.client.persistent_subscriptions.PersistentSubscriptions",
-                        "RestartSubsystem",
-                    ),
-                );
+            req.extensions_mut().insert(GrpcMethod::new(
+                "event_store.client.persistent_subscriptions.PersistentSubscriptions",
+                "RestartSubsystem",
+            ));
             self.inner.unary(req, path, codec).await
         }
     }
