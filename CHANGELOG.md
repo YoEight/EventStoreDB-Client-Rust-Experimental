@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Update container version when testing. [EventStoreDB-Client-Rust#159](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/159)
 - Update container version when testing. [EventStoreDB-Client-Rust#159](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/159)
+- Upgrade to tonic 0.9 [EventStoreDB-Client-Rust#162](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/162)
 
 ### Fixed
 - No longer transitively depend on `time` 0.1  [EventStoreDB-Client-Rust#160](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/160)
