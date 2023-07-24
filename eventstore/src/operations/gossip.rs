@@ -1,6 +1,8 @@
 use crate::event_store::client::gossip as wire;
 use crate::event_store::client::shared::{self, Empty};
 use crate::grpc::HyperClient;
+use crate::http::http_configure_auth;
+use crate::request::build_request_metadata;
 use crate::types::Endpoint;
 use crate::{grpc, ClientSettings};
 use serde::{Deserialize, Serialize};
@@ -13,14 +15,17 @@ fn uuid_from_structured(most: u64, least: u64) -> Uuid {
     Uuid::from_u128(repr)
 }
 
-pub async fn read(client: &HyperClient, uri: hyper::Uri) -> Result<Vec<MemberInfo>, Status> {
+pub async fn read(
+    settings: &ClientSettings,
+    client: &HyperClient,
+    uri: hyper::Uri,
+) -> Result<Vec<MemberInfo>, Status> {
     let inner = wire::gossip_client::GossipClient::with_origin(client, uri);
-    let wire_members = inner
-        .clone()
-        .read(Request::new(Empty {}))
-        .await?
-        .into_inner()
-        .members;
+    let mut req = Request::new(Empty {});
+
+    *req.metadata_mut() = build_request_metadata(settings, &Default::default());
+
+    let wire_members = inner.clone().read(req).await?.into_inner().members;
 
     let mut members = Vec::with_capacity(wire_members.capacity());
     for wire_member in wire_members {
@@ -81,10 +86,12 @@ pub(crate) async fn http_read(
         .danger_accept_invalid_certs(!setts.tls_verify_cert)
         .build()?;
 
-    let resp = client
-        .get(format!("{}/gossip", handle.url()))
-        .send()
-        .await?;
+    let resp = http_configure_auth(
+        client.get(format!("{}/gossip", handle.url())),
+        setts.default_user_name.as_ref(),
+    )
+    .send()
+    .await?;
 
     let gossip = resp.json::<Gossip>().await?;
 

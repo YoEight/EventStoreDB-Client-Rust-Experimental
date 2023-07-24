@@ -1202,8 +1202,11 @@ async fn node_selection(
     for candidate in candidates {
         let uri = conn_setts.to_hyper_uri(&candidate);
         debug!("Calling gossip endpoint on: {:?}", candidate);
-        if let Ok(result) =
-            tokio::time::timeout(conn_setts.gossip_timeout, gossip::read(client, uri)).await
+        if let Ok(result) = tokio::time::timeout(
+            conn_setts.gossip_timeout,
+            gossip::read(conn_setts, client, uri),
+        )
+        .await
         {
             match result {
                 Ok(members_info) => {
