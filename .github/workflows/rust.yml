@@ -7,6 +7,8 @@ on:
       - master
   schedule:
     - cron: '0 3 * * 0' # Every sunday at 3am UTC.
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   build:
@@ -15,97 +17,60 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-2019, macos-11]
         rust: [stable, beta, nightly]
+        exclude:
+          - os: windows-2019
+            rust: beta
+
+          - os: windows-2019
+            rust: nightly
+
+          - os: macos-11
+            rust: beta
+
+          - os: macos-11
+            rust: nightly
+
 
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
+
     - name: Install
       run: |
         rustup update
         rustup default ${{ matrix.rust }}
+
     - name: Build
       run: cargo check --all-targets
       continue-on-error: ${{ matrix.rust == 'nightly' }}
 
-  tests_single_node:
-    name: Tests Single node configuration
-    needs: build
-    strategy:
-      matrix:
-        version: [ previous-lts, lts, ci ]
-        secure: [ true, false ]
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v2
-
-      - name: Install
-        run: rustup update stable
-
-      - name: Generate certificates
-        if: ${{ matrix.secure == true }}
-        run: |
-          docker-compose --file configure-tls-for-tests.yml up
-
-      - name: Test on single-node EventStoreDB ${{ matrix.version }}
-        run: cargo test --package eventstore --test integration single_node
-        env:
-          CONTAINER_IMAGE_VERSION: ${{ matrix.version }}
-          RUST_LOG: integration=debug,eventstore=debug
-          RUST_BACKTRACE: 1
-          SECURE: ${{ matrix.secure }}
-
-  tests_cluster:
-    name: Tests Cluster configuration.
-    needs: build
-    strategy:
-      matrix:
-        version: [ previous-lts, lts, latest ]
-
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Install
-        run: rustup update stable
-      - name: Set up EventStoreDB ${{ matrix.version }} cluster with Docker Compose
-        run: docker-compose up -d
-
-      - name: Test on three-cluster-node EventStoreDB ${{ matrix.version }}
-        run: |
-          cargo test --package eventstore --test integration -- cluster
-          docker-compose down
-        env:
-          CONTAINER_IMAGE_VERSION: ${{ matrix.version }}
-          RUST_LOG: integration=debug,eventstore=debug
-          RUST_BACKTRACE: 1
-
-  tests_library:
-    name: Tests library unit tests
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Install
-      run: rustup update stable
-    - name: Run library unit tests
+    - name: Unit tests
       run: cargo test --lib
+
+  tests:
+    needs: build
+    name: Tests
+
+    strategy:
+      fail-fast: false
+      matrix:
+        version: [previous-lts, lts, latest, ci]
+
+    uses: ./.github/workflows/tests.yml
+    with:
+      esdb_version: ${{ matrix.version }}
 
   linting:
     name: Linting
-    needs:
-      - tests_single_node
-      - tests_library
-      - tests_cluster
+    needs: tests
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
     - name: Install
       run: |
         rustup update stable
-        rustup component add clippy-preview
+        rustup component add clippy
         rustup component add rustfmt
     - name: Linting
       run: cargo clippy --all-features -- -D warnings

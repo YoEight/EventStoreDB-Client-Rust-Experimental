@@ -1205,6 +1205,8 @@ impl Subscription {
                         if e.is_access_denied() || !self.retry_enabled {
                             return Err(e);
                         }
+
+                        debug!("Initiate re-subscription");
                     }
 
                     Ok(resp) => {
@@ -1279,7 +1281,10 @@ impl Subscription {
                     }
                 }
             } else {
+                debug!("Subscribing...");
+                debug!("Before waiting for the current selected node");
                 let handle = self.connection.current_selected_node().await?;
+                debug!("Received selected node");
 
                 self.channel_id = handle.id();
 
@@ -1290,8 +1295,10 @@ impl Subscription {
 
                 *req.metadata_mut() = self.metadata.clone();
 
+                debug!("Before calling the subscription endpoint...");
                 match client.read(req).await {
                     Err(status) => {
+                        debug!("Error when calling the subscription endpoint: {}", status);
                         let e = crate::Error::from_grpc(status);
 
                         handle_error(&self.connection.sender, self.channel_id, &e);

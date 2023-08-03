@@ -1,0 +1,103 @@
+name: tests workflow
+
+on:
+  workflow_call:
+    inputs:
+      esdb_version:
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  single_node:
+    name: Single node
+
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [streams, projections, persistent_subscriptions, discover_error, auto_resub_on_connection_drop]
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install
+        run: rustup update stable
+
+      - name: Run test
+        run: cargo test --package eventstore --test integration single_node_${{ matrix.test }}
+        continue-on-error: ${{ matrix.test == 'auto_resub_on_connection_drop' }}
+        env:
+          CONTAINER_IMAGE_VERSION: ${{ inputs.esdb_version }}
+          RUST_LOG: integration=debug,eventstore=debug
+          RUST_BACKTRACE: 1
+
+      - uses: actions/upload-artifact@v3
+        if: failure() && matrix.test != 'auto_resub_on_connection_drop'
+        with:
+          name: esdb-logs
+          path: eventstore/esdb_logs
+
+  secure:
+    name: Secure
+
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [operations]
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install
+        run: rustup update stable
+
+      - name: Generate certificates
+        run: docker-compose --file configure-tls-for-tests.yml up
+
+      - name: Run test
+        run: cargo test --package eventstore --test integration single_node_${{ matrix.test }}
+        env:
+          CONTAINER_IMAGE_VERSION: ${{ inputs.esdb_version }}
+          RUST_LOG: integration=debug,eventstore=debug
+          RUST_BACKTRACE: 1
+          SECURE: true
+
+      - uses: actions/upload-artifact@v3
+        if: failure()
+        with:
+          name: esdb-logs
+          path: eventstore/esdb_logs
+
+  cluster:
+    name: Cluster
+
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [streams, projections, persistent_subscriptions]
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install
+        run: rustup update stable
+
+      - name: Set up cluster with Docker Compose
+        run: docker-compose up -d
+        env:
+          CONTAINER_IMAGE_VERSION: ${{ inputs.esdb_version }}
+
+      - name: Run test
+        run: cargo test --package eventstore --test integration cluster_${{ matrix.test }}
+        env:
+          CONTAINER_IMAGE_VERSION: ${{ inputs.esdb_version }}
+          RUST_LOG: integration=debug,eventstore=debug
+          RUST_BACKTRACE: 1
+
+      - name: Shutdown cluster
+        run: docker-compose down
