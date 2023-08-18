@@ -56,8 +56,8 @@ fn test_connection_string() {
         mockups: Vec<Mockup>,
     }
 
-    let mockups = include_bytes!("../tests/fixtures/connection_string/mockups.toml");
-    let fixtures: Mockups = toml::from_slice(mockups).unwrap();
+    let mockups = include_str!("../tests/fixtures/connection_string/mockups.toml");
+    let fixtures: Mockups = toml::from_str(mockups).unwrap();
 
     for mockup in fixtures.mockups {
         match mockup.string.as_str().parse::<ClientSettings>() {
@@ -848,6 +848,7 @@ impl NodeConnection {
             loop {
                 if let Some(selected_node) = selected_node.take() {
                     let uri = self.settings.to_hyper_uri(&selected_node);
+                    debug!("Before calling server features endpoint...");
                     let server_info = match tokio::time::timeout(
                         self.settings.gossip_timeout(),
                         crate::server_features::supported_methods(&self.client, uri.clone()),
@@ -855,9 +856,13 @@ impl NodeConnection {
                     .await
                     {
                         Ok(outcome) => match outcome {
-                            Ok(fs) => Some(fs),
+                            Ok(fs) => {
+                                debug!("Successfully received server features");
+                                Some(fs)
+                            }
 
                             Err(status) => {
+                                debug!("Error when calling server features endpoint: {}", status);
                                 if status.code() == Code::NotFound
                                     || status.code() == Code::Unimplemented
                                 {
@@ -891,10 +896,12 @@ impl NodeConnection {
                         server_info,
                     };
 
+                    debug!("Successfully connected to node {:?}", handle.endpoint);
                     self.handle = Some(handle.clone());
 
                     return Ok(handle);
                 } else if let Some(mode) = self.cluster_mode.as_ref() {
+                    debug!("Before cluster node selection");
                     let node = node_selection(
                         &self.settings,
                         mode,
@@ -905,9 +912,9 @@ impl NodeConnection {
                     )
                     .await;
 
+                    debug!("Cluster node selection completed: {:?}", node);
                     if node.is_some() {
                         selected_node = node;
-                        continue;
                     }
                 } else {
                     selected_node = self.settings.hosts().first().cloned();
@@ -917,9 +924,11 @@ impl NodeConnection {
 
                 if attempts <= self.settings.max_discover_attempts() {
                     tokio::time::sleep(self.settings.discovery_interval()).await;
+                    debug!("Starting new connection attempt");
                     continue;
                 }
 
+                debug!("Reached maximum discovery attempt count");
                 return Err(GrpcConnectionError::MaxDiscoveryAttemptReached(
                     self.settings.max_discover_attempts(),
                 ));
@@ -943,10 +952,12 @@ fn connection_state_machine(
             match msg {
                 Msg::GetChannel(resp) => {
                     if let Some(handle) = handle_opt.as_ref() {
+                        debug!("Re-using active connection");
                         let _ = resp.send(Ok(handle.clone()));
                         continue;
                     }
 
+                    debug!("Asking for a channel but we don't have an active connection. Connecting...");
                     match connection.next(None).await {
                         Err(e) => {
                             error!("gRPC connection error: {}", e);
@@ -954,6 +965,11 @@ fn connection_state_machine(
                             break;
                         }
                         Ok(info) => {
+                            debug!(
+                                "Successfully connected to {}:{}",
+                                info.endpoint.host, info.endpoint.port
+                            );
+
                             let handle = Handle {
                                 id: info.id,
                                 client: info.client,
@@ -976,12 +992,18 @@ fn connection_state_machine(
                         endpoint,
                     });
 
+                    debug!("Creating a new connection...");
                     match connection.next(request).await {
                         Err(e) => {
                             error!("gRPC connection error: {}", e);
                             break;
                         }
                         Ok(info) => {
+                            debug!(
+                                "Successfully connected to {}:{}",
+                                info.endpoint.host, info.endpoint.port
+                            );
+
                             let handle = Handle {
                                 id: info.id,
                                 client: info.client,

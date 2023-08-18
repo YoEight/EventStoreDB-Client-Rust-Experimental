@@ -1439,6 +1439,7 @@ impl Error {
         if status.code() == Code::Unavailable
             || status.code() == Code::Internal
             || status.code() == Code::DataLoss
+            || status.code() == Code::Unknown
         {
             return Error::ServerError(status.to_string());
         }
