@@ -20,7 +20,7 @@ categories = ["database", "api-bindings"]
 [dependencies]
 async-stream = "0.3"
 base64 = "0.13"
-bitflags = "1"
+bitflags = "2"
 byteorder = "1.2"
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "serde"] }

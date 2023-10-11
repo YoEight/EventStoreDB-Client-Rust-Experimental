@@ -5,6 +5,7 @@ use bitflags::bitflags;
 use tonic::{Code, Request, Status};
 
 bitflags! {
+    #[derive(Clone, Copy, Default, Debug)]
     pub struct Features: u32 {
         const NOTHING = 0;
         const BATCH_APPEND = 1;
@@ -12,7 +13,7 @@ bitflags! {
         const PERSISTENT_SUBSCRIPTION_REPLAY = 4;
         const PERSISTENT_SUBSCRIPTION_RESTART_SUBSYSTEM = 8;
         const PERSISTENT_SUBSCRIPTION_GET_INFO = 16;
-        const PERSISTENT_SUBSCRIPTION_MANAGEMENT = Self::PERSISTENT_SUBSCRIPTION_LIST.bits | Self::PERSISTENT_SUBSCRIPTION_REPLAY.bits | Self::PERSISTENT_SUBSCRIPTION_RESTART_SUBSYSTEM .bits | Self::PERSISTENT_SUBSCRIPTION_GET_INFO.bits;
+        const PERSISTENT_SUBSCRIPTION_MANAGEMENT = Self::PERSISTENT_SUBSCRIPTION_LIST.bits() | Self::PERSISTENT_SUBSCRIPTION_REPLAY.bits() | Self::PERSISTENT_SUBSCRIPTION_RESTART_SUBSYSTEM.bits() | Self::PERSISTENT_SUBSCRIPTION_GET_INFO.bits();
         const PERSISTENT_SUBSCRIPITON_TO_ALL = 32;
     }
 }
