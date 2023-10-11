@@ -68,6 +68,7 @@ pub mod operations;
 mod options;
 mod private;
 mod projection_client;
+pub(crate) mod request;
 mod server_features;
 mod types;
 

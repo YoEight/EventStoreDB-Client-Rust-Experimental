@@ -26,13 +26,14 @@ use crate::options::persistent_subscription::PersistentSubscriptionOptions;
 use crate::options::read_all::ReadAllOptions;
 use crate::options::read_stream::ReadStreamOptions;
 use crate::options::subscribe_to_stream::SubscribeToStreamOptions;
-use crate::options::{CommonOperationOptions, OperationKind, Options};
+use crate::options::{OperationKind, Options};
+use crate::request::build_request_metadata;
 use crate::server_features::Features;
 use crate::{
     ClientSettings, CurrentRevision, DeletePersistentSubscriptionOptions, DeleteStreamOptions,
     GetPersistentSubscriptionInfoOptions, ListPersistentSubscriptionsOptions, NakAction,
-    NodePreference, PersistentSubscriptionConnectionInfo, PersistentSubscriptionEvent,
-    PersistentSubscriptionInfo, PersistentSubscriptionMeasurements, PersistentSubscriptionStats,
+    PersistentSubscriptionConnectionInfo, PersistentSubscriptionEvent, PersistentSubscriptionInfo,
+    PersistentSubscriptionMeasurements, PersistentSubscriptionStats,
     PersistentSubscriptionToAllOptions, ReplayParkedMessagesOptions,
     RestartPersistentSubscriptionSubsystem, RetryOptions, RevisionOrPosition,
     SubscribeToAllOptions, SubscribeToPersistentSubscriptionOptions, SubscriptionFilter,
@@ -472,46 +473,6 @@ pub fn ps_create_filter_into_proto(
         window: Some(window),
         checkpoint_interval_multiplier: 1,
     }
-}
-
-fn build_request_metadata(
-    settings: &ClientSettings,
-    options: &CommonOperationOptions,
-) -> tonic::metadata::MetadataMap
-where
-{
-    use tonic::metadata::MetadataValue;
-
-    let mut metadata = tonic::metadata::MetadataMap::new();
-    let credentials = options
-        .credentials
-        .as_ref()
-        .or_else(|| settings.default_authenticated_user().as_ref());
-
-    if let Some(creds) = credentials {
-        let login = String::from_utf8_lossy(&creds.login).into_owned();
-        let password = String::from_utf8_lossy(&creds.password).into_owned();
-
-        let basic_auth_string = base64::encode(format!("{}:{}", login, password));
-        let basic_auth = format!("Basic {}", basic_auth_string);
-        let header_value = MetadataValue::try_from(basic_auth.as_str())
-            .expect("Auth header value should be valid metadata header value");
-
-        metadata.insert("authorization", header_value);
-    }
-
-    if options.requires_leader || settings.node_preference() == NodePreference::Leader {
-        let header_value = MetadataValue::try_from("true").expect("valid metadata header value");
-        metadata.insert("requires-leader", header_value);
-    }
-
-    if let Some(conn_name) = settings.connection_name.as_ref() {
-        let header_value =
-            MetadataValue::try_from(conn_name.as_str()).expect("valid metadata header value");
-        metadata.insert("connection-name", header_value);
-    }
-
-    metadata
 }
 
 pub(crate) fn new_request<Message, Opts>(
@@ -1210,9 +1171,8 @@ impl Subscription {
                     }
 
                     Ok(resp) => {
+                        self.stream = Some(stream);
                         if let Some(content) = resp.and_then(|r| r.content) {
-                            self.stream = Some(stream);
-
                             match content {
                                 streams::read_resp::Content::Event(event) => {
                                     let event = convert_proto_read_event(event);
@@ -1277,7 +1237,7 @@ impl Subscription {
                             }
                         }
 
-                        unreachable!()
+                        warn!("Received an unknown subscription message");
                     }
                 }
             } else {
