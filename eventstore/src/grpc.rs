@@ -5,12 +5,7 @@ use crate::{Credentials, DnsClusterSettings, NodePreference};
 use futures::Future;
 use hyper::client::HttpConnector;
 use hyper_rustls::HttpsConnector;
-use nom::branch::alt;
-use nom::bytes::complete::take_while;
-use nom::combinator::{all_consuming, complete, opt};
-use nom::error::ErrorKind;
 use nom::lib::std::fmt::Formatter;
-use nom::{bytes::complete::tag, IResult};
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{RngCore, SeedableRng};
@@ -18,11 +13,13 @@ use serde::de::{Error, Visitor};
 use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use std::cmp::Ordering;
+use std::fmt::Display;
 use std::str::FromStr;
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 use tonic::{Code, Status};
+use url::Url;
 use uuid::Uuid;
 
 struct NoVerification;
@@ -43,6 +40,8 @@ impl rustls::client::ServerCertVerifier for NoVerification {
 
 #[test]
 fn test_connection_string() {
+    pretty_env_logger::init();
+
     #[derive(Debug, Serialize, Deserialize)]
     struct Mockup {
         string: String,
@@ -78,12 +77,27 @@ fn test_connection_string() {
 
 #[derive(Clone, Debug)]
 pub struct ClientSettingsParseError {
-    input: String,
+    message: String,
+    error: Option<url::ParseError>,
 }
 
-impl std::fmt::Display for ClientSettingsParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ClientSettings parsing error: {}", self.input)
+impl ClientSettingsParseError {
+    pub fn message(&self) -> &str {
+        self.message.as_str()
+    }
+
+    pub fn error(&self) -> Option<&url::ParseError> {
+        self.error.as_ref()
+    }
+}
+
+impl Display for ClientSettingsParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ClientSettings parsing error with '{}': {:?}",
+            self.message, self.error
+        )
     }
 }
 
@@ -193,10 +207,6 @@ fn default_tls_verify_cert() -> bool {
     ClientSettings::default().tls_verify_cert
 }
 
-fn default_throw_on_append_failure() -> bool {
-    ClientSettings::default().throw_on_append_failure
-}
-
 fn default_keep_alive_interval() -> Duration {
     ClientSettings::default().keep_alive_interval
 }
@@ -288,8 +298,6 @@ pub struct ClientSettings {
     pub(crate) secure: bool,
     #[serde(default = "default_tls_verify_cert")]
     pub(crate) tls_verify_cert: bool,
-    #[serde(default = "default_throw_on_append_failure")]
-    pub(crate) throw_on_append_failure: bool,
     #[serde(default)]
     pub(crate) default_user_name: Option<Credentials>,
     #[serde(
@@ -350,332 +358,6 @@ impl ClientSettings {
         &self.default_user_name
     }
 
-    pub fn parse(input: &str) -> IResult<&str, Self> {
-        let mut result: ClientSettings = Default::default();
-        let mut parsed_authority = false;
-
-        let (initial_input, scheme) = alt((tag("esdb://"), tag("esdb+discover://")))(input)?;
-
-        result.dns_discover = scheme == "esdb+discover://";
-        let authority_valid_char = |c: char| c.is_ascii() && c != '@';
-        let host_valid_char =
-            |c: char| c.is_alphanumeric() || c == '-' || c == '.' || c == ':' || c == ',';
-        let (mut input, mut content) = take_while(authority_valid_char)(initial_input)?;
-        let at_tagged = opt(tag("@"))(input)?;
-
-        if let (new_input, Some(_)) = at_tagged {
-            let authority_parts: Vec<&str> = content.split(':').collect();
-
-            match authority_parts.len() {
-                1 => {
-                    result.default_user_name = Some(Credentials::new(
-                        authority_parts.as_slice()[0].to_string(),
-                        "".into(),
-                    ));
-                }
-
-                2 => {
-                    let host = authority_parts.as_slice()[0].to_string();
-                    let passw = authority_parts.as_slice()[1].to_string();
-
-                    result.default_user_name = Some(Credentials::new(host, passw));
-                }
-
-                _ => {
-                    return Err(nom::Err::Failure(nom::error::Error::new(
-                        input,
-                        ErrorKind::Fail,
-                    )));
-                }
-            }
-
-            let (new_input, new_content) = take_while(host_valid_char)(new_input)?;
-
-            input = new_input;
-            content = new_content;
-            parsed_authority = true;
-        }
-
-        if !parsed_authority {
-            let (new_input, new_content) = take_while(host_valid_char)(initial_input)?;
-            input = new_input;
-            content = new_content;
-        }
-
-        let hosts_parts: Vec<&str> = content.split(',').collect();
-
-        for host in hosts_parts {
-            let host_parts: Vec<&str> = host.split(':').collect();
-
-            match host_parts.len() {
-                1 => {
-                    result.hosts.push(Endpoint {
-                        host: host.to_string(),
-                        port: 2113,
-                    });
-                }
-
-                2 => {
-                    if let Ok(port) = host_parts.as_slice()[1].parse() {
-                        result.hosts.push(Endpoint {
-                            host: host_parts.as_slice()[0].to_string(),
-                            port,
-                        });
-                    } else {
-                        return Err(nom::Err::Failure(nom::error::Error::new(
-                            input,
-                            ErrorKind::Fail,
-                        )));
-                    }
-                }
-
-                _ => {
-                    return Err(nom::Err::Failure(nom::error::Error::new(
-                        input,
-                        ErrorKind::Fail,
-                    )));
-                }
-            }
-        }
-
-        let (input, _) = opt(tag("/"))(input)?;
-        let (mut input, has_params) = opt(tag("?"))(input)?;
-
-        if has_params.is_some() {
-            let (new_input, params) = all_consuming(take_while(|c: char| c.is_ascii()))(input)?;
-            for param in params.split('&') {
-                let values: Vec<&str> = param.split('=').collect();
-
-                if values.len() == 2 {
-                    let name = values.as_slice()[0].to_lowercase();
-                    match name.as_str() {
-                        "maxdiscoverattempts" => {
-                            let value = values.as_slice()[1];
-                            if let Ok(attempt) = value.parse() {
-                                result.max_discover_attempts = attempt;
-                            } else {
-                                return Err(nom::Err::Failure(nom::error::Error::new(
-                                    value,
-                                    ErrorKind::Fail,
-                                )));
-                            }
-                        }
-
-                        "discoveryinterval" => {
-                            let value = values.as_slice()[1];
-                            if let Ok(millis) = value.parse() {
-                                result.discovery_interval = Duration::from_millis(millis);
-                            } else {
-                                return Err(nom::Err::Failure(nom::error::Error::new(
-                                    value,
-                                    ErrorKind::Fail,
-                                )));
-                            }
-                        }
-
-                        "gossiptimeout" => {
-                            let value = values.as_slice()[1];
-                            if let Ok(millis) = value.parse() {
-                                result.gossip_timeout = Duration::from_millis(millis);
-                            } else {
-                                return Err(nom::Err::Failure(nom::error::Error::new(
-                                    value,
-                                    ErrorKind::Fail,
-                                )));
-                            }
-                        }
-
-                        "tls" => {
-                            let value = values.as_slice()[1];
-                            if let Ok(bool) = value.parse() {
-                                result.secure = bool;
-                            } else {
-                                return Err(nom::Err::Failure(nom::error::Error::new(
-                                    value,
-                                    ErrorKind::Fail,
-                                )));
-                            }
-                        }
-
-                        "tlsverifycert" => {
-                            let value = values.as_slice()[1];
-                            if let Ok(bool) = value.parse() {
-                                result.tls_verify_cert = bool;
-                            } else {
-                                return Err(nom::Err::Failure(nom::error::Error::new(
-                                    value,
-                                    ErrorKind::Fail,
-                                )));
-                            }
-                        }
-
-                        "nodepreference" => {
-                            let value = values.as_slice()[1].to_lowercase();
-                            match value.as_str() {
-                                "follower" => {
-                                    result.preference = NodePreference::Follower;
-                                }
-
-                                "random" => {
-                                    result.preference = NodePreference::Random;
-                                }
-
-                                "leader" => {
-                                    result.preference = NodePreference::Leader;
-                                }
-
-                                "readonlyreplica" => {
-                                    result.preference = NodePreference::ReadOnlyReplica;
-                                }
-
-                                _ => {
-                                    return Err(nom::Err::Failure(nom::error::Error::new(
-                                        values.as_slice()[1],
-                                        ErrorKind::Fail,
-                                    )));
-                                }
-                            }
-                        }
-
-                        "keepaliveinterval" => {
-                            let value = values.as_slice()[1];
-
-                            if let Ok(int) = value.parse::<i64>() {
-                                if int >= 0
-                                    && int < self::defaults::KEEP_ALIVE_INTERVAL_IN_MS as i64
-                                {
-                                    warn!("Specified keepAliveInterval of {} is less than recommended {}", int, self::defaults::KEEP_ALIVE_INTERVAL_IN_MS);
-                                    continue;
-                                }
-
-                                if int == -1 {
-                                    result.keep_alive_interval = Duration::from_millis(u64::MAX);
-                                    continue;
-                                }
-
-                                if int < -1 {
-                                    error!("Invalid keepAliveInterval of {}. Please provide a positive integer, or -1 to disable", int);
-
-                                    return Err(nom::Err::Failure(nom::error::Error::new(
-                                        value,
-                                        ErrorKind::Fail,
-                                    )));
-                                }
-
-                                result.keep_alive_interval = Duration::from_millis(int as u64);
-                            } else {
-                                return Err(nom::Err::Failure(nom::error::Error::new(
-                                    value,
-                                    ErrorKind::Fail,
-                                )));
-                            }
-                        }
-
-                        "keepalivetimeout" => {
-                            let value = values.as_slice()[1];
-
-                            if let Ok(int) = value.parse::<i64>() {
-                                if int >= 0 && int < self::defaults::KEEP_ALIVE_TIMEOUT_IN_MS as i64
-                                {
-                                    warn!("Specified keepAliveTimeout of {} is less than recommended {}", int, self::defaults::KEEP_ALIVE_TIMEOUT_IN_MS);
-                                    continue;
-                                }
-
-                                if int == -1 {
-                                    result.keep_alive_timeout = Duration::from_millis(u64::MAX);
-                                    continue;
-                                }
-
-                                if int < -1 {
-                                    error!("Invalid keepAliveTimeout of {}. Please provide a positive integer, or -1 to disable", int);
-
-                                    return Err(nom::Err::Failure(nom::error::Error::new(
-                                        value,
-                                        ErrorKind::Fail,
-                                    )));
-                                }
-
-                                result.keep_alive_timeout = Duration::from_millis(int as u64);
-                            } else {
-                                return Err(nom::Err::Failure(nom::error::Error::new(
-                                    value,
-                                    ErrorKind::Fail,
-                                )));
-                            }
-                        }
-
-                        "defaultdeadline" => {
-                            let value = values.as_slice()[1];
-
-                            if let Ok(int) = value.parse::<i64>() {
-                                if int == -1 {
-                                    result.default_deadline = Some(Duration::from_millis(u64::MAX));
-                                    continue;
-                                }
-
-                                if int < -1 {
-                                    error!("Invalid defaultDeadline of {}. Please provide a positive integer, or -1 to disable", int);
-
-                                    return Err(nom::Err::Failure(nom::error::Error::new(
-                                        value,
-                                        ErrorKind::Fail,
-                                    )));
-                                }
-
-                                result.default_deadline = Some(Duration::from_millis(int as u64));
-                            } else {
-                                return Err(nom::Err::Failure(nom::error::Error::new(
-                                    value,
-                                    ErrorKind::Fail,
-                                )));
-                            }
-                        }
-
-                        "connectionname" => {
-                            let value = values.as_slice()[1];
-                            result.connection_name = Some(value.to_string());
-                        }
-
-                        ignored => {
-                            warn!("Ignored connection string parameter: {}", ignored);
-                            continue;
-                        }
-                    }
-                } else {
-                    return Err(nom::Err::Failure(nom::error::Error::new(
-                        param,
-                        ErrorKind::Fail,
-                    )));
-                }
-            }
-
-            input = new_input;
-        }
-
-        Ok((input, result))
-    }
-
-    pub fn parse_str(input: &str) -> Result<Self, ClientSettingsParseError> {
-        match complete(ClientSettings::parse)(input) {
-            Ok((_, setts)) => Ok(setts),
-            Err(err_type) => match err_type {
-                nom::Err::Error(nom::error::Error { input, .. }) => Err(ClientSettingsParseError {
-                    input: input.to_string(),
-                }),
-
-                nom::Err::Failure(nom::error::Error { input, .. }) => {
-                    Err(ClientSettingsParseError {
-                        input: input.to_string(),
-                    })
-                }
-
-                nom::Err::Incomplete(_) => Err(ClientSettingsParseError {
-                    input: "Incomplete connection string".to_string(),
-                }),
-            },
-        }
-    }
-
     pub fn to_uri(&self, endpoint: &Endpoint) -> http::Uri {
         let scheme = if self.secure { "https" } else { "http" };
 
@@ -692,11 +374,309 @@ impl ClientSettings {
     }
 }
 
+fn parse_param<A>(
+    param_name: impl AsRef<str>,
+    value: impl AsRef<str>,
+) -> Result<A, ClientSettingsParseError>
+where
+    A: FromStr,
+    <A as FromStr>::Err: Display,
+{
+    match value.as_ref().parse::<A>() {
+        Err(e) => Err(ClientSettingsParseError {
+            message: format!(
+                "Invalid format for param '{}'. value = '{}': {}",
+                param_name.as_ref(),
+                value.as_ref(),
+                e
+            ),
+            error: None,
+        }),
+
+        Ok(a) => Ok(a),
+    }
+}
+
+fn parse_from_url(
+    mut result: ClientSettings,
+    url: Url,
+) -> Result<ClientSettings, ClientSettingsParseError> {
+    if url.scheme() != "esdb" && url.scheme() != "esdb+discover" {
+        return Err(ClientSettingsParseError {
+            message: format!("Unknown URL scheme: {}", url.scheme()),
+            error: None,
+        });
+    }
+
+    result.dns_discover = url.scheme() == "esdb+discover";
+
+    if !url.username().is_empty() {
+        result.default_user_name = Some(Credentials::new(
+            url.username().to_string(),
+            url.password().unwrap_or_default().to_string(),
+        ));
+    }
+
+    if result.hosts.is_empty() && !url.path().is_empty() && url.path() != "/" {
+        return Err(ClientSettingsParseError {
+            message: format!("Unsupported URL path: {}", url.path()),
+            error: None,
+        });
+    }
+
+    if result.hosts.is_empty() && !url.has_host() {
+        return Err(ClientSettingsParseError {
+            message: "Connection string doesn't have an host".to_string(),
+            error: None,
+        });
+    }
+
+    // If not empty, it means we are dealing with pre-populated connection settings, from a
+    // desugared connection string for example.
+    if result.hosts.is_empty() {
+        let host = url.host_str().unwrap_or_default();
+
+        if !host.contains(',') {
+            result.hosts.push(Endpoint {
+                host: host.to_string(),
+                port: url.port().unwrap_or(2_113) as u32,
+            });
+        } else {
+            for host_part in host.split(',').collect::<Vec<_>>() {
+                parse_gossip_seed(&mut result, host_part)?;
+            }
+        }
+    }
+
+    for (param, value) in url.query_pairs() {
+        let name = param.to_lowercase();
+
+        match param.to_lowercase().as_str() {
+            "maxdiscoverattempts" => {
+                result.max_discover_attempts = parse_param(name, value)?;
+            }
+
+            "discoveryinterval" => {
+                result.discovery_interval = Duration::from_millis(parse_param(name, value)?);
+            }
+
+            "gossiptimeout" => {
+                result.gossip_timeout = Duration::from_millis(parse_param(name, value)?);
+            }
+
+            "tls" => {
+                result.secure = parse_param(name, value)?;
+            }
+
+            "tlsverifycert" => {
+                result.tls_verify_cert = parse_param(name, value)?;
+            }
+
+            "nodepreference" => match value.to_lowercase().as_str() {
+                "follower" => {
+                    result.preference = NodePreference::Follower;
+                }
+
+                "random" => {
+                    result.preference = NodePreference::Random;
+                }
+
+                "leader" => {
+                    result.preference = NodePreference::Leader;
+                }
+
+                "readonlyreplica" => {
+                    result.preference = NodePreference::ReadOnlyReplica;
+                }
+
+                unknown => {
+                    return Err(ClientSettingsParseError {
+                        message: format!("Unknown node preference value '{}'", unknown),
+                        error: None,
+                    });
+                }
+            },
+
+            "keepaliveinterval" => {
+                let value = parse_param::<i64>(name, value)?;
+
+                if value >= 0 && value < self::defaults::KEEP_ALIVE_INTERVAL_IN_MS as i64 {
+                    warn!(
+                        "Specified keepAliveInterval of {} is less than recommended {}",
+                        value,
+                        self::defaults::KEEP_ALIVE_INTERVAL_IN_MS
+                    );
+                    continue;
+                }
+
+                if value == -1 {
+                    result.keep_alive_interval = Duration::from_millis(u64::MAX);
+                    continue;
+                }
+
+                if value < -1 {
+                    return Err(ClientSettingsParseError {
+                        message: format!("Invalid keepAliveInterval of {}. Please provide a positive integer, or -1 to disable", value),
+                        error: None,
+                    });
+                }
+
+                result.keep_alive_interval = Duration::from_millis(value as u64);
+            }
+
+            "keepalivetimeout" => {
+                let value = parse_param::<i64>(name, value)?;
+
+                if value >= 0 && value < self::defaults::KEEP_ALIVE_TIMEOUT_IN_MS as i64 {
+                    warn!(
+                        "Specified keepAliveTimeout of {} is less than recommended {}",
+                        value,
+                        self::defaults::KEEP_ALIVE_TIMEOUT_IN_MS
+                    );
+                    continue;
+                }
+
+                if value == -1 {
+                    result.keep_alive_timeout = Duration::from_millis(u64::MAX);
+                    continue;
+                }
+
+                if value < -1 {
+                    return Err(ClientSettingsParseError {
+                        message: format!("Invalid keepAliveTimeout of {}. Please provide a positive integer, or -1 to disable", value),
+                        error: None,
+                    });
+                }
+
+                result.keep_alive_timeout = Duration::from_millis(value as u64);
+            }
+
+            "defaultdeadline" => {
+                let value = parse_param::<i64>(name, value)?;
+
+                if value == -1 {
+                    result.default_deadline = Some(Duration::from_millis(u64::MAX));
+                    continue;
+                }
+
+                if value < -1 {
+                    return Err(ClientSettingsParseError {
+                        message: format!("Invalid defaultDeadline of {}. Please provide a positive integer, or -1 to disable", value),
+                        error: None,
+                    });
+                }
+
+                result.default_deadline = Some(Duration::from_millis(value as u64));
+            }
+
+            "connectionname" => {
+                result.connection_name = Some(value.to_string());
+            }
+
+            ignored => {
+                warn!("Ignored connection string parameter: {}", ignored);
+                continue;
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+fn parse_gossip_seed(
+    result: &mut ClientSettings,
+    host: &str,
+) -> Result<(), ClientSettingsParseError> {
+    let host_parts: Vec<&str> = host.split(':').collect();
+
+    match host_parts.len() {
+        1 => result.hosts.push(Endpoint {
+            host: host.to_string(),
+            port: 2_113,
+        }),
+
+        2 => {
+            if let Ok(port) = host_parts.as_slice()[1].parse::<u16>() {
+                result.hosts.push(Endpoint {
+                    host: host_parts.as_slice()[0].to_string(),
+                    port: port as u32,
+                });
+            } else {
+                return Err(ClientSettingsParseError {
+                    message: format!("Invalid port number: {}", host_parts.as_slice()[1]),
+                    error: None,
+                });
+            }
+        }
+
+        _ => {
+            return Err(ClientSettingsParseError {
+                message: format!("Invalid host part: '{}'", host),
+                error: None,
+            })
+        }
+    }
+
+    Ok(())
+}
+
 impl FromStr for ClientSettings {
     type Err = ClientSettingsParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        ClientSettings::parse_str(s)
+        match s.parse::<Url>() {
+            Err(e) => {
+                // The way we support gossip seeds in cluster configuration is not supported by
+                // the URL standard. When it happens, we rewrite the connection string to parse
+                // those seeds properly. It happens when facing connection string like the following:
+                //
+                // esdb://host1:1234,host2:4321,host3:3231
+                if e == url::ParseError::InvalidPort && s.contains(',') {
+                    // We replace ',' by '/' and handle remaining gossip seeds as path segments.
+                    match s.replace(',', "/").parse::<Url>() {
+                        // In this case it should mean the connection is truly invalid so we return
+                        // the previous error.
+                        Err(_) => {
+                            return Err(ClientSettingsParseError {
+                                message: s.to_string(),
+                                error: Some(e),
+                            })
+                        }
+
+                        Ok(url) => {
+                            let mut setts = ClientSettings::default();
+
+                            if url.host_str().is_none() {
+                                return Err(ClientSettingsParseError {
+                                    message: s.to_string(),
+                                    error: Some(e),
+                                });
+                            }
+
+                            setts.hosts.push(Endpoint {
+                                host: url.host_str().unwrap().to_string(),
+                                port: url.port().unwrap_or(2_113) as u32,
+                            });
+
+                            if let Some(segments) = url.path_segments() {
+                                for segment in segments {
+                                    parse_gossip_seed(&mut setts, segment)?;
+                                }
+                            }
+
+                            return parse_from_url(setts, url);
+                        }
+                    }
+                }
+
+                Err(ClientSettingsParseError {
+                    message: s.to_string(),
+                    error: Some(e),
+                })
+            }
+
+            Ok(url) => parse_from_url(ClientSettings::default(), url),
+        }
     }
 }
 
@@ -711,7 +691,6 @@ impl Default for ClientSettings {
             preference: Default::default(),
             secure: true,
             tls_verify_cert: true,
-            throw_on_append_failure: true,
             default_user_name: None,
             keep_alive_interval: Duration::from_millis(self::defaults::KEEP_ALIVE_INTERVAL_IN_MS),
             keep_alive_timeout: Duration::from_millis(self::defaults::KEEP_ALIVE_TIMEOUT_IN_MS),
