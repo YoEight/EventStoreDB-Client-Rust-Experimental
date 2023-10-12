@@ -11,6 +11,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - No longer transitively depend on `time` 0.1  [EventStoreDB-Client-Rust#160](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/160)
+- Fix latest linting issue. [EventStoreDB-Client-Rust#168](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/168)
+
+### Added
+- Support authenticated gossip read request. [EventStoreDB-Client-Rust#163](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/163)
 
 ## [2.2.0] - 2023-02-13
 ### Added
