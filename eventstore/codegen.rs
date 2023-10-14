@@ -16,6 +16,15 @@ pub fn generate() -> Result<(), Box<dyn std::error::Error>> {
 
     tonic_build::configure()
         .build_server(false)
+        .bytes(&[
+            "AppendReq.ProposedMessage.custom_metadata",
+            "AppendReq.ProposedMessage.data",
+            "BatchAppendReq.ProposedMessage.custom_metadata",
+            "BatchAppendReq.ProposedMessage.data",
+            "ReadEvent.RecordedEvent.custom_metadata",
+            "ReadEvent.RecordedEvent.data",
+            "StreamIdentifier.stream_name",
+        ])
         .out_dir(out_dir)
         .compile(&files, &["protos"])?;
 

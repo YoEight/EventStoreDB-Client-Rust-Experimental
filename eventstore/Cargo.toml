@@ -31,9 +31,9 @@ hyper = { version = "0.14", features = ["client", "tcp"] }
 hyper-rustls = { version = "0.23", features = ["rustls-native-certs", "http2"] }
 log = "0.4"
 nom = "7"
-prost = "0.11"
-prost-derive = "0.11"
-prost-types = "0.11"
+prost = "0.12"
+prost-derive = "0.12"
+prost-types = "0.12"
 rand = { version = "0.8", features = ["small_rng"] }
 reqwest = { version = "0.11", default-features = false, features = [
   "rustls-tls",
@@ -45,17 +45,17 @@ rustls-native-certs = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
-tokio = { version = "1.20", default-features = false, features = ["time"] }
+tokio = { version = "1", default-features = false, features = ["time"] }
 tokio-rustls = "0.23"
-tonic = { version = "0.9", features = ["tls", "tls-roots"] }
+tonic = { version = "0.10", features = ["tls", "tls-roots"] }
 tower = "0.4"
 url = "2"
 urlencoding = "2"
-uuid = { version = "1.1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 webpki = "0.22"
 
 [build-dependencies]
-tonic-build = { version = "0.9", features = ["prost-build"] }
+tonic-build = { version = "0.10.2", features = ["prost-build"] }
 
 [[test]]
 name = "integration"
@@ -65,7 +65,7 @@ names = "0.14"
 pretty_env_logger = "0.5"
 serde = { version = "1", features = ["derive"] }
 testcontainers = "0.14"
-tokio = { version = "1.20", default-features = false, features = [
+tokio = { version = "1", default-features = false, features = [
   "rt-multi-thread",
   "macros",
 ] }
