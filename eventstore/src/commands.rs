@@ -11,6 +11,7 @@ use crate::types::{
 
 use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
+use nom::AsBytes;
 use persistent::persistent_subscriptions_client::PersistentSubscriptionsClient;
 use prost_types::Timestamp;
 use shared::{Empty, StreamIdentifier, Uuid};
@@ -92,15 +93,13 @@ fn convert_event_data(event: EventData) -> streams::AppendReq {
     let id = event.id_opt.unwrap_or_else(uuid::Uuid::new_v4);
     let id = shared::uuid::Value::String(id.to_string());
     let id = Uuid { value: Some(id) };
-    let custom_metadata = event
-        .custom_metadata
-        .map_or_else(Vec::new, |b| (&*b).into());
+    let custom_metadata = event.custom_metadata.unwrap_or_default();
 
     let msg = append_req::ProposedMessage {
         id: Some(id),
         metadata: event.metadata,
         custom_metadata,
-        data: (&*event.payload).into(),
+        data: event.payload,
     };
 
     let content = append_req::Content::ProposedMessage(msg);
@@ -146,13 +145,15 @@ fn convert_proto_recorded_event(
         false
     };
 
-    let stream_id = String::from_utf8(
+    let stream_id = String::from_utf8_lossy(
         event
             .stream_identifier
             .expect("stream_identifier is always defined")
-            .stream_name,
+            .stream_name
+            .as_bytes(),
     )
-    .expect("It's always UTF-8");
+    .to_string();
+
     RecordedEvent {
         id,
         stream_id,
@@ -162,8 +163,8 @@ fn convert_proto_recorded_event(
         is_json,
         created,
         metadata: event.metadata,
-        custom_metadata: event.custom_metadata.into(),
-        data: event.data.into(),
+        custom_metadata: event.custom_metadata,
+        data: event.data,
     }
 }
 
@@ -203,13 +204,14 @@ fn convert_persistent_proto_recorded_event(
         false
     };
 
-    let stream_id = String::from_utf8(
+    let stream_id = String::from_utf8_lossy(
         event
             .stream_identifier
             .expect("stream_identifier is always defined")
-            .stream_name,
+            .stream_name
+            .as_bytes(),
     )
-    .expect("string is UTF-8 valid");
+    .to_string();
 
     RecordedEvent {
         id,
@@ -220,8 +222,8 @@ fn convert_persistent_proto_recorded_event(
         is_json,
         created,
         metadata: event.metadata,
-        custom_metadata: event.custom_metadata.into(),
-        data: event.data.into(),
+        custom_metadata: event.custom_metadata,
+        data: event.data,
     }
 }
 
@@ -233,15 +235,13 @@ fn convert_event_data_to_batch_proposed_message(
     let id = event.id_opt.unwrap_or_else(uuid::Uuid::new_v4);
     let id = shared::uuid::Value::String(id.to_string());
     let id = Uuid { value: Some(id) };
-    let custom_metadata = event
-        .custom_metadata
-        .map_or_else(Vec::new, |b| (&*b).into());
+    let custom_metadata = event.custom_metadata.unwrap_or_default();
 
     batch_append_req::ProposedMessage {
         id: Some(id),
         metadata: event.metadata,
         custom_metadata,
-        data: (&*event.payload).into(),
+        data: event.payload,
     }
 }
 
@@ -514,7 +514,7 @@ pub async fn append_to_stream(
 
     let stream = stream.as_ref().to_string();
     let stream_identifier = Some(StreamIdentifier {
-        stream_name: stream.into_bytes(),
+        stream_name: stream.into_bytes().into(),
     });
     let header = Content::Options(append_req::Options {
         stream_identifier,
@@ -622,7 +622,7 @@ pub async fn batch_append(
                 value: Some(correlation_id),
             });
             let stream_identifier = Some(StreamIdentifier {
-                stream_name: req.stream_name.into_bytes(),
+                stream_name: req.stream_name.into_bytes().into(),
             });
 
             let expected_stream_position = match req.expected_revision {
@@ -678,9 +678,10 @@ pub async fn batch_append(
                 let resp_stream = resp.into_inner();
 
                 let mut resp_stream = resp_stream.map_ok(|resp| {
-                    let stream_name =
-                        String::from_utf8(resp.stream_identifier.unwrap().stream_name)
-                            .expect("valid UTF-8 string");
+                    let stream_name = String::from_utf8_lossy(
+                        resp.stream_identifier.unwrap().stream_name.as_bytes(),
+                    )
+                    .to_string();
 
                     let correlation_id = raw_uuid_to_uuid(resp.correlation_id.unwrap());
                     let result = match resp.result.unwrap() {
@@ -867,7 +868,7 @@ pub async fn read_stream<S: AsRef<str>>(
     };
 
     let stream_identifier = Some(StreamIdentifier {
-        stream_name: stream.as_ref().to_string().into_bytes(),
+        stream_name: stream.as_ref().to_string().into_bytes().into(),
     });
     let stream_options = StreamOptions {
         stream_identifier,
@@ -1003,7 +1004,7 @@ pub async fn delete_stream<S: AsRef<str>>(
 
     let expected_stream_revision = Some(expected_stream_revision);
     let stream_identifier = Some(StreamIdentifier {
-        stream_name: stream.as_ref().to_string().into_bytes(),
+        stream_name: stream.as_ref().to_string().into_bytes().into(),
     });
     let req_options = Options {
         stream_identifier,
@@ -1062,7 +1063,7 @@ pub async fn tombstone_stream<S: AsRef<str>>(
 
     let expected_stream_revision = Some(expected_stream_revision);
     let stream_identifier = Some(StreamIdentifier {
-        stream_name: stream.as_ref().to_string().into_bytes(),
+        stream_name: stream.as_ref().to_string().into_bytes().into(),
     });
     let req_options = Options {
         stream_identifier,
@@ -1315,7 +1316,7 @@ pub fn subscribe_to_stream<S: AsRef<str>>(
     };
 
     let stream_identifier = Some(StreamIdentifier {
-        stream_name: stream_id.as_ref().to_string().into_bytes(),
+        stream_name: stream_id.as_ref().to_string().into_bytes().into(),
     });
     let stream_options = StreamOptions {
         stream_identifier,
@@ -1532,7 +1533,7 @@ where
     let handle = connection.current_selected_node().await?;
     let settings = convert_settings_create(options.settings())?;
     let stream_identifier = StreamIdentifier {
-        stream_name: stream.as_ref().to_string().into_bytes(),
+        stream_name: stream.as_ref().to_string().into_bytes().into(),
     };
 
     let req_options = options.to_create_options(stream_identifier.clone());
@@ -1586,7 +1587,7 @@ where
     let handle = connection.current_selected_node().await?;
     let settings = convert_settings_update(options.settings())?;
     let stream_identifier = StreamIdentifier {
-        stream_name: stream.as_ref().to_string().into_bytes(),
+        stream_name: stream.as_ref().to_string().into_bytes().into(),
     };
 
     let req_options = options.to_update_options(stream_identifier.clone());
@@ -1641,7 +1642,7 @@ pub async fn delete_persistent_subscription<S: AsRef<str>>(
 
     let stream_option = if !to_all {
         StreamOption::StreamIdentifier(StreamIdentifier {
-            stream_name: stream_id.as_ref().to_string().into_bytes(),
+            stream_name: stream_id.as_ref().to_string().into_bytes().into(),
         })
     } else {
         StreamOption::All(Empty {})
@@ -1704,7 +1705,7 @@ pub async fn subscribe_to_persistent_subscription<S: AsRef<str>>(
 
     let stream_option = if !to_all {
         StreamOption::StreamIdentifier(StreamIdentifier {
-            stream_name: stream_id.as_ref().to_string().into_bytes(),
+            stream_name: stream_id.as_ref().to_string().into_bytes().into(),
         })
     } else {
         StreamOption::All(Empty {})
@@ -2026,7 +2027,7 @@ where
         list_req::stream_option::StreamOption::All(Empty {})
     } else {
         list_req::stream_option::StreamOption::Stream(StreamIdentifier {
-            stream_name: stream_name.name().to_string().into_bytes(),
+            stream_name: stream_name.name().to_string().into_bytes().into(),
         })
     };
 
@@ -2274,7 +2275,7 @@ where
         replay_parked_req::options::StreamOption::All(Empty {})
     } else {
         replay_parked_req::options::StreamOption::StreamIdentifier(StreamIdentifier {
-            stream_name: stream_name.name().to_string().into_bytes(),
+            stream_name: stream_name.name().to_string().into_bytes().into(),
         })
     };
 
@@ -2342,7 +2343,7 @@ where
         get_info_req::options::StreamOption::All(Empty {})
     } else {
         get_info_req::options::StreamOption::StreamIdentifier(StreamIdentifier {
-            stream_name: stream_name.name().to_string().into_bytes(),
+            stream_name: stream_name.name().to_string().into_bytes().into(),
         })
     };
     let options = get_info_req::Options {

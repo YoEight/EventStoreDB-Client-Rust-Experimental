@@ -157,10 +157,10 @@ pub mod read_resp {
                 ::prost::alloc::string::String,
                 ::prost::alloc::string::String,
             >,
-            #[prost(bytes = "vec", tag = "7")]
-            pub custom_metadata: ::prost::alloc::vec::Vec<u8>,
-            #[prost(bytes = "vec", tag = "8")]
-            pub data: ::prost::alloc::vec::Vec<u8>,
+            #[prost(bytes = "bytes", tag = "7")]
+            pub custom_metadata: ::prost::bytes::Bytes,
+            #[prost(bytes = "bytes", tag = "8")]
+            pub data: ::prost::bytes::Bytes,
         }
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
