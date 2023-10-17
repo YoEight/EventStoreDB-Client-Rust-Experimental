@@ -6,8 +6,6 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - Update container version when testing. [EventStoreDB-Client-Rust#159](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/159)
-- Update container version when testing. [EventStoreDB-Client-Rust#159](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/159)
-- Upgrade to tonic 0.9 [EventStoreDB-Client-Rust#162](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/162)
 - Improve connection string parsing. [EventStoreDB-Client-Rust#169](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/169)
 - Update to Tonic 0.10. [EventStoreDB-Client-Rust#170](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/170)
 
