@@ -22,6 +22,4 @@ jobs:
       run: cargo login $TOKEN
     - name: Upload
       run: |
-        cargo publish -p eventstore-macros
         cargo publish -p eventstore
-        cargo publish -p eventstore-extras
