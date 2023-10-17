@@ -3,7 +3,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-
+## [2.3.0] - 2023-10-17
 ### Changed
 - Update container version when testing. [EventStoreDB-Client-Rust#159](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/159)
 - Improve connection string parsing. [EventStoreDB-Client-Rust#169](https://github.com/EventStore/EventStoreDB-Client-Rust/pull/169)
